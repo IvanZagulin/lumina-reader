@@ -11,6 +11,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -119,6 +120,12 @@ fun LuminaNavGraph(
                 aiChatViewModel.setContext(libraryContext, statsContext)
             }
 
+            androidx.compose.runtime.LaunchedEffect(libraryViewModel, aiChatViewModel) {
+                libraryViewModel.userMessage.collect { message ->
+                    aiChatViewModel.reportExecutionResult(message)
+                }
+            }
+
             val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
             com.lumina.reader.ui.chat.AiChatScreen(
@@ -127,16 +134,23 @@ fun LuminaNavGraph(
                 onDownloadAction = { query ->
                     coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         try {
+                            aiChatViewModel.reportExecutionResult("Ищу «$query» в каталоге…")
                             val client = com.lumina.reader.core.network.OpdsClient()
                             val books = client.searchBooks(query)
                             val book = books.firstOrNull { it.downloadUrlFb2 != null || it.downloadUrlEpub != null }
                             if (book != null) {
                                 val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2_ZIP else com.lumina.reader.core.model.BookFormat.EPUB
                                 val url = book.downloadUrlFb2 ?: book.downloadUrlEpub!!
+                                aiChatViewModel.reportExecutionResult("Найдена «${book.title}». Начинаю загрузку…")
                                 libraryViewModel.downloadAndImportBook(url, format, book.title)
+                            } else {
+                                aiChatViewModel.reportExecutionResult("В доступном каталоге не нашлась книга «$query». Ничего не было добавлено.")
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
+                            aiChatViewModel.reportExecutionResult(
+                                "Не удалось обратиться к каталогу для «$query»: ${e.localizedMessage ?: "нет соединения"}. Ничего не было добавлено."
+                            )
                         }
                     }
                 },
@@ -153,6 +167,7 @@ fun LuminaNavGraph(
                         }
 
                         val library = libraryViewModel.books.value
+                        var organizedCount = 0
                         books.forEachIndexed { index, bookTitle ->
                             val matchedBook = library.firstOrNull {
                                 it.title.contains(bookTitle, ignoreCase = true)
@@ -164,8 +179,16 @@ fun LuminaNavGraph(
                                     seriesName = seriesName,
                                     seriesOrder = index + 1
                                 )
+                                organizedCount++
                             }
                         }
+                        aiChatViewModel.reportExecutionResult(
+                            if (organizedCount == books.size) {
+                                "Серия «$seriesName» собрана: $organizedCount книг расставлены по порядку."
+                            } else {
+                                "В серию «$seriesName» добавлено $organizedCount из ${books.size} книг. Остальные не удалось найти в библиотеке."
+                            }
+                        )
                     }
                 }
             )
