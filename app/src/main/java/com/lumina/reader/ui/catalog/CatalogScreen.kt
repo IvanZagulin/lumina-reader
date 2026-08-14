@@ -111,17 +111,25 @@ fun CatalogScreen(
                             }
                             Row {
                                 if (book.downloadUrlEpub != null) {
-                                    IconButton(onClick = {
-                                        onDownloadBook(book.downloadUrlEpub, BookFormat.EPUB, book.title)
-                                    }) {
-                                        Icon(Icons.Default.CloudDownload, contentDescription = "EPUB", tint = MaterialTheme.colorScheme.primary)
+                                    OutlinedButton(
+                                        onClick = {
+                                            onDownloadBook(book.downloadUrlEpub, BookFormat.EPUB, book.title)
+                                        },
+                                        modifier = Modifier.padding(start = 4.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("EPUB")
                                     }
                                 }
                                 if (book.downloadUrlFb2 != null) {
-                                    IconButton(onClick = {
-                                        onDownloadBook(book.downloadUrlFb2, BookFormat.FB2, book.title)
-                                    }) {
-                                        Icon(Icons.Default.CloudDownload, contentDescription = "FB2", tint = MaterialTheme.colorScheme.secondary)
+                                    Button(
+                                        onClick = {
+                                            onDownloadBook(book.downloadUrlFb2, BookFormat.FB2, book.title)
+                                        },
+                                        modifier = Modifier.padding(start = 4.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("FB2")
                                     }
                                 }
                             }
