@@ -47,6 +47,7 @@ fun ReaderScreen(
     val bookmarks by viewModel.bookmarks.collectAsState()
     val ttsState by viewModel.ttsState.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val loadError by viewModel.loadError.collectAsState()
 
     var showControls by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -143,6 +144,12 @@ fun ReaderScreen(
                         onParagraphFragmentVisible = { pIndex, fragmentIndex, text ->
                             viewModel.onParagraphFragmentVisible(pIndex, fragmentIndex, text)
                         }
+                    )
+                } else {
+                    ReaderLoadError(
+                        message = loadError ?: "Не удалось подготовить текст книги",
+                        textColor = settings.theme.textComposeColor,
+                        onBack = onBack
                     )
                 }
             }
@@ -377,5 +384,31 @@ fun ReaderScreen(
             onDeleteBookmark = { bookmark -> viewModel.deleteBookmark(bookmark) },
             onDismiss = { showTocSheet = false }
         )
+    }
+}
+
+@Composable
+private fun ReaderLoadError(
+    message: String,
+    textColor: Color,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = message,
+            color = textColor,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(onClick = onBack) {
+            Text("Вернуться в библиотеку")
+        }
     }
 }
