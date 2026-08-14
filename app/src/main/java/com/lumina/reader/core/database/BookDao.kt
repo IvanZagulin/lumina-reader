@@ -30,7 +30,12 @@ interface BookDao {
     @Query("UPDATE books SET isFavorite = :isFav WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFav: Boolean)
 
-    @Query("UPDATE books SET isCompleted = :isComp WHERE id = :id")
+    @Query("""
+        UPDATE books
+        SET isCompleted = :isComp,
+            currentProgressPercent = CASE WHEN :isComp THEN 100.0 ELSE currentProgressPercent END
+        WHERE id = :id
+    """)
     suspend fun updateCompleted(id: Long, isComp: Boolean)
 
     @Query("UPDATE books SET collection = :collection WHERE id = :id")
