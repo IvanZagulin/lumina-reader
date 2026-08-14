@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed class AiAction {
@@ -19,7 +20,7 @@ class AiChatViewModel : ViewModel() {
 
     private val aiClient = AiClient()
 
-    private val defaultSystemMessage = "Ты полезный ИИ-ассистент в приложении-читалке Lumina Reader. Ты можешь выполнять команды. ДАННЫЕ БИБЛИОТЕКИ в системном сообщении — единственный источник о том, какие книги уже скачаны: никогда не утверждай, что книга есть у пользователя, если её точного названия нет в этом списке. Для вопросов о числе книг, названиях, порядке серии, авторе, а также перед созданием команды скачивания используй результаты веб-поиска. Если поиск не подтвердил факт, честно скажи, что не можешь его проверить; не дополняй ответ догадками. Если пользователь просит найти или скачать книгу/серию, напиши в конце ответа команду [DOWNLOAD:название книги] только для проверенного названия. Ты можешь написать несколько команд [DOWNLOAD] подряд, чтобы скачать несколько книг сразу. Не создавай [DOWNLOAD] для уже скачанных книг. Если пользователь просит серию, перечисляй её в порядке книг и добавляй [ORGANIZE:Название серии:Книга1|Книга2] со всеми подтверждёнными томами серии в правильном порядке — приложение дождётся загрузки и расставит номера. Строго отвечай ТОЛЬКО на русском языке! Никогда не используй китайский язык (No Chinese)."
+    private val defaultSystemMessage = "Ты полезный ИИ-ассистент в приложении-читалке Lumina Reader. Ты можешь выполнять команды. ДАННЫЕ БИБЛИОТЕКИ в системном сообщении — единственный источник о том, какие книги уже скачаны: никогда не утверждай, что книга есть у пользователя, если её точного названия нет в этом списке. Для вопросов о числе книг, названиях, порядке серии, авторе, а также перед созданием команды скачивания используй результаты веб-поиска. Если поиск не подтвердил факт, честно скажи, что не можешь его проверить; не дополняй ответ догадками. Если пользователь просит найти или скачать книгу/серию, напиши в самом конце ответа команду [DOWNLOAD:название книги] только для проверенного названия. Ты можешь написать несколько команд [DOWNLOAD] подряд, чтобы скачать несколько книг сразу. Не создавай [DOWNLOAD] для уже скачанных книг. Если пользователь просит серию, перечисляй её в порядке книг и добавляй [ORGANIZE:Название серии:Книга1|Книга2] со всеми подтверждёнными томами серии в правильном порядке — приложение дождётся загрузки и расставит номера. Служебные команды не видны пользователю и выполняются приложением: не называй их «командами», не объясняй их синтаксис и не оставляй перед ними пустые заголовки. В обычном тексте кратко сообщи, что начинаешь поиск или загрузку. Строго отвечай ТОЛЬКО на русском языке! Никогда не используй китайский язык (No Chinese)."
 
     private val _messages = MutableStateFlow<List<AiMessage>>(
         listOf(AiMessage("system", defaultSystemMessage))
@@ -71,29 +72,30 @@ class AiChatViewModel : ViewModel() {
         }
     }
 
-    private fun processAiResponse(response: AiMessage) {
+    private suspend fun processAiResponse(response: AiMessage) {
         val content = response.content
-        viewModelScope.launch {
-            val downloadRegex = "\\[DOWNLOAD:(.*?)\\]".toRegex()
-            val downloadMatches = downloadRegex.findAll(content)
-            for (match in downloadMatches) {
-                val query = match.groupValues[1].trim()
-                if (query.isNotEmpty()) {
-                    _actionFlow.emit(AiAction.DownloadBook(query))
-                }
+        val downloadRegex = "\\[DOWNLOAD\\s*:\\s*([^]\\r\\n]+)]".toRegex()
+        for (match in downloadRegex.findAll(content)) {
+            val query = match.groupValues[1].trim()
+            if (query.isNotEmpty()) {
+                _actionFlow.emit(AiAction.DownloadBook(query))
             }
+        }
 
-            if (content.contains("[ORGANIZE:")) {
-                val data = content.substringAfter("[ORGANIZE:").substringBefore("]").trim()
-                val parts = data.split(":", limit = 2)
-                if (parts.size == 2) {
-                    val seriesName = parts[0].trim()
-                    val books = parts[1].split("|").map { it.trim() }.filter(String::isNotBlank)
-                    if (seriesName.isNotBlank() && books.isNotEmpty()) {
-                        _actionFlow.emit(AiAction.OrganizeSeries(seriesName, books))
-                    }
-                }
+        val organizeRegex = "\\[ORGANIZE\\s*:\\s*([^:\\]]+)\\s*:\\s*([^]\\r\\n]+)]".toRegex()
+        for (match in organizeRegex.findAll(content)) {
+            val seriesName = match.groupValues[1].trim()
+            val books = match.groupValues[2].split("|").map { it.trim() }.filter(String::isNotBlank)
+            if (seriesName.isNotBlank() && books.isNotEmpty()) {
+                _actionFlow.emit(AiAction.OrganizeSeries(seriesName, books))
             }
+        }
+    }
+
+    fun reportExecutionResult(message: String) {
+        if (message.isBlank()) return
+        _messages.update { current ->
+            current + AiMessage("assistant", message)
         }
     }
 }
