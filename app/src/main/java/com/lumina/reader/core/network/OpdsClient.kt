@@ -24,7 +24,7 @@ class OpdsClient {
 
     suspend fun searchBooks(query: String): List<OpdsBook> = withContext(Dispatchers.IO) {
         val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-        val url = "https://flibusta.is/opds/search?searchType=books&searchTerm=$encodedQuery"
+        val url = "https://flibusta.site/opds/search?searchType=books&searchTerm=$encodedQuery"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
 
@@ -36,7 +36,7 @@ class OpdsClient {
     }
     
     suspend fun downloadBook(url: String): ByteArray = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url("https://flibusta.is$url").build()
+        val request = Request.Builder().url("https://flibusta.site$url").build()
         val response = client.newCall(request).execute()
         
         if (!response.isSuccessful) {
