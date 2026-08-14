@@ -7,6 +7,10 @@ plugins {
 
 val ciVersionCode = providers.gradleProperty("versionCodeOverride").orNull?.toIntOrNull()
 val ciVersionName = providers.gradleProperty("versionNameOverride").orNull
+val ciSigningStoreFile = providers.gradleProperty("signingStoreFile").orNull
+val ciSigningStorePassword = providers.gradleProperty("signingStorePassword").orNull
+val ciSigningKeyAlias = providers.gradleProperty("signingKeyAlias").orNull
+val ciSigningKeyPassword = providers.gradleProperty("signingKeyPassword").orNull
 
 android {
     namespace = "com.lumina.reader"
@@ -25,7 +29,20 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            if (ciSigningStoreFile != null) {
+                storeFile = file(ciSigningStoreFile)
+                storePassword = requireNotNull(ciSigningStorePassword)
+                keyAlias = requireNotNull(ciSigningKeyAlias)
+                keyPassword = requireNotNull(ciSigningKeyPassword)
+            }
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
