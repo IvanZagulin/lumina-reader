@@ -69,6 +69,7 @@ fun LibraryScreen(
 
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToEditOrganization by remember { mutableStateOf<Book?>(null) }
+    var bookToMoveToCollection by remember { mutableStateOf<Book?>(null) }
     var newCollectionName by remember { mutableStateOf("") }
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
 
@@ -392,9 +393,8 @@ fun LibraryScreen(
                         selectedCollection == null &&
                         selectedSeries == null
                     ) {
-                        // A named series becomes a virtual shelf automatically. Regular
-                        // collection shelves remain intact, so a series book can also
-                        // still be found on the shelf the user assigned it to.
+                        // A series is its own shelf. Its books must not also appear on
+                        // a regular shelf, otherwise the library looks duplicated.
                         val seriesShelves = books
                             .filter { it.seriesName.isNotBlank() }
                             .groupBy { normalizeShelfName(it.seriesName).lowercase() }
@@ -402,6 +402,7 @@ fun LibraryScreen(
                             .sortedBy { normalizeShelfName(it.first().seriesName).lowercase() }
 
                         val regularShelves = books
+                            .filter { it.seriesName.isBlank() }
                             .groupBy {
                                 normalizeShelfName(it.collection).ifBlank { "Основная" }.lowercase()
                             }
@@ -429,6 +430,7 @@ fun LibraryScreen(
                                     onDelete = { bookToDelete = book },
                                     onToggleFavorite = { viewModel.toggleFavorite(book) },
                                     onToggleCompleted = { viewModel.toggleCompleted(book) },
+                                    onMoveToCollection = { bookToMoveToCollection = book },
                                     onEditOrganization = { bookToEditOrganization = book }
                                 )
                             }
@@ -454,6 +456,7 @@ fun LibraryScreen(
                                     onDelete = { bookToDelete = book },
                                     onToggleFavorite = { viewModel.toggleFavorite(book) },
                                     onToggleCompleted = { viewModel.toggleCompleted(book) },
+                                    onMoveToCollection = { bookToMoveToCollection = book },
                                     onEditOrganization = { bookToEditOrganization = book }
                                 )
                             }
@@ -486,6 +489,7 @@ fun LibraryScreen(
                                 onDelete = { bookToDelete = book },
                                 onToggleFavorite = { viewModel.toggleFavorite(book) },
                                 onToggleCompleted = { viewModel.toggleCompleted(book) },
+                                onMoveToCollection = { bookToMoveToCollection = book },
                                 onEditOrganization = { bookToEditOrganization = book }
                             )
                         }
@@ -515,6 +519,58 @@ fun LibraryScreen(
                 TextButton(onClick = { bookToDelete = null }) {
                     Text("Отмена")
                 }
+            }
+        )
+    }
+
+    // Right-swipe shortcut: move to exactly one regular shelf and detach from
+    // any series, so the book cannot be shown in two places at once.
+    bookToMoveToCollection?.let { book ->
+        var selectedCollectionName by remember(book.id) { mutableStateOf(book.collection) }
+        AlertDialog(
+            onDismissRequest = { bookToMoveToCollection = null },
+            icon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
+            title = { Text("Перенести на полку") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Книга будет показана только на выбранной полке.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = selectedCollectionName,
+                        onValueChange = { selectedCollectionName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Полка") },
+                        singleLine = true
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(collections, key = { it.lowercase() }) { collection ->
+                            SuggestionChip(
+                                onClick = { selectedCollectionName = collection },
+                                label = { Text(collection, maxLines = 1) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = selectedCollectionName.isNotBlank(),
+                    onClick = {
+                        viewModel.updateBookOrganization(
+                            book = book,
+                            collection = selectedCollectionName,
+                            seriesName = "",
+                            seriesOrder = 0
+                        )
+                        bookToMoveToCollection = null
+                    }
+                ) { Text("Перенести") }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToMoveToCollection = null }) { Text("Отмена") }
             }
         )
     }
@@ -703,51 +759,61 @@ private fun LibraryShelfHeader(
             .fillMaxWidth()
             .padding(top = 10.dp, bottom = 2.dp),
         shape = RoundedCornerShape(16.dp),
-        color = accent.copy(alpha = 0.10f)
+        color = accent.copy(alpha = 0.10f),
+        tonalElevation = 2.dp
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = accent.copy(alpha = 0.16f),
-                modifier = Modifier.size(38.dp)
+        Box {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(5.dp)
+                    .align(Alignment.CenterStart)
+                    .background(accent)
+            )
+            Row(
+                modifier = Modifier.padding(start = 18.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isSeries) Icons.Default.Bookmarks else Icons.Default.Folder,
-                        contentDescription = null,
-                        tint = accent,
-                        modifier = Modifier.size(20.dp)
+                Surface(
+                    shape = CircleShape,
+                    color = accent.copy(alpha = 0.16f),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isSeries) Icons.Default.Bookmarks else Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(11.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = if (isSeries) "Серия · книги по порядку" else "Полка",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-            Spacer(modifier = Modifier.width(11.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-                Text(
-                    text = if (isSeries) "Серия · книги по порядку" else "Полка",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-            ) {
-                Text(
-                    text = "$bookCount ${bookCount.bookWord()}",
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accent
-                )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                ) {
+                    Text(
+                        text = "$bookCount ${bookCount.bookWord()}",
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                }
             }
         }
     }

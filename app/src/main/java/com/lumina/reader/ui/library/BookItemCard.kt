@@ -23,7 +23,10 @@ import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import java.io.File
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    ExperimentalMaterial3Api::class
+)
 @Composable
 fun BookItemCard(
     book: Book,
@@ -31,25 +34,44 @@ fun BookItemCard(
     onDelete: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleCompleted: () -> Unit,
+    onMoveToCollection: () -> Unit,
     onEditOrganization: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * 0.25f },
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> onMoveToCollection()
+                SwipeToDismissBoxValue.EndToStart -> onDelete()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            // The card stays in place until the user confirms the action.
+            false
+        }
+    )
 
-    Card(
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = { SwipeActionBackground(dismissState.dismissDirection) },
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { showMenu = true }
-            ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                ),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -319,6 +341,46 @@ fun BookItemCard(
                     }
                 }
             }
+        }
+    }
+}
+}
+
+@Composable
+private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
+    val isMove = direction == SwipeToDismissBoxValue.StartToEnd
+    val color = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
+        SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
+        SwipeToDismissBoxValue.Settled -> Color.Transparent
+    }
+    val contentColor = if (isMove) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color)
+            .padding(horizontal = 22.dp),
+        contentAlignment = if (isMove) Alignment.CenterStart else Alignment.CenterEnd
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = if (isMove) Icons.Default.DriveFileMove else Icons.Default.Delete,
+                contentDescription = null,
+                tint = contentColor
+            )
+            Text(
+                text = if (isMove) "В полку" else "Удалить",
+                color = contentColor,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

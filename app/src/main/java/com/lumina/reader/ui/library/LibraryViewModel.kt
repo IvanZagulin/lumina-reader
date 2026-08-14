@@ -98,7 +98,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         .filter { it.seriesName.equals(shelf.seriesName, ignoreCase = true) }
                         .sortedForSeries()
                     shelf.collection != null -> filtered
-                        .filter { it.collection.equals(shelf.collection, ignoreCase = true) }
+                        // A book assigned to a series is shown only in that series.
+                        // Its former shelf is kept as a fallback for when the series is removed.
+                        .filter {
+                            it.seriesName.isBlank() &&
+                                it.collection.equals(shelf.collection, ignoreCase = true)
+                        }
                         .sortedWith(compareBy<Book>(
                             { it.seriesName.lowercase() },
                             { if (it.seriesOrder > 0) it.seriesOrder else Int.MAX_VALUE },
@@ -205,6 +210,28 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 "Серия «$normalizedSeries»$orderLabel сохранена"
             }
             _userMessage.emit(message)
+        }
+    }
+
+    /**
+     * Persists the full series as one ordered operation.  Calling individual
+     * view-model methods from the AI workflow used to launch several unrelated
+     * coroutines, so Room updates could become visible in download order.
+     */
+    fun organizeSeries(seriesName: String, orderedBooks: List<Book>) {
+        val normalizedSeries = normalizeShelfName(seriesName)
+        if (normalizedSeries.isBlank() || orderedBooks.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            orderedBooks.forEachIndexed { index, book ->
+                bookDao.updateOrganization(
+                    id = book.id,
+                    collection = normalizeShelfName(book.collection).ifBlank { "Основная" },
+                    seriesName = normalizedSeries,
+                    seriesOrder = index + 1
+                )
+            }
+            _userMessage.emit("Серия «$normalizedSeries» сохранена в правильном порядке")
         }
     }
 
