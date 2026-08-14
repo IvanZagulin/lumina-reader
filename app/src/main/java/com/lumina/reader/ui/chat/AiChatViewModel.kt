@@ -19,7 +19,7 @@ class AiChatViewModel : ViewModel() {
 
     private val aiClient = AiClient()
 
-    private val defaultSystemMessage = "Ты полезный ИИ-ассистент в приложении-читалке Lumina Reader. Ты можешь выполнять команды. Если пользователь просит найти или скачать книгу/серию, напиши в конце ответа команду [DOWNLOAD:название книги]. Ты можешь написать несколько команд [DOWNLOAD] подряд, чтобы скачать несколько книг сразу. Перед добавлением проверь список текущей библиотеки в системном сообщении: не создавай [DOWNLOAD] для уже скачанных книг. Если пользователь просит серию, перечисляй её в порядке книг и добавляй [ORGANIZE:Название серии:Книга1|Книга2] со всеми известными томами серии в правильном порядке — приложение дождётся загрузки и расставит номера. ВНИМАНИЕ: НИКОГДА не выдумывай названия книг или списки. Если ты не уверен в точном количестве книг в серии или их названиях, прямо скажи об этом и перечисли только те, в которых уверен. Строго отвечай ТОЛЬКО на русском языке! Никогда не используй китайский язык (No Chinese)."
+    private val defaultSystemMessage = "Ты полезный ИИ-ассистент в приложении-читалке Lumina Reader. Ты можешь выполнять команды. ДАННЫЕ БИБЛИОТЕКИ в системном сообщении — единственный источник о том, какие книги уже скачаны: никогда не утверждай, что книга есть у пользователя, если её точного названия нет в этом списке. Для вопросов о числе книг, названиях, порядке серии, авторе, а также перед созданием команды скачивания используй результаты веб-поиска. Если поиск не подтвердил факт, честно скажи, что не можешь его проверить; не дополняй ответ догадками. Если пользователь просит найти или скачать книгу/серию, напиши в конце ответа команду [DOWNLOAD:название книги] только для проверенного названия. Ты можешь написать несколько команд [DOWNLOAD] подряд, чтобы скачать несколько книг сразу. Не создавай [DOWNLOAD] для уже скачанных книг. Если пользователь просит серию, перечисляй её в порядке книг и добавляй [ORGANIZE:Название серии:Книга1|Книга2] со всеми подтверждёнными томами серии в правильном порядке — приложение дождётся загрузки и расставит номера. Строго отвечай ТОЛЬКО на русском языке! Никогда не используй китайский язык (No Chinese)."
 
     private val _messages = MutableStateFlow<List<AiMessage>>(
         listOf(AiMessage("system", defaultSystemMessage))
@@ -56,7 +56,10 @@ class AiChatViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val response = aiClient.askAssistant(messagesForRequest(_messages.value))
+                val response = aiClient.askAssistant(
+                    messages = messagesForRequest(_messages.value),
+                    verifyBibliographicFacts = needsBibliographicVerification(userText)
+                )
                 processAiResponse(response)
                 _messages.value = _messages.value + response
             } catch (e: Exception) {
@@ -101,5 +104,14 @@ internal fun messagesForRequest(messages: List<AiMessage>): List<AiMessage> {
     return listOfNotNull(systemMessage) + recentConversation
 }
 
+internal fun needsBibliographicVerification(userText: String): Boolean {
+    val normalized = userText.lowercase()
+    return BIBLIOGRAPHIC_QUERY_MARKERS.any(normalized::contains)
+}
+
 private const val MAX_LIBRARY_CONTEXT_CHARS = 12_000
 private const val MAX_CONVERSATION_MESSAGES = 12
+private val BIBLIOGRAPHIC_QUERY_MARKERS = listOf(
+    "сколько книг", "серия", "серии", "цикле", "цикл", "порядке",
+    "порядок", "том", "книг", "скач", "найди", "автор"
+)

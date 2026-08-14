@@ -2,6 +2,8 @@ package com.lumina.reader.ui.navigation
 
 import android.app.Application
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -102,11 +104,11 @@ fun LuminaNavGraph(
             val libraryViewModel: LibraryViewModel = viewModel(parentEntry)
             val statsViewModel: com.lumina.reader.ui.stats.StatsViewModel = viewModel()
 
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                val libraryBooks = libraryViewModel.books.value
+            val libraryBooks by libraryViewModel.books.collectAsState()
+            val stats by statsViewModel.uiState.collectAsState()
+
+            androidx.compose.runtime.LaunchedEffect(libraryBooks, stats) {
                 val libraryContext = libraryBooks.joinToString("\n") { "- ${it.title} (${it.author}) [Коллекция: ${it.collection}, Серия: ${it.seriesName}]" }
-                
-                val stats = statsViewModel.uiState.value
                 val statsContext = """
                     Прочитано слов: ${stats.allTime.wordsRead}
                     Прочитано страниц: ${stats.allTime.estimatedPages}

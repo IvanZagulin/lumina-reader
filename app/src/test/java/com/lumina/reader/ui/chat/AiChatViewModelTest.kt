@@ -18,4 +18,11 @@ class AiChatViewModelTest {
         assertEquals("message 3", request[1].content)
         assertEquals("message 14", request.last().content)
     }
+
+    @Test
+    fun `uses web verification for book and series requests`() {
+        assertEquals(true, needsBibliographicVerification("Сколько книг в этой серии?"))
+        assertEquals(true, needsBibliographicVerification("Скачай все тома по порядку"))
+        assertEquals(false, needsBibliographicVerification("Привет, как дела?"))
+    }
 }
