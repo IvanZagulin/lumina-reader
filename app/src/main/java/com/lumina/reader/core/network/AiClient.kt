@@ -19,7 +19,13 @@ data class AiRequest(
     @SerializedName("model") val model: String,
     @SerializedName("messages") val messages: List<AiMessage>,
     @SerializedName("max_tokens") val maxTokens: Int = 1_000,
-    @SerializedName("temperature") val temperature: Float = 0.2f
+    @SerializedName("temperature") val temperature: Float = 0.2f,
+    @SerializedName("plugins") val plugins: List<AiPlugin>? = null
+)
+
+data class AiPlugin(
+    @SerializedName("id") val id: String,
+    @SerializedName("max_results") val maxResults: Int? = null
 )
 
 data class AiChoice(
@@ -57,10 +63,17 @@ class AiClient {
 
     private val api = retrofit.create(AiApi::class.java)
 
-    suspend fun askAssistant(messages: List<AiMessage>): AiMessage {
+    suspend fun askAssistant(
+        messages: List<AiMessage>,
+        verifyBibliographicFacts: Boolean = false
+    ): AiMessage {
         val request = AiRequest(
             model = "qwen/qwen-2.5-72b-instruct",
-            messages = messages
+            messages = messages,
+            // A language model must not rely on its internal memory for book
+            // titles, order, or series size. RouterAI's web plugin supplies
+            // current sources for those requests.
+            plugins = if (verifyBibliographicFacts) listOf(AiPlugin("web", maxResults = 5)) else null
         )
         try {
             var lastProblem = "Сервис не вернул текст ответа"
