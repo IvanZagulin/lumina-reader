@@ -8,6 +8,7 @@ import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 
 data class AiMessage(
     @SerializedName("role") val role: String,
@@ -16,15 +17,24 @@ data class AiMessage(
 
 data class AiRequest(
     @SerializedName("model") val model: String,
-    @SerializedName("messages") val messages: List<AiMessage>
+    @SerializedName("messages") val messages: List<AiMessage>,
+    @SerializedName("max_tokens") val maxTokens: Int = 1_000,
+    @SerializedName("temperature") val temperature: Float = 0.2f
 )
 
 data class AiChoice(
-    @SerializedName("message") val message: AiMessage
+    @SerializedName("message") val message: AiMessage? = null
 )
 
 data class AiResponse(
-    @SerializedName("choices") val choices: List<AiChoice>?
+    @SerializedName("choices") val choices: List<AiChoice>?,
+    @SerializedName("error") val error: AiError? = null
+)
+
+data class AiError(
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("code") val code: String? = null
 )
 
 interface AiApi {
@@ -49,16 +59,32 @@ class AiClient {
 
     suspend fun askAssistant(messages: List<AiMessage>): AiMessage {
         val request = AiRequest(
-            model = "qwen/qwen-2.5-72b-instruct", // Fast and cheap Qwen model
+            model = "qwen/qwen-2.5-72b-instruct",
             messages = messages
         )
         try {
-            val response = api.getCompletion(request)
-            return response.choices?.firstOrNull()?.message 
-                ?: throw Exception("API вернуло пустой ответ. Возможно, запрос слишком большой или сервер перегружен.")
+            var lastProblem = "Сервис не вернул текст ответа"
+            repeat(MAX_EMPTY_RESPONSE_ATTEMPTS) { attempt ->
+                val response = api.getCompletion(request)
+                val message = response.choices
+                    ?.asSequence()
+                    ?.mapNotNull(AiChoice::message)
+                    ?.firstOrNull { it.content.isNotBlank() }
+                if (message != null) return message
+
+                lastProblem = response.error?.message
+                    ?.takeIf(String::isNotBlank)
+                    ?: lastProblem
+                if (attempt < MAX_EMPTY_RESPONSE_ATTEMPTS - 1) delay(750)
+            }
+            throw Exception("ИИ-сервис не дал ответа: $lastProblem. Попробуйте ещё раз.")
         } catch (e: retrofit2.HttpException) {
             val errorBody = e.response()?.errorBody()?.string() ?: "Неизвестная ошибка"
             throw Exception("Ошибка API (${e.code()}): $errorBody")
         }
+    }
+
+    private companion object {
+        const val MAX_EMPTY_RESPONSE_ATTEMPTS = 2
     }
 }

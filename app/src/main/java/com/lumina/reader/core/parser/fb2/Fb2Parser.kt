@@ -193,7 +193,7 @@ class Fb2Parser : BookParser {
                                 val id = href.removePrefix("#")
                                 if (inCoverpage) {
                                     coverImageId = id
-                                } else if (inSection || inBody) {
+                                } else if (inBody) {
                                     currentChapterParagraphs.add("[IMG:$id]")
                                     Log.d("Fb2Parser", "Added IMG paragraph: [IMG:$id]")
                                 }
@@ -211,7 +211,7 @@ class Fb2Parser : BookParser {
                             }
                         }
                         "title" -> {
-                            if (inSection) {
+                            if (inBody && inSection) {
                                 if (currentChapterParagraphs.isNotEmpty()) {
                                     flushChapter()
                                 }
@@ -224,7 +224,7 @@ class Fb2Parser : BookParser {
                                 annotation += (if (annotation.isNotEmpty()) "\n" else "") + text
                             } else if (inTitle) {
                                 currentChapterTitle = if (currentChapterTitle.isNotEmpty()) "$currentChapterTitle - $text" else text
-                            } else if (inSection || inBody) {
+                            } else if (inBody) {
                                 if (text.isNotEmpty()) {
                                     val parts = text.split("\n")
                                     for (part in parts) {
@@ -236,7 +236,7 @@ class Fb2Parser : BookParser {
                             }
                         }
                         "empty-line" -> {
-                            if (inSection || inBody) {
+                            if (inBody) {
                                 currentChapterParagraphs.add("")
                             }
                         }
@@ -264,8 +264,16 @@ class Fb2Parser : BookParser {
                             // Do nothing, let chapters continue unless a new title appears or body ends
                         }
                         "body" -> {
-                            flushChapter()
+                            if (inBody) {
+                                flushChapter()
+                            }
                             inBody = false
+                            // A FictionBook can have a separate <body name="notes">
+                            // after the main text. Never let the last section from
+                            // the main body leak into it, otherwise each footnote is
+                            // parsed as another chapter.
+                            inSection = false
+                            inTitle = false
                         }
                         "binary" -> {
                             if (inCoverBinary) {
