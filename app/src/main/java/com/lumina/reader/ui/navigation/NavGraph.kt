@@ -167,26 +167,17 @@ fun LuminaNavGraph(
                         }
 
                         val library = libraryViewModel.books.value
-                        var organizedCount = 0
-                        books.forEachIndexed { index, bookTitle ->
-                            val matchedBook = library.firstOrNull {
+                        val orderedBooks = books.mapNotNull { bookTitle ->
+                            library.firstOrNull {
                                 it.title.contains(bookTitle, ignoreCase = true)
                             }
-                            if (matchedBook != null) {
-                                libraryViewModel.updateBookOrganization(
-                                    book = matchedBook,
-                                    collection = matchedBook.collection,
-                                    seriesName = seriesName,
-                                    seriesOrder = index + 1
-                                )
-                                organizedCount++
-                            }
                         }
+                        libraryViewModel.organizeSeries(seriesName, orderedBooks)
                         aiChatViewModel.reportExecutionResult(
-                            if (organizedCount == books.size) {
-                                "Серия «$seriesName» собрана: $organizedCount книг расставлены по порядку."
+                            if (orderedBooks.size == books.size) {
+                                "Серия «$seriesName» собрана: ${orderedBooks.size} книг расставлены по порядку."
                             } else {
-                                "В серию «$seriesName» добавлено $organizedCount из ${books.size} книг. Остальные не удалось найти в библиотеке."
+                                "В серию «$seriesName» добавлено ${orderedBooks.size} из ${books.size} книг. Остальные не удалось найти в библиотеке."
                             }
                         )
                     }
