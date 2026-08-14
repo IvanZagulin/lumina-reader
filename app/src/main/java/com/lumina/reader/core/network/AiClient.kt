@@ -24,7 +24,7 @@ data class AiChoice(
 )
 
 data class AiResponse(
-    @SerializedName("choices") val choices: List<AiChoice>
+    @SerializedName("choices") val choices: List<AiChoice>?
 )
 
 interface AiApi {
@@ -52,7 +52,13 @@ class AiClient {
             model = "qwen/qwen-2.5-72b-instruct", // Fast and cheap Qwen model
             messages = messages
         )
-        val response = api.getCompletion(request)
-        return response.choices.first().message
+        try {
+            val response = api.getCompletion(request)
+            return response.choices?.firstOrNull()?.message 
+                ?: throw Exception("API вернуло пустой ответ. Возможно, запрос слишком большой или сервер перегружен.")
+        } catch (e: retrofit2.HttpException) {
+            val errorBody = e.response()?.errorBody()?.string() ?: "Неизвестная ошибка"
+            throw Exception("Ошибка API (${e.code()}): $errorBody")
+        }
     }
 }
