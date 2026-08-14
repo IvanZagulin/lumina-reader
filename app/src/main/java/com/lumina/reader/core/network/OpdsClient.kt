@@ -23,7 +23,8 @@ class OpdsClient {
         .build()
 
     suspend fun searchBooks(query: String): List<OpdsBook> = withContext(Dispatchers.IO) {
-        val url = "https://flibusta.is/opds/search?searchTerm=${query.replace(" ", "%20")}"
+        val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+        val url = "https://flibusta.is/opds/search?searchType=books&searchTerm=$encodedQuery"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
 

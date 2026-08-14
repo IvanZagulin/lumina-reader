@@ -207,13 +207,17 @@ class Fb2Parser : BookParser {
                         }
                         "section" -> {
                             if (inBody) {
-                                if (inSection && currentChapterParagraphs.isNotEmpty()) {
-                                    flushChapter()
-                                }
                                 inSection = true
                             }
                         }
-                        "title" -> if (inSection) inTitle = true
+                        "title" -> {
+                            if (inSection) {
+                                if (currentChapterParagraphs.isNotEmpty()) {
+                                    flushChapter()
+                                }
+                                inTitle = true
+                            }
+                        }
                         "p" -> {
                             val text = readText(parser).trim()
                             if (inAnnotation) {
@@ -227,9 +231,6 @@ class Fb2Parser : BookParser {
                                         if (part.isNotBlank()) {
                                             currentChapterParagraphs.add(part.trim())
                                         }
-                                    }
-                                    if (currentChapterParagraphs.size >= 80) {
-                                        flushChapter()
                                     }
                                 }
                             }
@@ -260,9 +261,7 @@ class Fb2Parser : BookParser {
                         "coverpage" -> inCoverpage = false
                         "title" -> inTitle = false
                         "section" -> {
-                            if (inBody && currentChapterParagraphs.size > 20) {
-                                flushChapter()
-                            }
+                            // Do nothing, let chapters continue unless a new title appears or body ends
                         }
                         "body" -> {
                             flushChapter()

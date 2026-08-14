@@ -49,7 +49,7 @@ class AiClient {
 
     suspend fun askAssistant(messages: List<AiMessage>): AiMessage {
         val request = AiRequest(
-            model = "gpt-4o-mini", // Using a default fast model
+            model = "qwen/qwen-2.5-72b-instruct", // Fast and cheap Qwen model
             messages = messages
         )
         val response = api.getCompletion(request)

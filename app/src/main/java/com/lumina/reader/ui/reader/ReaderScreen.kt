@@ -112,12 +112,12 @@ fun ReaderScreen(
     }
 
     Scaffold(
-        containerColor = settings.theme.bgComposeColor
+        containerColor = settings.theme.bgComposeColor,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
         ) {
             if (isLoading) {
                 Box(
@@ -204,32 +204,6 @@ fun ReaderScreen(
                             )
                         }
 
-                        // Bookmark button
-                        val isBookmarked = bookmarks.any { it.chapterIndex == currentChapterIndex }
-                        IconButton(
-                            onClick = {
-                                viewModel.addBookmark()
-                                Toast.makeText(context, "Закладка сохранена", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                contentDescription = "Закладка",
-                                tint = if (isBookmarked) MaterialTheme.colorScheme.primary else settings.theme.textComposeColor
-                            )
-                        }
-
-                        // TTS button
-                        IconButton(onClick = { viewModel.toggleTts() }) {
-                            Icon(
-                                imageVector = when (ttsState) {
-                                    TtsState.PLAYING -> Icons.Default.Pause
-                                    else -> Icons.Default.VolumeUp
-                                },
-                                contentDescription = "Озвучить главу",
-                                tint = if (ttsState == TtsState.PLAYING) MaterialTheme.colorScheme.primary else settings.theme.textComposeColor
-                            )
-                        }
                     }
                 }
             }
@@ -253,51 +227,6 @@ fun ReaderScreen(
                             .navigationBarsPadding()
                             .padding(16.dp)
                     ) {
-                        val totalChapters = (parsedBook?.chapters?.size ?: 1).coerceAtLeast(1)
-
-                        // Slider & Chapter Navigation
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            IconButton(
-                                onClick = { viewModel.previousChapter() },
-                                enabled = currentChapterIndex > 0
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SkipPrevious,
-                                    contentDescription = "Предыдущая глава",
-                                    tint = if (currentChapterIndex > 0) settings.theme.textComposeColor else settings.theme.secondaryTextComposeColor
-                                )
-                            }
-
-                            Slider(
-                                value = currentChapterIndex.toFloat(),
-                                onValueChange = { viewModel.goToChapter(it.toInt()) },
-                                valueRange = 0f..(totalChapters - 1).toFloat(),
-                                steps = (totalChapters - 2).coerceAtLeast(0),
-                                modifier = Modifier.weight(1f),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    inactiveTrackColor = settings.theme.secondaryTextComposeColor.copy(alpha = 0.3f)
-                                )
-                            )
-
-                            IconButton(
-                                onClick = { viewModel.nextChapter() },
-                                enabled = currentChapterIndex < totalChapters - 1
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SkipNext,
-                                    contentDescription = "Следующая глава",
-                                    tint = if (currentChapterIndex < totalChapters - 1) settings.theme.textComposeColor else settings.theme.secondaryTextComposeColor
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
                         // Action Buttons (Table of Contents & Settings)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
