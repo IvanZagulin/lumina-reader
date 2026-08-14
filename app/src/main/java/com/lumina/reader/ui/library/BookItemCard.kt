@@ -348,6 +348,11 @@ fun BookItemCard(
 
 @Composable
 private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
+    if (direction == SwipeToDismissBoxValue.Settled) {
+        Box(modifier = Modifier.fillMaxSize())
+        return
+    }
+
     val isMove = direction == SwipeToDismissBoxValue.StartToEnd
     val color = when (direction) {
         SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer

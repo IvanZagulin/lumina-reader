@@ -22,9 +22,9 @@ class OpdsClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    suspend fun searchBooks(query: String): List<OpdsBook> = withContext(Dispatchers.IO) {
+    suspend fun searchBooks(query: String, searchType: String = "books"): List<OpdsBook> = withContext(Dispatchers.IO) {
         val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-        val url = "https://flibusta.site/opds/search?searchType=books&searchTerm=$encodedQuery"
+        val url = "https://flibusta.site/opds/search?searchType=$searchType&searchTerm=$encodedQuery"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
 

@@ -1,6 +1,8 @@
 package com.lumina.reader
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,12 +21,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.navigation.LuminaNavGraph
+import com.lumina.reader.core.reminder.ReadingReminderScheduler
 import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
 import com.lumina.reader.ui.theme.LuminaReaderTheme
@@ -39,6 +43,10 @@ class MainActivity : ComponentActivity() {
     private val libraryViewModel: LibraryViewModel by viewModels()
     private val updateViewModel: AppUpdateViewModel by viewModels()
     private var pendingUpdateApk: File? = null
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     private val unknownSourcesLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -56,6 +64,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        ReadingReminderScheduler.schedule(this)
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         handleIncomingIntent(intent)
 

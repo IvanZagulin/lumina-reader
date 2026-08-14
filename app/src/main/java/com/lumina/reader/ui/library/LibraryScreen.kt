@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -26,7 +27,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Book
-import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReadingStatus
 import kotlinx.coroutines.flow.collectLatest
 
@@ -43,7 +43,6 @@ fun LibraryScreen(
 ) {
     val books by viewModel.books.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedFormat by viewModel.selectedFormat.collectAsState()
     val selectedStatus by viewModel.selectedStatus.collectAsState()
     val selectedCollection by viewModel.selectedCollection.collectAsState()
     val selectedSeries by viewModel.selectedSeries.collectAsState()
@@ -70,6 +69,7 @@ fun LibraryScreen(
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToEditOrganization by remember { mutableStateOf<Book?>(null) }
     var bookToMoveToCollection by remember { mutableStateOf<Book?>(null) }
+    val expandedShelves = remember { mutableStateMapOf<String, Boolean>() }
     var newCollectionName by remember { mutableStateOf("") }
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
 
@@ -287,50 +287,6 @@ fun LibraryScreen(
                 }
             }
 
-            // Format Filter Chips (EPUB, FB2, PDF, TXT)
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = selectedFormat == null,
-                        onClick = { viewModel.onFormatSelected(null) },
-                        label = { Text("Все форматы") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedFormat == BookFormat.EPUB,
-                        onClick = { viewModel.onFormatSelected(BookFormat.EPUB) },
-                        label = { Text("EPUB") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedFormat == BookFormat.FB2 || selectedFormat == BookFormat.FB2_ZIP,
-                        onClick = { viewModel.onFormatSelected(BookFormat.FB2) },
-                        label = { Text("FB2") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedFormat == BookFormat.PDF,
-                        onClick = { viewModel.onFormatSelected(BookFormat.PDF) },
-                        label = { Text("PDF") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedFormat == BookFormat.TXT,
-                        onClick = { viewModel.onFormatSelected(BookFormat.TXT) },
-                        label = { Text("TXT") }
-                    )
-                }
-            }
-
             if (isLoading) {
                 Box(
                     modifier = Modifier
@@ -386,7 +342,7 @@ fun LibraryScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp)
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 128.dp)
                 ) {
                     if (
                         selectedStatus == ReadingStatus.COLLECTIONS &&
@@ -413,52 +369,64 @@ fun LibraryScreen(
 
                         seriesShelves.forEach { seriesBooks ->
                             val seriesName = normalizeShelfName(seriesBooks.first().seriesName)
+                            val shelfKey = "series:$seriesName"
+                            val expanded = expandedShelves[shelfKey] == true
                             item(key = "series_header_$seriesName") {
                                 LibraryShelfHeader(
                                     title = seriesName,
                                     bookCount = seriesBooks.size,
-                                    isSeries = true
+                                    isSeries = true,
+                                    expanded = expanded,
+                                    onToggle = { expandedShelves[shelfKey] = !expanded }
                                 )
                             }
-                            items(
-                                items = seriesBooks.sortedForSeries(),
-                                key = { "series_${seriesName}_${it.id}" }
-                            ) { book ->
-                                BookItemCard(
-                                    book = book,
-                                    onClick = { onBookClick(book.id) },
-                                    onDelete = { bookToDelete = book },
-                                    onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                    onToggleCompleted = { viewModel.toggleCompleted(book) },
-                                    onMoveToCollection = { bookToMoveToCollection = book },
-                                    onEditOrganization = { bookToEditOrganization = book }
-                                )
+                            if (expanded) {
+                                items(
+                                    items = seriesBooks.sortedForSeries(),
+                                    key = { "series_${seriesName}_${it.id}" }
+                                ) { book ->
+                                    BookItemCard(
+                                        book = book,
+                                        onClick = { onBookClick(book.id) },
+                                        onDelete = { bookToDelete = book },
+                                        onToggleFavorite = { viewModel.toggleFavorite(book) },
+                                        onToggleCompleted = { viewModel.toggleCompleted(book) },
+                                        onMoveToCollection = { bookToMoveToCollection = book },
+                                        onEditOrganization = { bookToEditOrganization = book }
+                                    )
+                                }
                             }
                         }
 
                         regularShelves.forEach { collectionBooks ->
                             val collectionName = normalizeShelfName(collectionBooks.first().collection)
                                 .ifBlank { "Основная" }
+                            val shelfKey = "collection:$collectionName"
+                            val expanded = expandedShelves[shelfKey] == true
                             item(key = "collection_header_$collectionName") {
                                 LibraryShelfHeader(
                                     title = collectionName,
                                     bookCount = collectionBooks.size,
-                                    isSeries = false
+                                    isSeries = false,
+                                    expanded = expanded,
+                                    onToggle = { expandedShelves[shelfKey] = !expanded }
                                 )
                             }
-                            items(
-                                items = collectionBooks.sortedByDescending { it.lastReadTimestamp },
-                                key = { "collection_${collectionName}_${it.id}" }
-                            ) { book ->
-                                BookItemCard(
-                                    book = book,
-                                    onClick = { onBookClick(book.id) },
-                                    onDelete = { bookToDelete = book },
-                                    onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                    onToggleCompleted = { viewModel.toggleCompleted(book) },
-                                    onMoveToCollection = { bookToMoveToCollection = book },
-                                    onEditOrganization = { bookToEditOrganization = book }
-                                )
+                            if (expanded) {
+                                items(
+                                    items = collectionBooks.sortedByDescending { it.lastReadTimestamp },
+                                    key = { "collection_${collectionName}_${it.id}" }
+                                ) { book ->
+                                    BookItemCard(
+                                        book = book,
+                                        onClick = { onBookClick(book.id) },
+                                        onDelete = { bookToDelete = book },
+                                        onToggleFavorite = { viewModel.toggleFavorite(book) },
+                                        onToggleCompleted = { viewModel.toggleCompleted(book) },
+                                        onMoveToCollection = { bookToMoveToCollection = book },
+                                        onEditOrganization = { bookToEditOrganization = book }
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -523,16 +491,23 @@ fun LibraryScreen(
         )
     }
 
-    // Right-swipe shortcut: move to exactly one regular shelf and detach from
-    // any series, so the book cannot be shown in two places at once.
+    // Right-swipe shortcut: choose a shelf and, when needed, the series and
+    // exact position inside it.
     bookToMoveToCollection?.let { book ->
         var selectedCollectionName by remember(book.id) { mutableStateOf(book.collection) }
+        var selectedSeriesName by remember(book.id) { mutableStateOf(book.seriesName) }
+        var seriesOrderText by remember(book.id) {
+            mutableStateOf(book.seriesOrder.takeIf { it > 0 }?.toString().orEmpty())
+        }
         AlertDialog(
             onDismissRequest = { bookToMoveToCollection = null },
             icon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
-            title = { Text("Перенести на полку") },
+            title = { Text("Перенести книгу") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text(
                         "Книга будет показана только на выбранной полке.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -553,6 +528,45 @@ fun LibraryScreen(
                             )
                         }
                     }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        "Группа / серия (необязательно)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = selectedSeriesName,
+                        onValueChange = {
+                            selectedSeriesName = it
+                            if (it.isBlank()) seriesOrderText = ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Название группы") },
+                        placeholder = { Text("Например, Дом странных детей") },
+                        singleLine = true
+                    )
+                    if (seriesNames.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(seriesNames, key = { it.lowercase() }) { series ->
+                                SuggestionChip(
+                                    onClick = { selectedSeriesName = series },
+                                    label = { Text(series, maxLines = 1) }
+                                )
+                            }
+                        }
+                    }
+                    if (selectedSeriesName.isNotBlank()) {
+                        OutlinedTextField(
+                            value = seriesOrderText,
+                            onValueChange = { seriesOrderText = it.filter(Char::isDigit).take(6) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Номер книги в группе") },
+                            placeholder = { Text("1, 2, 3…") },
+                            supportingText = { Text("Нужен для правильного порядка серии") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -562,8 +576,8 @@ fun LibraryScreen(
                         viewModel.updateBookOrganization(
                             book = book,
                             collection = selectedCollectionName,
-                            seriesName = "",
-                            seriesOrder = 0
+                            seriesName = selectedSeriesName,
+                            seriesOrder = seriesOrderText.toIntOrNull() ?: 0
                         )
                         bookToMoveToCollection = null
                     }
@@ -750,14 +764,17 @@ fun LibraryScreen(
 private fun LibraryShelfHeader(
     title: String,
     bookCount: Int,
-    isSeries: Boolean
+    isSeries: Boolean,
+    expanded: Boolean = true,
+    onToggle: (() -> Unit)? = null
 ) {
     val accent = if (isSeries) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 2.dp),
+            .padding(top = 10.dp, bottom = 2.dp)
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier),
         shape = RoundedCornerShape(16.dp),
         color = accent.copy(alpha = 0.10f),
         tonalElevation = 2.dp
@@ -812,6 +829,14 @@ private fun LibraryShelfHeader(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = accent
+                    )
+                }
+                if (onToggle != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                        tint = accent
                     )
                 }
             }

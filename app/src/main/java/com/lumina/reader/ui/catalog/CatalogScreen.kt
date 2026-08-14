@@ -20,16 +20,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.BookFormat
+import com.lumina.reader.core.network.OpdsBook
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogScreen(
     viewModel: CatalogViewModel,
     onBack: () -> Unit,
-    onDownloadBook: (url: String, format: BookFormat, title: String) -> Unit
+    onDownloadBook: (url: String, format: BookFormat, title: String) -> Unit,
+    onDownloadAllBooks: (List<OpdsBook>) -> Unit
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val books by viewModel.books.collectAsState()
+    val searchScope by viewModel.searchScope.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
@@ -64,6 +67,33 @@ fun CatalogScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp)
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CatalogSearchScope.entries.forEach { scope ->
+                    FilterChip(
+                        selected = searchScope == scope,
+                        onClick = { viewModel.onSearchScopeSelected(scope) },
+                        label = { Text(scope.title) }
+                    )
+                }
+            }
+
+            if (searchScope == CatalogSearchScope.SERIES && books.isNotEmpty()) {
+                Button(
+                    onClick = { onDownloadAllBooks(books) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Скачать все найденные книги")
+                }
+            }
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {

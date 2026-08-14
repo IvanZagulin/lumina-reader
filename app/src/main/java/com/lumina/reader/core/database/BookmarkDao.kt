@@ -44,6 +44,9 @@ interface ReadingStatsDao {
     @Query("SELECT SUM(wordsReadCount) FROM reading_stats")
     suspend fun getTotalWordsRead(): Long?
 
+    @Query("SELECT COUNT(*) FROM reading_stats WHERE timestamp >= :startOfDayMillis")
+    suspend fun countSessionsSince(startOfDayMillis: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStats(stats: ReadingStats)
 }
