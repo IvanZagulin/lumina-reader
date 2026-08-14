@@ -30,25 +30,39 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Support opening EPUB, FB2, TXT directly from file managers / messengers -->
+            <!-- 1. Match by exact MIME type (e.g., from Telegram or downloads, where path might not end with .fb2) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="file" />
                 <data android:scheme="content" />
+                <data android:scheme="file" />
                 <data android:mimeType="application/epub+zip" />
                 <data android:mimeType="application/x-fictionbook+xml" />
                 <data android:mimeType="application/x-fictionbook" />
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- 2. Match by file extension (when MIME type is generic like application/octet-stream or */*) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
                 <data android:mimeType="*/*" />
                 <data android:host="*" />
                 <data android:pathPattern=".*\\.epub" />
+                <data android:pathPattern=".*\\..*\\.epub" />
                 <data android:pathPattern=".*\\.fb2" />
+                <data android:pathPattern=".*\\..*\\.fb2" />
                 <data android:pathPattern=".*\\.fb2\\.zip" />
+                <data android:pathPattern=".*\\..*\\.fb2\\.zip" />
                 <data android:pathPattern=".*\\.pdf" />
+                <data android:pathPattern=".*\\..*\\.pdf" />
                 <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\..*\\.txt" />
             </intent-filter>
         </activity>
 

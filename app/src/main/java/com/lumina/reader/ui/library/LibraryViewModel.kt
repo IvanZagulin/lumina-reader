@@ -285,6 +285,60 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun downloadAndImportBook(url: String, format: BookFormat, title: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            withContext(Dispatchers.IO) {
+                try {
+                    val client = com.lumina.reader.core.network.OpdsClient()
+                    val bytes = client.downloadBook(url)
+                    
+                    val context = getApplication<Application>()
+                    val fileName = "book_${System.currentTimeMillis()}.${format.name.lowercase()}"
+                    val booksDir = File(context.filesDir, "books").apply { mkdirs() }
+                    val destFile = File(booksDir, fileName)
+                    
+                    FileOutputStream(destFile).use { output ->
+                        output.write(bytes)
+                    }
+
+                    val parser = BookParserFactory.getParser(format)
+                    val parsed = parser.parse(destFile)
+                    com.lumina.reader.core.repository.BookCacheRepository.put(destFile.absolutePath, parsed)
+
+                    var coverPath: String? = null
+                    if (parsed.coverBytes != null && parsed.coverBytes.isNotEmpty()) {
+                        val coversDir = File(context.filesDir, "covers").apply { mkdirs() }
+                        val coverFile = File(coversDir, "cover_${System.currentTimeMillis()}.jpg")
+                        coverFile.writeBytes(parsed.coverBytes)
+                        coverPath = coverFile.absolutePath
+                    }
+
+                    val book = Book(
+                        title = parsed.title.ifBlank { title },
+                        author = parsed.author,
+                        filePath = destFile.absolutePath,
+                        coverPath = coverPath,
+                        format = format,
+                        totalChapters = parsed.chapters.size,
+                        fileSizeBytes = destFile.length(),
+                        description = parsed.description,
+                        seriesName = normalizeShelfName(parsed.seriesName),
+                        seriesOrder = parsed.seriesOrder.coerceAtLeast(0)
+                    )
+
+                    bookDao.insertBook(book)
+                    _userMessage.emit("Книга «${book.title}» успешно скачана и добавлена!")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    _userMessage.emit("Ошибка при скачивании: ${e.localizedMessage}")
+                } finally {
+                    _isLoading.value = false
+                }
+            }
+        }
+    }
+
     fun deleteBook(book: Book) {
         viewModelScope.launch(Dispatchers.IO) {
             try {

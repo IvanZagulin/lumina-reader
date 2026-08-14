@@ -36,6 +36,8 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Long) -> Unit,
     onStatsClick: () -> Unit,
+    onCatalogClick: () -> Unit,
+    onAiChatClick: () -> Unit,
     onCheckForUpdates: () -> Unit = {},
     isCheckingForUpdates: Boolean = false
 ) {
@@ -107,6 +109,20 @@ fun LibraryScreen(
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
+                    }
+                    IconButton(onClick = onCatalogClick) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Каталог OPDS",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    IconButton(onClick = onAiChatClick) {
+                        Icon(
+                            imageVector = Icons.Default.SmartToy,
+                            contentDescription = "ИИ Чат",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                     IconButton(onClick = onStatsClick) {
                         Icon(

@@ -52,11 +52,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "21"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -100,6 +100,11 @@ dependencies {
 
     // Gson
     implementation(libs.gson)
+
+    // Network
+    implementation(libs.okhttp)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
 
     // Debug & Test
     debugImplementation(libs.androidx.ui.tooling)

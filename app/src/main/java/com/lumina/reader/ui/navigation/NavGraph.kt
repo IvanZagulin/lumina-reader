@@ -41,6 +41,12 @@ fun LuminaNavGraph(
                 onStatsClick = {
                     navController.navigate(Screen.Stats.route)
                 },
+                onCatalogClick = {
+                    navController.navigate(Screen.Catalog.route)
+                },
+                onAiChatClick = {
+                    navController.navigate(Screen.AiChat.route)
+                },
                 onCheckForUpdates = onCheckForUpdates,
                 isCheckingForUpdates = isCheckingForUpdates
             )
@@ -66,6 +72,69 @@ fun LuminaNavGraph(
             StatsScreen(
                 viewModel = statsViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.Catalog.route) { backStackEntry ->
+            val catalogViewModel: com.lumina.reader.ui.catalog.CatalogViewModel = viewModel()
+            val parentEntry = androidx.compose.runtime.remember(backStackEntry) {
+                navController.getBackStackEntry(Screen.Library.route)
+            }
+            val libraryViewModel: LibraryViewModel = viewModel(parentEntry)
+            
+            com.lumina.reader.ui.catalog.CatalogScreen(
+                viewModel = catalogViewModel,
+                onBack = { navController.popBackStack() },
+                onDownloadBook = { url, format, title ->
+                    libraryViewModel.downloadAndImportBook(url, format, title)
+                }
+            )
+        }
+
+        composable(Screen.AiChat.route) { backStackEntry ->
+            val aiChatViewModel: com.lumina.reader.ui.chat.AiChatViewModel = viewModel()
+            val parentEntry = androidx.compose.runtime.remember(backStackEntry) {
+                navController.getBackStackEntry(Screen.Library.route)
+            }
+            val libraryViewModel: LibraryViewModel = viewModel(parentEntry)
+            val catalogViewModel: com.lumina.reader.ui.catalog.CatalogViewModel = viewModel()
+            
+            // To support OPDS search from AI
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                catalogViewModel.books.collect { books ->
+                    // Find first epub or fb2, prioritize fb2
+                    val book = books.firstOrNull { it.downloadUrlFb2 != null || it.downloadUrlEpub != null }
+                    if (book != null) {
+                        val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2 else com.lumina.reader.core.model.BookFormat.EPUB
+                        val url = book.downloadUrlFb2 ?: book.downloadUrlEpub!!
+                        libraryViewModel.downloadAndImportBook(url, format, book.title)
+                    }
+                }
+            }
+
+            com.lumina.reader.ui.chat.AiChatScreen(
+                viewModel = aiChatViewModel,
+                onBack = { navController.popBackStack() },
+                onDownloadAction = { query ->
+                    catalogViewModel.onSearchQueryChanged(query)
+                    catalogViewModel.search()
+                },
+                onOrganizeAction = { seriesName, books ->
+                    // Very simple naive matching
+                    books.forEach { bookTitle ->
+                        val matchedBook = libraryViewModel.books.value.firstOrNull { 
+                            it.title.contains(bookTitle, ignoreCase = true) 
+                        }
+                        if (matchedBook != null) {
+                            libraryViewModel.updateBookOrganization(
+                                book = matchedBook,
+                                collection = matchedBook.collection,
+                                seriesName = seriesName,
+                                seriesOrder = 0
+                            )
+                        }
+                    }
+                }
             )
         }
     }
