@@ -33,6 +33,17 @@ internal val seriesBookComparator: Comparator<Book> = compareBy<Book>(
 
 internal fun List<Book>.sortedForSeries(): List<Book> = sortedWith(seriesBookComparator)
 
+/** Keeps every numbered series readable even on the main "All books" screen. */
+internal fun List<Book>.sortedForLibrary(): List<Book> = sortedWith(
+    compareBy<Book>(
+        { it.seriesName.isBlank() },
+        { it.seriesName.lowercase() },
+        { if (it.seriesOrder > 0) 0 else 1 },
+        { if (it.seriesOrder > 0) it.seriesOrder else Int.MAX_VALUE },
+        { it.title.lowercase() }
+    )
+)
+
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
@@ -88,10 +99,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         // 1. Filter by Status / Tabs
         filtered = when (status) {
-            ReadingStatus.ALL -> filtered
-            ReadingStatus.READING -> filtered.filter { it.currentProgressPercent > 0f && !it.isCompleted }
-            ReadingStatus.FAVORITES -> filtered.filter { it.isFavorite }
-            ReadingStatus.COMPLETED -> filtered.filter { it.isCompleted || it.currentProgressPercent >= 99f }
+            ReadingStatus.ALL -> filtered.sortedForLibrary()
+            ReadingStatus.READING -> filtered
+                .filter { it.currentProgressPercent > 0f && !it.isCompleted }
+                .sortedForLibrary()
+            ReadingStatus.FAVORITES -> filtered.filter { it.isFavorite }.sortedForLibrary()
+            ReadingStatus.COMPLETED -> filtered
+                .filter { it.isCompleted || it.currentProgressPercent >= 99f }
+                .sortedForLibrary()
             ReadingStatus.COLLECTIONS -> {
                 when {
                     shelf.seriesName != null -> filtered
@@ -342,7 +357,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     val context = getApplication<Application>()
-                    val fileName = "book_${System.currentTimeMillis()}.${finalFormat.name.lowercase()}"
+                    val fileName = "book_${System.currentTimeMillis()}_${java.util.UUID.randomUUID()}.${finalFormat.name.lowercase()}"
                     val booksDir = File(context.filesDir, "books").apply { mkdirs() }
                     val destFile = File(booksDir, fileName)
                     

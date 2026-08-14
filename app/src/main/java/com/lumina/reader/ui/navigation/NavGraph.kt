@@ -93,6 +93,17 @@ fun LuminaNavGraph(
                 onBack = { navController.popBackStack() },
                 onDownloadBook = { url, format, title ->
                     libraryViewModel.downloadAndImportBook(url, format, title)
+                },
+                onDownloadAllBooks = { books ->
+                    books.forEach { book ->
+                        val url = book.downloadUrlFb2 ?: book.downloadUrlEpub ?: return@forEach
+                        val format = if (book.downloadUrlFb2 != null) {
+                            com.lumina.reader.core.model.BookFormat.FB2_ZIP
+                        } else {
+                            com.lumina.reader.core.model.BookFormat.EPUB
+                        }
+                        libraryViewModel.downloadAndImportBook(url, format, book.title)
+                    }
                 }
             )
         }

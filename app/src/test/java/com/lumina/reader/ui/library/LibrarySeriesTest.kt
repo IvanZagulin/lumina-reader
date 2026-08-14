@@ -39,6 +39,20 @@ class LibrarySeriesTest {
         )
     }
 
+    @Test
+    fun sortsSeriesInNumberOrderOnTheMainLibraryScreen() {
+        val books = listOf(
+            book(title = "Том 2", order = 2),
+            book(title = "Одиночная", order = 0).copy(seriesName = ""),
+            book(title = "Том 1", order = 1)
+        )
+
+        assertEquals(
+            listOf("Том 1", "Том 2", "Одиночная"),
+            books.sortedForLibrary().map(Book::title)
+        )
+    }
+
     private fun book(title: String, order: Int) = Book(
         title = title,
         filePath = "$title.fb2",

@@ -43,6 +43,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -156,6 +157,8 @@ fun StatsScreen(
                         readingRhythm = state.readingRhythm
                     )
                 }
+
+                item { AchievementCard(state) }
 
                 item { SectionTitle("Последние 7 дней", Icons.Default.BarChart) }
 
@@ -491,6 +494,43 @@ private fun EmptyStatsCard() {
                     text = "Здесь появятся время, серии чтения и любимые книги.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AchievementCard(state: ReadingStatsUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = StatsPurple.copy(alpha = 0.12f))
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = CircleShape, color = StatsPurple.copy(alpha = 0.18f), modifier = Modifier.size(46.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = StatsPurple)
+                }
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Следующее достижение", style = MaterialTheme.typography.labelMedium, color = StatsPurple)
+                Text(state.nextAchievementTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    state.nextAchievementDetail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { state.nextAchievementProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(10.dp)),
+                    color = StatsPurple,
+                    trackColor = StatsPurple.copy(alpha = 0.14f)
                 )
             }
         }

@@ -85,7 +85,10 @@ data class ReadingStatsUiState(
     val shelfCount: Int = 0,
     val seriesCount: Int = 0,
     val averageLibraryProgress: Int = 0,
-    val ignoredSessionCount: Int = 0
+    val ignoredSessionCount: Int = 0,
+    val nextAchievementTitle: String = "Первая глава пути",
+    val nextAchievementDetail: String = "Читайте, чтобы открыть достижение",
+    val nextAchievementProgress: Float = 0f
 ) {
     fun summary(period: StatsPeriod): ReadingSummary = when (period) {
         StatsPeriod.TODAY -> today
@@ -220,6 +223,28 @@ internal object ReadingStatsCalculator {
             .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
             ?.key
 
+        val completedBookCount = books.count { it.isCompleted || it.currentProgressPercent >= 99f }
+        val achievement = when {
+            currentStreak(readingDates.toSet(), today) < 7 -> AchievementProgress(
+                title = "Неделя с книгой",
+                detail = "Читайте 7 дней подряд",
+                current = currentStreak(readingDates.toSet(), today),
+                target = 7
+            )
+            completedBookCount < 5 -> AchievementProgress(
+                title = "Пять завершённых книг",
+                detail = "Отметьте пять книг прочитанными",
+                current = completedBookCount,
+                target = 5
+            )
+            else -> AchievementProgress(
+                title = "Книжный марафон",
+                detail = "Прочитайте 10 000 слов за неделю",
+                current = sevenDayStats.sumOf { it.wordsReadCount.toLong() }.coerceAtMost(10_000).toInt(),
+                target = 10_000
+            )
+        }
+
         return ReadingStatsUiState(
             isLoading = false,
             today = summaryOf(todayStats),
@@ -241,14 +266,17 @@ internal object ReadingStatsCalculator {
             readingBookCount = books.count {
                 it.currentProgressPercent > 0f && !it.isCompleted && it.currentProgressPercent < 99f
             },
-            completedBookCount = books.count { it.isCompleted || it.currentProgressPercent >= 99f },
+            completedBookCount = completedBookCount,
             favoriteBookCount = books.count(Book::isFavorite),
             shelfCount = books.map { it.collection.trim() }.filter(String::isNotEmpty).distinct().size,
             seriesCount = books.map { it.seriesName.trim() }.filter(String::isNotEmpty).distinct().size,
             averageLibraryProgress = if (books.isEmpty()) 0 else {
                 books.map { it.currentProgressPercent.coerceIn(0f, 100f) }.average().toInt()
             },
-            ignoredSessionCount = stats.size - validStats.size
+            ignoredSessionCount = stats.size - validStats.size,
+            nextAchievementTitle = achievement.title,
+            nextAchievementDetail = achievement.detail,
+            nextAchievementProgress = achievement.current.toFloat() / achievement.target.toFloat()
         )
     }
 
@@ -307,4 +335,11 @@ internal object ReadingStatsCalculator {
         EVENING("Чаще читаете вечером"),
         NIGHT("Чаще читаете ночью")
     }
+
+    private data class AchievementProgress(
+        val title: String,
+        val detail: String,
+        val current: Int,
+        val target: Int
+    )
 }
