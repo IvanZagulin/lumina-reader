@@ -38,6 +38,7 @@ fun AiChatScreen(
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text("ИИ Ассистент") },

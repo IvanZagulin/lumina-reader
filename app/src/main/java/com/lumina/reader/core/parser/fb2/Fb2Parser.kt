@@ -27,7 +27,7 @@ class Fb2Parser : BookParser {
     }
 
     override fun parse(inputStream: InputStream, fileName: String): ParsedBook {
-        val isZip = fileName.lowercase().endsWith(".zip")
+        val isZip = fileName.lowercase().endsWith(".zip") || fileName.lowercase().endsWith(".fb2_zip")
         var effectiveStream: InputStream? = null
         var zipStream: ZipInputStream? = null
 

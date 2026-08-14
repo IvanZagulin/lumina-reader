@@ -293,16 +293,37 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     val client = com.lumina.reader.core.network.OpdsClient()
                     val bytes = client.downloadBook(url)
                     
+                    var actualBytes = bytes
+                    var finalFormat = format
+
+                    if (format == BookFormat.FB2_ZIP) {
+                        try {
+                            java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zis ->
+                                var entry = zis.nextEntry
+                                while (entry != null) {
+                                    if (!entry.isDirectory && (entry.name.lowercase().endsWith(".fb2") || entry.name.lowercase().endsWith(".xml"))) {
+                                        actualBytes = zis.readBytes()
+                                        finalFormat = BookFormat.FB2
+                                        break
+                                    }
+                                    entry = zis.nextEntry
+                                }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
                     val context = getApplication<Application>()
-                    val fileName = "book_${System.currentTimeMillis()}.${format.name.lowercase()}"
+                    val fileName = "book_${System.currentTimeMillis()}.${finalFormat.name.lowercase()}"
                     val booksDir = File(context.filesDir, "books").apply { mkdirs() }
                     val destFile = File(booksDir, fileName)
                     
                     FileOutputStream(destFile).use { output ->
-                        output.write(bytes)
+                        output.write(actualBytes)
                     }
 
-                    val parser = BookParserFactory.getParser(format)
+                    val parser = BookParserFactory.getParser(finalFormat)
                     val parsed = parser.parse(destFile)
                     com.lumina.reader.core.repository.BookCacheRepository.put(destFile.absolutePath, parsed)
 
@@ -319,7 +340,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         author = parsed.author,
                         filePath = destFile.absolutePath,
                         coverPath = coverPath,
-                        format = format,
+                        format = finalFormat,
                         totalChapters = parsed.chapters.size,
                         fileSizeBytes = destFile.length(),
                         description = parsed.description,

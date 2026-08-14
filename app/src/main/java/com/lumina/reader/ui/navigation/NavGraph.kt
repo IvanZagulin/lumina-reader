@@ -9,6 +9,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import kotlinx.coroutines.launch
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.reader.ReaderScreen
@@ -97,30 +98,43 @@ fun LuminaNavGraph(
                 navController.getBackStackEntry(Screen.Library.route)
             }
             val libraryViewModel: LibraryViewModel = viewModel(parentEntry)
-            val catalogViewModel: com.lumina.reader.ui.catalog.CatalogViewModel = viewModel()
-            
-            // To support OPDS search from AI
+            val statsViewModel: com.lumina.reader.ui.stats.StatsViewModel = viewModel()
+
             androidx.compose.runtime.LaunchedEffect(Unit) {
-                catalogViewModel.books.collect { books ->
-                    // Find first epub or fb2, prioritize fb2
-                    val book = books.firstOrNull { it.downloadUrlFb2 != null || it.downloadUrlEpub != null }
-                    if (book != null) {
-                        val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2_ZIP else com.lumina.reader.core.model.BookFormat.EPUB
-                        val url = book.downloadUrlFb2 ?: book.downloadUrlEpub!!
-                        libraryViewModel.downloadAndImportBook(url, format, book.title)
-                        // Clear to prevent double download on next visit
-                        catalogViewModel.onSearchQueryChanged("")
-                        catalogViewModel.search()
-                    }
-                }
+                val libraryBooks = libraryViewModel.books.value
+                val libraryContext = libraryBooks.joinToString("\n") { "- ${it.title} (${it.author}) [Коллекция: ${it.collection}, Серия: ${it.seriesName}]" }
+                
+                val stats = statsViewModel.uiState.value
+                val statsContext = """
+                    Прочитано слов: ${stats.allTime.wordsRead}
+                    Прочитано страниц: ${stats.allTime.estimatedPages}
+                    Средний темп: ${stats.averageWordsPerMinute} сл/мин
+                    Дней активного чтения: ${stats.activeReadingDays}
+                """.trimIndent()
+                
+                aiChatViewModel.setContext(libraryContext, statsContext)
             }
+
+            val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
             com.lumina.reader.ui.chat.AiChatScreen(
                 viewModel = aiChatViewModel,
                 onBack = { navController.popBackStack() },
                 onDownloadAction = { query ->
-                    catalogViewModel.onSearchQueryChanged(query)
-                    catalogViewModel.search()
+                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            val client = com.lumina.reader.core.network.OpdsClient()
+                            val books = client.searchBooks(query)
+                            val book = books.firstOrNull { it.downloadUrlFb2 != null || it.downloadUrlEpub != null }
+                            if (book != null) {
+                                val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2_ZIP else com.lumina.reader.core.model.BookFormat.EPUB
+                                val url = book.downloadUrlFb2 ?: book.downloadUrlEpub!!
+                                libraryViewModel.downloadAndImportBook(url, format, book.title)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 },
                 onOrganizeAction = { seriesName, books ->
                     // Very simple naive matching

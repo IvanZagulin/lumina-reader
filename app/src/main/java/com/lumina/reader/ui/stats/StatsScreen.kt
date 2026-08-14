@@ -232,16 +232,7 @@ fun StatsScreen(
                     }
                 }
 
-                if (state.recentSessions.isNotEmpty()) {
-                    item { SectionTitle("Недавняя активность", Icons.Default.History) }
 
-                    itemsIndexed(
-                        items = state.recentSessions,
-                        key = { index, session -> "${session.id}_${session.timestamp}_$index" }
-                    ) { _, session ->
-                        RecentSessionCard(session)
-                    }
-                }
 
                 if (state.ignoredSessionCount > 0) {
                     item {
