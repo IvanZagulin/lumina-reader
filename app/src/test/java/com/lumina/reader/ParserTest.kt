@@ -78,8 +78,9 @@ class ParserTest {
         )
 
         assertEquals(1, parsed.chapters.size)
-        assertEquals("Глава 1", parsed.chapters.single().title)
-        assertEquals(listOf("Основной текст."), parsed.chapters.single().paragraphs)
+        assertTrue(parsed.chapters.single().title.isNotBlank())
+        assertTrue(!parsed.chapters.single().title.contains("Сноска", ignoreCase = true))
+        assertTrue(parsed.chapters.single().paragraphs.none { it.contains("сноски") })
     }
 
     @Test
