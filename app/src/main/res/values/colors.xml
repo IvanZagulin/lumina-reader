@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="primary">#FF2A64E8</color>
+    <color name="primary_variant">#FF1A4CB8</color>
+    <color name="background_dark">#FF121212</color>
+    <color name="background_oled">#FF000000</color>
+    <color name="background_sepia">#FFF4ECD8</color>
+    <color name="background_cream">#FFFBF0D9</color>
+    <color name="text_sepia">#FF433422</color>
+</resources>

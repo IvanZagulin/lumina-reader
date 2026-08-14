@@ -1,0 +1,46 @@
+# Android / Gradle
+.gradle/
+.kotlin/
+.stats-isolated-build/
+**/build/
+local.properties
+*.apk
+*.aab
+
+# IDE and OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Signing material and local secrets
+*.jks
+*.keystore
+keystore.properties
+*.env
+
+# Local diagnostics, device backups and test books
+*.log
+log.txt
+current_*
+afterjump.*
+anim*.xml
+burst.xml
+checkdialog.xml
+input7.xml
+options*.xml
+orgdialog*.xml
+series_dialog.xml
+stats_new.xml
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.preferences_pb
+baseline_*
+current_ui*
+phone_*
+migration_*
+test_book.fb2
+*.tar
+device-backup*/

@@ -1,0 +1,41 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A crisp open book with a luminous centre: readable down to notification size. -->
+    <path
+        android:fillColor="#6558E8"
+        android:pathData="M27,31 C37,29 47,31 54,37 L54,80 C47,74 37,72 27,74 Z" />
+    <path
+        android:fillColor="#00A99A"
+        android:pathData="M54,37 C61,31 71,29 81,31 L81,74 C71,72 61,74 54,80 Z" />
+    <path
+        android:strokeColor="#F4F2FF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M54,38 L54,79" />
+    <path
+        android:strokeColor="#D9D5FF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M34,43 C40,42 46,44 50,47" />
+    <path
+        android:strokeColor="#D9D5FF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M34,51 C40,50 46,52 50,55" />
+    <path
+        android:strokeColor="#A9FFF3"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M58,47 C62,44 68,42 74,43" />
+    <path
+        android:strokeColor="#A9FFF3"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M58,55 C62,52 68,50 74,51" />
+    <path
+        android:fillColor="#FFCA72"
+        android:pathData="M51,27 L57,27 L57,35 L54,39 L51,35 Z" />
+</vector>

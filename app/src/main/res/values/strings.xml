@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Lumina Reader</string>
+    <string name="library_title">Моя библиотека</string>
+    <string name="import_books">Добавить книги</string>
+    <string name="search_hint">Поиск по автору, названию...</string>
+    <string name="no_books_title">Ваша полка пуста</string>
+    <string name="no_books_desc">Нажмите кнопку «+» или откройте файл EPUB, FB2 или TXT</string>
+    <string name="reading_now">Читаю сейчас</string>
+    <string name="all_books">Все книги</string>
+    <string name="toc_title">Оглавление</string>
+    <string name="bookmarks_title">Закладки</string>
+    <string name="highlights_title">Цитаты и заметки</string>
+    <string name="stats_title">Статистика чтения</string>
+    <string name="theme_oled">True Black OLED</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_sepia">Сепия</string>
+    <string name="theme_cream">Кремовая бумага</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_amber">Тёплый янтарь</string>
+    <string name="bionic_reading">Bionic Reading</string>
+    <string name="tts_play">Озвучить главу</string>
+    <string name="tts_pause">Пауза</string>
+    <string name="tts_stop">Остановить</string>
+    <string name="settings_typography">Шрифт и оформление</string>
+    <string name="settings_font_size">Размер текста</string>
+    <string name="settings_line_height">Межстрочный интервал</string>
+    <string name="settings_margins">Поля страницы</string>
+</resources>

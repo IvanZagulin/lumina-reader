@@ -1,0 +1,73 @@
+name: Build and publish update
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lumina-release
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Restore update signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
+      - name: Choose monotonically increasing version
+        run: |
+          echo "VERSION_NAME=1.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Test and build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug \
+            -PversionCodeOverride="$VERSION_CODE" \
+            -PversionNameOverride="$VERSION_NAME" \
+            --no-daemon
+
+      - name: Prepare release files
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk "LuminaReader-${VERSION_NAME}.apk"
+          sha256sum "LuminaReader-${VERSION_NAME}.apk" > "LuminaReader-${VERSION_NAME}.apk.sha256"
+
+      - name: Publish latest GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${VERSION_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "LuminaReader-${VERSION_NAME}.apk" \
+              "LuminaReader-${VERSION_NAME}.apk.sha256" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "LuminaReader-${VERSION_NAME}.apk" \
+              "LuminaReader-${VERSION_NAME}.apk.sha256" \
+              --title "Lumina Reader ${VERSION_NAME}" \
+              --generate-notes \
+              --latest
+          fi
