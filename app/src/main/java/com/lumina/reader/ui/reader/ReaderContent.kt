@@ -666,16 +666,21 @@ private fun PagedChapterViewer(
             settings.fontFamily,
             settings.isBionicReadingEnabled
         ) {
-            val initialPage = when {
+            val initialLocalPage = when {
                 initialParagraphIndex == Int.MAX_VALUE -> pages.lastIndex
                 else -> pages.indexOfFirst { initialParagraphIndex in it.paragraphIndices }
                     .takeIf { it >= 0 }
                     ?: 0
             }.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            val pagerLayout = ChapterPagerLayout(
+                contentPageCount = pages.size,
+                hasPreviousChapter = chapter.index > 0,
+                hasNextChapter = chapter.index < totalChapters - 1
+            )
 
             val pagerState = rememberPagerState(
-                initialPage = initialPage,
-                pageCount = { pages.size }
+                initialPage = pagerLayout.pagerPageForContent(initialLocalPage),
+                pageCount = { pagerLayout.pageCount }
             )
             val turnRequests = remember(chapter.index) {
                 MutableSharedFlow<PageTurnDirection>(
@@ -686,49 +691,40 @@ private fun PagedChapterViewer(
             var showPageJumpDialog by remember(chapter.index) { mutableStateOf(false) }
             var pageNumberInput by remember(chapter.index) { mutableStateOf("1") }
 
-            LaunchedEffect(pagerState, pages) {
-                // A burst at a chapter edge may leave several requests queued in
-                // the old pager. Commit the chapter transition only once; the new
-                // chapter creates a fresh collector and accepts turns immediately.
-                var boundaryTransitionCommitted = false
+            LaunchedEffect(pagerState, pagerLayout) {
                 var requestedPage = pagerState.currentPage
                 var pageAnimationJob: kotlinx.coroutines.Job? = null
                 turnRequests.collect { direction ->
-                    if (pageAnimationJob?.isActive != true) requestedPage = pagerState.currentPage
+                    // A real swipe may have moved the pager since the previous
+                    // tap or volume-key request.
+                    if (pageAnimationJob?.isActive != true) {
+                        requestedPage = pagerState.settledPage
+                    }
                     val target = if (direction == PageTurnDirection.NEXT) {
                         requestedPage + 1
                     } else {
                         requestedPage - 1
                     }
-                    when {
-                        target in pages.indices -> {
-                            boundaryTransitionCommitted = false
-                            requestedPage = target
-                            // Keep a tactile page-turn animation, but make it
-                            // interruptible: a rapid second tap cancels the old
-                            // motion and immediately heads for the new target.
-                            pageAnimationJob?.cancel()
-                            pageAnimationJob = launch {
-                                pagerState.animateScrollToPage(
-                                    page = target,
-                                    animationSpec = tween(
-                                        durationMillis = 155,
-                                        easing = FastOutSlowInEasing
-                                    )
+                    if (target in 0 until pagerLayout.pageCount) {
+                        requestedPage = target
+                        // Keep a tactile page-turn animation, but make it
+                        // interruptible: a rapid second tap cancels the old
+                        // motion and immediately heads for the new target.
+                        pageAnimationJob?.cancel()
+                        pageAnimationJob = launch {
+                            pagerState.animateScrollToPage(
+                                page = target,
+                                animationSpec = tween(
+                                    durationMillis = 155,
+                                    easing = FastOutSlowInEasing
                                 )
-                            }
-                        }
-                        !boundaryTransitionCommitted -> {
-                            boundaryTransitionCommitted = true
-                            pageAnimationJob?.cancel()
-                            if (direction == PageTurnDirection.NEXT) onNextChapter()
-                            else onPreviousChapter()
+                            )
                         }
                     }
                 }
             }
 
-            DisposableEffect(settings.volumeKeyNavigation, pagerState, pages.size) {
+            DisposableEffect(settings.volumeKeyNavigation, pagerState, pagerLayout.pageCount) {
                 if (settings.volumeKeyNavigation) {
                     ReaderPageNavigation.register(navigationOwner) { direction ->
                         turnRequests.tryEmit(direction)
@@ -737,15 +733,34 @@ private fun PagedChapterViewer(
                 onDispose { ReaderPageNavigation.unregister(navigationOwner) }
             }
 
-            LaunchedEffect(pagerState.currentPage, pages) {
-                pages.getOrNull(pagerState.currentPage)?.blocks.orEmpty().forEach { block ->
-                    when (block) {
-                        is MeasuredPageBlock.TextBlock -> onParagraphFragmentVisible(
-                            block.paragraphIndex,
-                            block.fragmentIndex,
-                            block.text
-                        )
-                        is MeasuredPageBlock.ImageBlock -> onParagraphVisible(block.paragraphIndex)
+            LaunchedEffect(pagerState, pages, chapter.index) {
+                var boundaryTransitionCommitted = false
+                snapshotFlow { pagerState.settledPage }.collect { pagerPage ->
+                    if (boundaryTransitionCommitted) return@collect
+                    when (pagerLayout.boundaryDirectionFor(pagerPage)) {
+                        PageTurnDirection.PREVIOUS -> {
+                            boundaryTransitionCommitted = true
+                            onPreviousChapter()
+                        }
+                        PageTurnDirection.NEXT -> {
+                            boundaryTransitionCommitted = true
+                            onNextChapter()
+                        }
+                        null -> pagerLayout.contentPageForPager(pagerPage)
+                            ?.let(pages::getOrNull)
+                            ?.blocks
+                            .orEmpty()
+                            .forEach { block ->
+                                when (block) {
+                                    is MeasuredPageBlock.TextBlock -> onParagraphFragmentVisible(
+                                        block.paragraphIndex,
+                                        block.fragmentIndex,
+                                        block.text
+                                    )
+                                    is MeasuredPageBlock.ImageBlock ->
+                                        onParagraphVisible(block.paragraphIndex)
+                                }
+                            }
                     }
                 }
             }
@@ -753,7 +768,7 @@ private fun PagedChapterViewer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(turnRequests, pages.size) {
+                    .pointerInput(turnRequests, pagerLayout.pageCount) {
                         detectTapGestures { offset ->
                             when {
                                 offset.x < size.width * 0.30f ->
@@ -769,9 +784,29 @@ private fun PagedChapterViewer(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
                     beyondViewportPageCount = 1
-                ) { pageIndex ->
-                    val page = pages[pageIndex]
-                    val pageOffset = (pagerState.currentPage - pageIndex) +
+                ) { pagerPageIndex ->
+                    val localPageIndex = pagerLayout.contentPageForPager(pagerPageIndex)
+                    if (localPageIndex == null) {
+                        val isPrevious = pagerLayout.boundaryDirectionFor(pagerPageIndex) ==
+                            PageTurnDirection.PREVIOUS
+                        val adjacentChapterIndex = if (isPrevious) {
+                            chapter.index - 1
+                        } else {
+                            chapter.index + 1
+                        }
+                        ChapterBoundaryPage(
+                            isPrevious = isPrevious,
+                            chapterTitle = parsedBook?.chapters
+                                ?.getOrNull(adjacentChapterIndex)
+                                ?.let { displayChapterTitle(it.title, adjacentChapterIndex) }
+                                .orEmpty(),
+                            settings = settings
+                        )
+                        return@HorizontalPager
+                    }
+                    val contentPageIndex = requireNotNull(localPageIndex)
+                    val page = pages[contentPageIndex]
+                    val pageOffset = (pagerState.currentPage - pagerPageIndex) +
                         pagerState.currentPageOffsetFraction
                     val distance = kotlin.math.abs(pageOffset).coerceIn(0f, 1f)
 
@@ -804,7 +839,7 @@ private fun PagedChapterViewer(
                                     .clipToBounds(),
                                 verticalArrangement = Arrangement.Top
                             ) {
-                                if (pageIndex == 0) {
+                                if (contentPageIndex == 0) {
                                     Text(
                                         text = visibleChapterTitle,
                                         style = titleStyle,
@@ -878,7 +913,7 @@ private fun PagedChapterViewer(
                                 color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.72f)
                             )
                             val progress = ((chapter.index.toFloat() +
-                                pageIndex.toFloat() / pages.size.coerceAtLeast(1)) /
+                                contentPageIndex.toFloat() / pages.size.coerceAtLeast(1)) /
                                 totalChapters * 100f).coerceIn(0f, 100f)
                             Text(
                                 text = String.format(java.util.Locale.US, "%.1f%%", progress),
@@ -887,15 +922,15 @@ private fun PagedChapterViewer(
                                 color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.82f)
                             )
                             Text(
-                                text = "Стр. ${pageIndex + 1} из ${pages.size}",
+                                text = "Стр. ${contentPageIndex + 1} из ${pages.size}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = settings.theme.secondaryTextComposeColor,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                    pageNumberInput = (pageIndex + 1).toString()
-                                    showPageJumpDialog = true
+                                        pageNumberInput = (contentPageIndex + 1).toString()
+                                        showPageJumpDialog = true
                                     }
                                     .padding(horizontal = 6.dp, vertical = 4.dp)
                             )
@@ -932,7 +967,7 @@ private fun PagedChapterViewer(
                                 showPageJumpDialog = false
                                 coroutineScope.launch {
                                     pagerState.animateScrollToPage(
-                                        page = requestedPage!! - 1,
+                                        page = pagerLayout.pagerPageForContent(requestedPage!! - 1),
                                         animationSpec = tween(
                                             durationMillis = 180,
                                             easing = FastOutSlowInEasing
@@ -949,6 +984,40 @@ private fun PagedChapterViewer(
                             Text("Отмена")
                         }
                     }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterBoundaryPage(
+    isPrevious: Boolean,
+    chapterTitle: String,
+    settings: ReaderSettings
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (isPrevious) "← Предыдущая глава" else "Следующая глава →",
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                color = settings.theme.secondaryTextComposeColor
+            )
+            if (chapterTitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = chapterTitle,
+                    style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = settings.theme.textComposeColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
