@@ -832,68 +832,73 @@ private fun PagedChapterViewer(
                                 .padding(bottom = 8.dp)
                         )
 
-                        SelectionContainer(modifier = Modifier.weight(1f)) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clipToBounds(),
-                                verticalArrangement = Arrangement.Top
-                            ) {
-                                if (contentPageIndex == 0) {
-                                    Text(
-                                        text = visibleChapterTitle,
-                                        style = titleStyle,
-                                        color = settings.theme.textComposeColor,
-                                        modifier = Modifier.padding(bottom = 10.dp)
-                                    )
-                                }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clipToBounds()
+                        ) {
+                            SelectionContainer {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.Top
+                                ) {
+                                    if (contentPageIndex == 0) {
+                                        Text(
+                                            text = visibleChapterTitle,
+                                            style = titleStyle,
+                                            color = settings.theme.textComposeColor,
+                                            modifier = Modifier.padding(bottom = 10.dp)
+                                        )
+                                    }
 
-                                page.blocks.forEach { block ->
-                                    when (block) {
-                                        is MeasuredPageBlock.ImageBlock -> {
-                                            val imageBytes = parsedBook?.images?.get(block.imageId)
-                                            val bitmap = remember(block.imageId, imageBytes) {
-                                                imageBytes?.let {
-                                                    runCatching {
-                                                        android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)
-                                                            ?.asImageBitmap()
-                                                    }.getOrNull()
+                                    page.blocks.forEach { block ->
+                                        when (block) {
+                                            is MeasuredPageBlock.ImageBlock -> {
+                                                val imageBytes = parsedBook?.images?.get(block.imageId)
+                                                val bitmap = remember(block.imageId, imageBytes) {
+                                                    imageBytes?.let {
+                                                        runCatching {
+                                                            android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)
+                                                                ?.asImageBitmap()
+                                                        }.getOrNull()
+                                                    }
+                                                }
+                                                if (bitmap != null) {
+                                                    Image(
+                                                        bitmap = bitmap,
+                                                        contentDescription = "Иллюстрация книги",
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .weight(1f, fill = true)
+                                                            .padding(vertical = 6.dp)
+                                                            .clip(RoundedCornerShape(12.dp)),
+                                                        contentScale = ContentScale.Fit
+                                                    )
                                                 }
                                             }
-                                            if (bitmap != null) {
-                                                Image(
-                                                    bitmap = bitmap,
-                                                    contentDescription = "Иллюстрация книги",
+
+                                            is MeasuredPageBlock.TextBlock -> {
+                                                val annotated = remember(
+                                                    block.text,
+                                                    settings.isBionicReadingEnabled
+                                                ) {
+                                                    if (settings.isBionicReadingEnabled) {
+                                                        BionicReadingHelper.transform(block.text)
+                                                    } else null
+                                                }
+                                                Text(
+                                                    text = annotated ?: AnnotatedString(block.text),
+                                                    style = textStyle,
+                                                    color = settings.theme.textComposeColor,
+                                                    // Start alignment avoids the enormous word gaps
+                                                    // produced by justification on short final lines.
+                                                    textAlign = TextAlign.Start,
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .weight(1f, fill = true)
-                                                        .padding(vertical = 6.dp)
-                                                        .clip(RoundedCornerShape(12.dp)),
-                                                    contentScale = ContentScale.Fit
+                                                        .padding(bottom = 10.dp)
                                                 )
                                             }
-                                        }
-
-                                        is MeasuredPageBlock.TextBlock -> {
-                                            val annotated = remember(
-                                                block.text,
-                                                settings.isBionicReadingEnabled
-                                            ) {
-                                                if (settings.isBionicReadingEnabled) {
-                                                    BionicReadingHelper.transform(block.text)
-                                                } else null
-                                            }
-                                            Text(
-                                                text = annotated ?: AnnotatedString(block.text),
-                                                style = textStyle,
-                                                color = settings.theme.textComposeColor,
-                                                // Start alignment avoids the enormous word gaps
-                                                // produced by justification on short final lines.
-                                                textAlign = TextAlign.Start,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(bottom = 10.dp)
-                                            )
                                         }
                                     }
                                 }

@@ -66,6 +66,9 @@ class ReaderViewModel(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError = _loadError.asStateFlow()
+
     val bookmarks: StateFlow<List<Bookmark>> = bookmarkDao.getBookmarksForBook(bookId).stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -92,27 +95,43 @@ class ReaderViewModel(
     private fun loadBook() {
         viewModelScope.launch {
             _isLoading.value = true
+            _loadError.value = null
             withContext(Dispatchers.IO) {
                 try {
                     val currentBook = bookDao.getBookById(bookId)
-                    if (currentBook != null) {
-                        _book.value = currentBook
-                        _currentChapterIndex.value = currentBook.currentChapterIndex
-                        _currentParagraphIndex.value = currentBook.currentParagraphIndex
-
-                        val file = File(currentBook.filePath)
-                        if (file.exists()) {
-                            // Always clear cache to force fresh parse after app update
-                            com.lumina.reader.core.repository.BookCacheRepository.remove(file.absolutePath)
-                            val parser = BookParserFactory.getParser(currentBook.format)
-                            val parsed = parser.parse(file)
-                            Log.d("ReaderViewModel", "Parsed book: chapters=${parsed.chapters.size}, images=${parsed.images.size} keys=${parsed.images.keys.joinToString(",")}")
-                            com.lumina.reader.core.repository.BookCacheRepository.put(file.absolutePath, parsed)
-                            _parsedBook.value = parsed
-                        }
+                    if (currentBook == null) {
+                        _loadError.value = "Книга не найдена"
+                        return@withContext
                     }
+
+                    _book.value = currentBook
+                    val file = File(currentBook.filePath)
+                    if (!file.isFile) {
+                        _loadError.value = "Файл книги больше недоступен"
+                        return@withContext
+                    }
+
+                    // Always clear cache to force fresh parse after app update
+                    com.lumina.reader.core.repository.BookCacheRepository.remove(file.absolutePath)
+                    val parser = BookParserFactory.getParser(currentBook.format)
+                    val parsed = parser.parse(file)
+                    if (parsed.chapters.isEmpty()) {
+                        _loadError.value = "В книге не найден текст"
+                        return@withContext
+                    }
+                    val position = restoreReaderPosition(
+                        chapters = parsed.chapters,
+                        chapterIndex = currentBook.currentChapterIndex,
+                        paragraphIndex = currentBook.currentParagraphIndex
+                    )
+                    _currentChapterIndex.value = position.chapterIndex
+                    _currentParagraphIndex.value = position.paragraphIndex
+                    Log.d("ReaderViewModel", "Parsed book: chapters=${parsed.chapters.size}, images=${parsed.images.size} keys=${parsed.images.keys.joinToString(",")}")
+                    com.lumina.reader.core.repository.BookCacheRepository.put(file.absolutePath, parsed)
+                    _parsedBook.value = parsed
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    _loadError.value = "Не удалось открыть книгу: ${e.localizedMessage ?: "ошибка чтения файла"}"
                 } finally {
                     _isLoading.value = false
                 }
@@ -343,6 +362,35 @@ class ReaderViewModel(
         _ttsManager = null
         super.onCleared()
     }
+}
+
+internal data class ReaderPosition(
+    val chapterIndex: Int,
+    val paragraphIndex: Int
+)
+
+/**
+ * A book can be reparsed after an app update, which may change its chapter
+ * count. Keep the persisted position valid so the reader never opens as a
+ * blank screen because getOrNull(currentChapterIndex) returned null.
+ */
+internal fun restoreReaderPosition(
+    chapters: List<Chapter>,
+    chapterIndex: Int,
+    paragraphIndex: Int
+): ReaderPosition {
+    val safeChapterIndex = chapterIndex.coerceIn(0, chapters.lastIndex.coerceAtLeast(0))
+    val paragraphCount = chapters.getOrNull(safeChapterIndex)
+        ?.paragraphs
+        ?.size
+        ?.coerceAtLeast(1)
+        ?: 1
+    val safeParagraphIndex = if (paragraphIndex == Int.MAX_VALUE) {
+        Int.MAX_VALUE
+    } else {
+        paragraphIndex.coerceIn(0, paragraphCount - 1)
+    }
+    return ReaderPosition(safeChapterIndex, safeParagraphIndex)
 }
 
 class ReaderViewModelFactory(
