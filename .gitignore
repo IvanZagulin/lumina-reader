@@ -32,6 +32,7 @@ options*.xml
 orgdialog*.xml
 series_dialog.xml
 stats_new.xml
+update_prompt*.xml
 *.db
 *.db-wal
 *.db-shm
