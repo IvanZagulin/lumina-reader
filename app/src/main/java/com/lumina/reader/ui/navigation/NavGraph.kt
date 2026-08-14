@@ -105,9 +105,12 @@ fun LuminaNavGraph(
                     // Find first epub or fb2, prioritize fb2
                     val book = books.firstOrNull { it.downloadUrlFb2 != null || it.downloadUrlEpub != null }
                     if (book != null) {
-                        val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2 else com.lumina.reader.core.model.BookFormat.EPUB
+                        val format = if (book.downloadUrlFb2 != null) com.lumina.reader.core.model.BookFormat.FB2_ZIP else com.lumina.reader.core.model.BookFormat.EPUB
                         val url = book.downloadUrlFb2 ?: book.downloadUrlEpub!!
                         libraryViewModel.downloadAndImportBook(url, format, book.title)
+                        // Clear to prevent double download on next visit
+                        catalogViewModel.onSearchQueryChanged("")
+                        catalogViewModel.search()
                     }
                 }
             }

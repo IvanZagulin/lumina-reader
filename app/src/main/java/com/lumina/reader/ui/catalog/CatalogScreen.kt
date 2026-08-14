@@ -124,7 +124,7 @@ fun CatalogScreen(
                                 if (book.downloadUrlFb2 != null) {
                                     Button(
                                         onClick = {
-                                            onDownloadBook(book.downloadUrlFb2, BookFormat.FB2, book.title)
+                                            onDownloadBook(book.downloadUrlFb2, BookFormat.FB2_ZIP, book.title)
                                         },
                                         modifier = Modifier.padding(start = 4.dp),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
