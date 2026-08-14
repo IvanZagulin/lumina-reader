@@ -10,6 +10,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.reader.ReaderScreen
@@ -137,18 +139,30 @@ fun LuminaNavGraph(
                     }
                 },
                 onOrganizeAction = { seriesName, books ->
-                    // Very simple naive matching
-                    books.forEach { bookTitle ->
-                        val matchedBook = libraryViewModel.books.value.firstOrNull { 
-                            it.title.contains(bookTitle, ignoreCase = true) 
+                    coroutineScope.launch {
+                        // DOWNLOAD actions are emitted before ORGANIZE. Wait for
+                        // their imports to appear so new books join the series too.
+                        withTimeoutOrNull(60_000) {
+                            libraryViewModel.books.first { library ->
+                                books.all { wantedTitle ->
+                                    library.any { it.title.contains(wantedTitle, ignoreCase = true) }
+                                }
+                            }
                         }
-                        if (matchedBook != null) {
-                            libraryViewModel.updateBookOrganization(
-                                book = matchedBook,
-                                collection = matchedBook.collection,
-                                seriesName = seriesName,
-                                seriesOrder = 0
-                            )
+
+                        val library = libraryViewModel.books.value
+                        books.forEachIndexed { index, bookTitle ->
+                            val matchedBook = library.firstOrNull {
+                                it.title.contains(bookTitle, ignoreCase = true)
+                            }
+                            if (matchedBook != null) {
+                                libraryViewModel.updateBookOrganization(
+                                    book = matchedBook,
+                                    collection = matchedBook.collection,
+                                    seriesName = seriesName,
+                                    seriesOrder = index + 1
+                                )
+                            }
                         }
                     }
                 }

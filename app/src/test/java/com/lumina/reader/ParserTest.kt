@@ -3,6 +3,7 @@ package com.lumina.reader
 import com.lumina.reader.core.bionic.BionicReadingHelper
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.parser.fb2.fb2ChapterTitle
+import com.lumina.reader.core.parser.fb2.Fb2Parser
 import com.lumina.reader.core.parser.txt.TxtParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -55,6 +56,30 @@ class ParserTest {
         assertEquals(listOf("Глава 1", "Глава 2"), generatedTitles)
         assertTrue(generatedTitles.none { it.startsWith("Раздел") })
         assertEquals("Пролог", fb2ChapterTitle("Пролог", chapterIndex = 2))
+    }
+
+    @Test
+    fun fb2NotesBodyDoesNotCreateReaderChapters() {
+        val fb2 = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <FictionBook>
+              <body>
+                <section><title><p>Глава 1</p></title><p>Основной текст.</p></section>
+              </body>
+              <body name="notes">
+                <section><title><p>Сноска 1</p></title><p>Текст сноски.</p></section>
+              </body>
+            </FictionBook>
+        """.trimIndent()
+
+        val parsed = Fb2Parser().parse(
+            ByteArrayInputStream(fb2.toByteArray(Charsets.UTF_8)),
+            "notes.fb2"
+        )
+
+        assertEquals(1, parsed.chapters.size)
+        assertEquals("Глава 1", parsed.chapters.single().title)
+        assertEquals(listOf("Основной текст."), parsed.chapters.single().paragraphs)
     }
 
     @Test
