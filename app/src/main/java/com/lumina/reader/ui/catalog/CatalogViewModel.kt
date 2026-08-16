@@ -59,16 +59,34 @@ class CatalogViewModel : ViewModel() {
                     CatalogSearchScope.AUTHOR -> listOf("authors")
                     CatalogSearchScope.SERIES -> listOf("sequences")
                 }
-                val results = coroutineScope {
+
+                // OPDS search endpoints are independent. A temporary failure of
+                // authors/sequences must not discard successful book results.
+                val responses = coroutineScope {
                     searchTypes.map { searchType ->
-                        async { opdsClient.searchBooks(query, searchType) }
-                    }.awaitAll().flatten()
+                        async {
+                            runCatching {
+                                opdsClient.searchBooks(query, searchType)
+                            }
+                        }
+                    }.awaitAll()
                 }
-                _books.value = results.distinctBy { book ->
+
+                val successfulResults = responses
+                    .filter { it.isSuccess }
+                    .flatMap { it.getOrDefault(emptyList()) }
+
+                if (responses.none { it.isSuccess }) {
+                    val firstError = responses.mapNotNull { it.exceptionOrNull() }.firstOrNull()
+                    throw firstError ?: IllegalStateException("OPDS search failed")
+                }
+
+                _books.value = successfulResults.distinctBy { book ->
                     listOf(book.title, book.author, book.downloadUrlEpub, book.downloadUrlFb2).joinToString("|")
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                _books.value = emptyList()
                 _errorMessage.value = "Ошибка поиска: ${e.localizedMessage}"
             } finally {
                 _isLoading.value = false
