@@ -2,6 +2,9 @@ package com.lumina.reader.core.network
 
 import android.util.Xml
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,12 +20,18 @@ data class OpdsBook(
     val downloadUrlFb2: String?
 )
 
+private data class ParsedOpdsFeed(
+    val books: List<OpdsBook>,
+    val navigationLinks: List<String>
+)
+
 class OpdsClient {
     companion object {
         private val BASE_URLS = listOf(
             "https://flibusta.is",
             "https://flibusta.site"
         )
+        private const val MAX_NAVIGATION_FEEDS = 8
     }
 
     private val client = OkHttpClient.Builder()
@@ -40,23 +49,28 @@ class OpdsClient {
             val url = "$baseUrl/opds/search?searchType=$searchType&searchTerm=$encodedQuery"
 
             try {
-                val request = Request.Builder()
-                    .url(url)
-                    .header("Accept", "application/atom+xml, application/xml;q=0.9, */*;q=0.8")
-                    .header("User-Agent", "LuminaReader/1.0")
-                    .build()
+                val feed = fetchFeed(url, baseUrl)
 
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw Exception("OPDS $baseUrl returned HTTP ${response.code}")
+                if (feed.books.isNotEmpty()) {
+                    return@withContext feed.books
+                }
+
+                if (searchType != "books" && feed.navigationLinks.isNotEmpty()) {
+                    val booksFromNavigation = fetchBooksFromNavigation(feed.navigationLinks)
+                    if (booksFromNavigation.isNotEmpty()) {
+                        return@withContext booksFromNavigation
                     }
-
-                    val body = response.body ?: throw Exception("Empty OPDS response from $baseUrl")
-                    return@withContext body.byteStream().use { parseOpds(it, baseUrl) }
                 }
             } catch (e: Exception) {
                 lastError = e
             }
+        }
+
+        // Flibusta's author/series searches can return navigation feeds or fail on
+        // individual mirrors. Falling back to the normal book search keeps these
+        // modes useful instead of surfacing a connection error.
+        if (searchType != "books") {
+            return@withContext searchBooks(query, "books")
         }
 
         throw Exception(
@@ -68,7 +82,7 @@ class OpdsClient {
     suspend fun downloadBook(url: String): ByteArray = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
 
-        for (candidateUrl in buildDownloadCandidates(url)) {
+        for (candidateUrl in buildUrlCandidates(url)) {
             try {
                 val request = Request.Builder()
                     .url(candidateUrl)
@@ -91,7 +105,54 @@ class OpdsClient {
         throw Exception("Не удалось скачать книгу", lastError)
     }
 
-    private fun buildDownloadCandidates(url: String): List<String> {
+    private fun fetchFeed(url: String, baseUrl: String): ParsedOpdsFeed {
+        var lastError: Throwable? = null
+
+        for (candidateUrl in buildUrlCandidates(url)) {
+            try {
+                val request = Request.Builder()
+                    .url(candidateUrl)
+                    .header("Accept", "application/atom+xml, application/xml;q=0.9, */*;q=0.8")
+                    .header("User-Agent", "LuminaReader/1.0")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw Exception("OPDS returned HTTP ${response.code}")
+                    }
+
+                    val body = response.body ?: throw Exception("Empty OPDS response")
+                    val responseBaseUrl = response.request.url.let { "${it.scheme}://${it.host}" }
+                    return body.byteStream().use { parseOpds(it, responseBaseUrl.ifBlank { baseUrl }) }
+                }
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+
+        throw Exception("Не удалось открыть OPDS-раздел", lastError)
+    }
+
+    private suspend fun fetchBooksFromNavigation(navigationLinks: List<String>): List<OpdsBook> = coroutineScope {
+        navigationLinks
+            .distinct()
+            .take(MAX_NAVIGATION_FEEDS)
+            .map { link ->
+                async(Dispatchers.IO) {
+                    runCatching {
+                        val baseUrl = extractBaseUrl(link) ?: BASE_URLS.first()
+                        fetchFeed(link, baseUrl).books
+                    }.getOrDefault(emptyList())
+                }
+            }
+            .awaitAll()
+            .flatten()
+            .distinctBy { book ->
+                listOf(book.title, book.author, book.downloadUrlEpub, book.downloadUrlFb2).joinToString("|")
+            }
+    }
+
+    private fun buildUrlCandidates(url: String): List<String> {
         val pathAndQuery = try {
             val uri = URI(url)
             val path = uri.rawPath ?: ""
@@ -118,18 +179,20 @@ class OpdsClient {
         return candidates.distinct()
     }
 
-    private fun parseOpds(inputStream: InputStream, baseUrl: String): List<OpdsBook> {
+    private fun parseOpds(inputStream: InputStream, baseUrl: String): ParsedOpdsFeed {
         val parser = Xml.newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
         parser.setInput(inputStream, null)
 
         val books = mutableListOf<OpdsBook>()
+        val navigationLinks = mutableListOf<String>()
         var eventType = parser.eventType
 
         var currentTitle = ""
         var currentAuthor = ""
         var epubUrl: String? = null
         var fb2Url: String? = null
+        var currentNavigationLinks = mutableListOf<String>()
         var insideEntry = false
         var insideAuthor = false
 
@@ -144,6 +207,7 @@ class OpdsClient {
                             currentAuthor = ""
                             epubUrl = null
                             fb2Url = null
+                            currentNavigationLinks = mutableListOf()
                         }
 
                         "title" -> {
@@ -170,12 +234,16 @@ class OpdsClient {
                                 val href = parser.getAttributeValue(null, "href")
                                 val rel = parser.getAttributeValue(null, "rel")
 
-                                if (rel?.contains("acquisition") == true && !href.isNullOrBlank()) {
+                                if (!href.isNullOrBlank()) {
                                     val absoluteHref = resolveUrl(baseUrl, href)
-                                    if (type?.contains("epub", ignoreCase = true) == true) {
-                                        epubUrl = absoluteHref
-                                    } else if (type?.contains("fb2", ignoreCase = true) == true) {
-                                        fb2Url = absoluteHref
+                                    if (rel?.contains("acquisition") == true) {
+                                        if (type?.contains("epub", ignoreCase = true) == true) {
+                                            epubUrl = absoluteHref
+                                        } else if (type?.contains("fb2", ignoreCase = true) == true) {
+                                            fb2Url = absoluteHref
+                                        }
+                                    } else if (type?.contains("application/atom+xml", ignoreCase = true) == true) {
+                                        currentNavigationLinks.add(absoluteHref)
                                     }
                                 }
                             }
@@ -189,6 +257,8 @@ class OpdsClient {
                             insideEntry = false
                             if (currentTitle.isNotBlank() && (epubUrl != null || fb2Url != null)) {
                                 books.add(OpdsBook(currentTitle, currentAuthor, epubUrl, fb2Url))
+                            } else {
+                                navigationLinks.addAll(currentNavigationLinks)
                             }
                         }
 
@@ -201,7 +271,10 @@ class OpdsClient {
             eventType = parser.next()
         }
 
-        return books
+        return ParsedOpdsFeed(
+            books = books,
+            navigationLinks = navigationLinks.distinct()
+        )
     }
 
     private fun resolveUrl(baseUrl: String, href: String): String {
@@ -214,5 +287,12 @@ class OpdsClient {
         } else {
             "$baseUrl/$href"
         }
+    }
+
+    private fun extractBaseUrl(url: String): String? = try {
+        val uri = URI(url)
+        if (uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) null else "${uri.scheme}://${uri.host}"
+    } catch (_: Exception) {
+        null
     }
 }
