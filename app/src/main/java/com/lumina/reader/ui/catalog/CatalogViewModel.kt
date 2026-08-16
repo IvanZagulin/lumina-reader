@@ -6,9 +6,6 @@ import com.lumina.reader.core.network.OpdsBook
 import com.lumina.reader.core.network.OpdsClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 enum class CatalogSearchScope(val title: String) {
@@ -46,48 +43,40 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun search() {
-        val query = _searchQuery.value
-        if (query.isBlank()) return
+        val query = _searchQuery.value.trim()
+        if (query.isBlank() || _isLoading.value) return
 
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            _books.value = emptyList()
+
             try {
-                val searchTypes = when (_searchScope.value) {
-                    CatalogSearchScope.ANY -> listOf("books", "authors", "sequences")
-                    CatalogSearchScope.TITLE -> listOf("books")
-                    CatalogSearchScope.AUTHOR -> listOf("authors")
-                    CatalogSearchScope.SERIES -> listOf("sequences")
+                // "Везде" intentionally uses the stable books endpoint first.
+                // Author/series endpoints can return navigation entries rather than
+                // downloadable books, which the current UI/parser does not represent.
+                val searchType = when (_searchScope.value) {
+                    CatalogSearchScope.ANY -> "books"
+                    CatalogSearchScope.TITLE -> "books"
+                    CatalogSearchScope.AUTHOR -> "authors"
+                    CatalogSearchScope.SERIES -> "sequences"
                 }
 
-                // OPDS search endpoints are independent. A temporary failure of
-                // authors/sequences must not discard successful book results.
-                val responses = coroutineScope {
-                    searchTypes.map { searchType ->
-                        async {
-                            runCatching {
-                                opdsClient.searchBooks(query, searchType)
-                            }
-                        }
-                    }.awaitAll()
-                }
-
-                val successfulResults = responses
-                    .filter { it.isSuccess }
-                    .flatMap { it.getOrDefault(emptyList()) }
-
-                if (responses.none { it.isSuccess }) {
-                    val firstError = responses.mapNotNull { it.exceptionOrNull() }.firstOrNull()
-                    throw firstError ?: IllegalStateException("OPDS search failed")
-                }
-
-                _books.value = successfulResults.distinctBy { book ->
+                val results = opdsClient.searchBooks(query, searchType)
+                _books.value = results.distinctBy { book ->
                     listOf(book.title, book.author, book.downloadUrlEpub, book.downloadUrlFb2).joinToString("|")
+                }
+
+                if (results.isEmpty()) {
+                    _errorMessage.value = when (_searchScope.value) {
+                        CatalogSearchScope.AUTHOR -> "По автору ничего не найдено или каталог вернул навигационную выдачу"
+                        CatalogSearchScope.SERIES -> "По серии ничего не найдено или каталог вернул навигационную выдачу"
+                        else -> "Ничего не найдено"
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                _books.value = emptyList()
-                _errorMessage.value = "Ошибка поиска: ${e.localizedMessage}"
+                _errorMessage.value = "Ошибка поиска: ${e.localizedMessage ?: "не удалось подключиться к каталогу"}"
             } finally {
                 _isLoading.value = false
             }
