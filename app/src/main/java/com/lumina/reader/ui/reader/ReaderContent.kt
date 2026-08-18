@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -603,18 +604,28 @@ private fun PagedChapterViewer(
     val visibleChapterTitle = remember(chapter.title, chapter.index) {
         displayChapterTitle(chapter.title, chapter.index)
     }
+    var measuredBodyHeightPx by remember(chapter.index) { mutableStateOf(0) }
 
     BoxWithConstraints(modifier = modifier) {
         val contentWidthPx = with(density) {
             (maxWidth - settings.horizontalPaddingDp.dp * 2).roundToPx().coerceAtLeast(1)
         }
-        // The body is the viewport between the subtle header and footer. Using
-        // the real device constraints is what prevents half-empty pages across
-        // different screen sizes, font sizes and line spacings.
-        val contentHeightPx = with(density) {
+        // Prefer the body's real measured height. The previous fixed estimate
+        // could be a few pixels taller than the actual weighted viewport, which
+        // let the paginator place one more line than Compose could render and
+        // clip the bottom half of that line. Keep the estimate only for the
+        // first composition, then repaginate from the measured viewport.
+        val estimatedContentHeightPx = with(density) {
             (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)
                 .roundToPx()
                 .coerceAtLeast(1)
+        }
+        val contentHeightPx = if (measuredBodyHeightPx > 0) {
+            // Two physical pixels absorb rounding differences between
+            // TextMeasurer and the final Text layout without wasting a line.
+            (measuredBodyHeightPx - 2).coerceAtLeast(1)
+        } else {
+            estimatedContentHeightPx
         }
         val paragraphSpacingPx = with(density) { 10.dp.roundToPx() }
         val textStyle = TextStyle(
@@ -836,6 +847,11 @@ private fun PagedChapterViewer(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
+                                .onSizeChanged { size ->
+                                    if (size.height > 0 && measuredBodyHeightPx != size.height) {
+                                        measuredBodyHeightPx = size.height
+                                    }
+                                }
                                 .clipToBounds()
                         ) {
                             SelectionContainer {
