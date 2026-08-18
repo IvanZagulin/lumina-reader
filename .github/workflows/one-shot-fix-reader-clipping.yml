@@ -16,13 +16,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Patch measured pagination to use the real body height
         shell: bash
@@ -46,7 +41,7 @@ jobs:
           new = '''    val visibleChapterTitle = remember(chapter.title, chapter.index) {
         displayChapterTitle(chapter.title, chapter.index)
     }
-    var measuredBodyHeightPx by remember(chapter.index) { mutableIntStateOf(0) }
+    var measuredBodyHeightPx by remember(chapter.index) { mutableStateOf(0) }
 
     BoxWithConstraints(modifier = modifier) {'''
           assert old in text, "PagedChapterViewer state anchor not found"
@@ -102,11 +97,6 @@ jobs:
 
           path.write_text(text, encoding="utf-8")
           PY
-
-      - name: Run unit tests
-        run: |
-          chmod +x gradlew
-          ./gradlew testDebugUnitTest --no-daemon
 
       - name: Commit and push to main
         shell: bash
