@@ -35,65 +35,18 @@ jobs:
           assert old in text, "ContentScale import anchor not found"
           text = text.replace(old, new, 1)
 
-          old = '''    val visibleChapterTitle = remember(chapter.title, chapter.index) {
-        displayChapterTitle(chapter.title, chapter.index)
-    }
-
-    BoxWithConstraints(modifier = modifier) {'''
-          new = '''    val visibleChapterTitle = remember(chapter.title, chapter.index) {
-        displayChapterTitle(chapter.title, chapter.index)
-    }
-    var measuredBodyHeightPx by remember(chapter.index) { mutableStateOf(0) }
-
-    BoxWithConstraints(modifier = modifier) {'''
+          old = "    val visibleChapterTitle = remember(chapter.title, chapter.index) {\n        displayChapterTitle(chapter.title, chapter.index)\n    }\n\n    BoxWithConstraints(modifier = modifier) {"
+          new = "    val visibleChapterTitle = remember(chapter.title, chapter.index) {\n        displayChapterTitle(chapter.title, chapter.index)\n    }\n    var measuredBodyHeightPx by remember(chapter.index) { mutableStateOf(0) }\n\n    BoxWithConstraints(modifier = modifier) {"
           assert old in text, "PagedChapterViewer state anchor not found"
           text = text.replace(old, new, 1)
 
-          old = '''        // The body is the viewport between the subtle header and footer. Using
-        // the real device constraints is what prevents half-empty pages across
-        // different screen sizes, font sizes and line spacings.
-        val contentHeightPx = with(density) {
-            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)
-                .roundToPx()
-                .coerceAtLeast(1)
-        }'''
-          new = '''        // Prefer the body's real measured height. The previous fixed estimate
-        // could be a few pixels taller than the actual weighted viewport, which
-        // let the paginator place one more line than Compose could render and
-        // clip the bottom half of that line. Keep the estimate only for the
-        // first composition, then repaginate from the measured viewport.
-        val estimatedContentHeightPx = with(density) {
-            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)
-                .roundToPx()
-                .coerceAtLeast(1)
-        }
-        val contentHeightPx = if (measuredBodyHeightPx > 0) {
-            // Two physical pixels absorb rounding differences between
-            // TextMeasurer and the final Text layout without wasting a line.
-            (measuredBodyHeightPx - 2).coerceAtLeast(1)
-        } else {
-            estimatedContentHeightPx
-        }'''
+          old = "        // The body is the viewport between the subtle header and footer. Using\n        // the real device constraints is what prevents half-empty pages across\n        // different screen sizes, font sizes and line spacings.\n        val contentHeightPx = with(density) {\n            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)\n                .roundToPx()\n                .coerceAtLeast(1)\n        }"
+          new = "        // Prefer the body's real measured height. The previous fixed estimate\n        // could be a few pixels taller than the actual weighted viewport, which\n        // let the paginator place one more line than Compose could render and\n        // clip the bottom half of that line. Keep the estimate only for the\n        // first composition, then repaginate from the measured viewport.\n        val estimatedContentHeightPx = with(density) {\n            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)\n                .roundToPx()\n                .coerceAtLeast(1)\n        }\n        val contentHeightPx = if (measuredBodyHeightPx > 0) {\n            // Two physical pixels absorb rounding differences between\n            // TextMeasurer and the final Text layout without wasting a line.\n            (measuredBodyHeightPx - 2).coerceAtLeast(1)\n        } else {\n            estimatedContentHeightPx\n        }"
           assert old in text, "contentHeightPx anchor not found"
           text = text.replace(old, new, 1)
 
-          old = '''                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .clipToBounds()
-                        ) {'''
-          new = '''                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .onSizeChanged { size ->
-                                    if (size.height > 0 && measuredBodyHeightPx != size.height) {
-                                        measuredBodyHeightPx = size.height
-                                    }
-                                }
-                                .clipToBounds()
-                        ) {'''
+          old = "                        Box(\n                            modifier = Modifier\n                                .weight(1f)\n                                .fillMaxWidth()\n                                .clipToBounds()\n                        ) {"
+          new = "                        Box(\n                            modifier = Modifier\n                                .weight(1f)\n                                .fillMaxWidth()\n                                .onSizeChanged { size ->\n                                    if (size.height > 0 && measuredBodyHeightPx != size.height) {\n                                        measuredBodyHeightPx = size.height\n                                    }\n                                }\n                                .clipToBounds()\n                        ) {"
           assert old in text, "reader body Box anchor not found"
           text = text.replace(old, new, 1)
 
@@ -165,11 +118,10 @@ jobs:
               --latest
           fi
 
-      - name: Persist fix and restore normal workflow
+      - name: Persist reader fix
         shell: bash
         run: |
-          git checkout HEAD^ -- .github/workflows/release.yml
-          git add app/src/main/java/com/lumina/reader/ui/reader/ReaderContent.kt .github/workflows/release.yml
+          git add app/src/main/java/com/lumina/reader/ui/reader/ReaderContent.kt
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
