@@ -1,0 +1,120 @@
+name: One-shot fix reader clipping
+
+on:
+  push:
+    branches:
+      - automation/fix-reader-page-clipping
+
+permissions:
+  contents: write
+
+jobs:
+  fix-reader-clipping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Patch measured pagination to use the real body height
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/java/com/lumina/reader/ui/reader/ReaderContent.kt")
+          text = path.read_text(encoding="utf-8")
+
+          old = "import androidx.compose.ui.layout.ContentScale\nimport androidx.compose.ui.graphics.graphicsLayer"
+          new = "import androidx.compose.ui.layout.ContentScale\nimport androidx.compose.ui.layout.onSizeChanged\nimport androidx.compose.ui.graphics.graphicsLayer"
+          assert old in text, "ContentScale import anchor not found"
+          text = text.replace(old, new, 1)
+
+          old = '''    val visibleChapterTitle = remember(chapter.title, chapter.index) {
+        displayChapterTitle(chapter.title, chapter.index)
+    }
+
+    BoxWithConstraints(modifier = modifier) {'''
+          new = '''    val visibleChapterTitle = remember(chapter.title, chapter.index) {
+        displayChapterTitle(chapter.title, chapter.index)
+    }
+    var measuredBodyHeightPx by remember(chapter.index) { mutableIntStateOf(0) }
+
+    BoxWithConstraints(modifier = modifier) {'''
+          assert old in text, "PagedChapterViewer state anchor not found"
+          text = text.replace(old, new, 1)
+
+          old = '''        // The body is the viewport between the subtle header and footer. Using
+        // the real device constraints is what prevents half-empty pages across
+        // different screen sizes, font sizes and line spacings.
+        val contentHeightPx = with(density) {
+            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)
+                .roundToPx()
+                .coerceAtLeast(1)
+        }'''
+          new = '''        // Prefer the body's real measured height. The previous fixed estimate
+        // could be a few pixels taller than the actual weighted viewport, which
+        // let the paginator place one more line than Compose could render and
+        // clip the bottom half of that line. Keep the estimate only for the
+        // first composition, then repaginate from the measured viewport.
+        val estimatedContentHeightPx = with(density) {
+            (maxHeight - 44.dp - 48.dp - 26.dp - 30.dp)
+                .roundToPx()
+                .coerceAtLeast(1)
+        }
+        val contentHeightPx = if (measuredBodyHeightPx > 0) {
+            // Two physical pixels absorb rounding differences between
+            // TextMeasurer and the final Text layout without wasting a line.
+            (measuredBodyHeightPx - 2).coerceAtLeast(1)
+        } else {
+            estimatedContentHeightPx
+        }'''
+          assert old in text, "contentHeightPx anchor not found"
+          text = text.replace(old, new, 1)
+
+          old = '''                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clipToBounds()
+                        ) {'''
+          new = '''                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .onSizeChanged { size ->
+                                    if (size.height > 0 && measuredBodyHeightPx != size.height) {
+                                        measuredBodyHeightPx = size.height
+                                    }
+                                }
+                                .clipToBounds()
+                        ) {'''
+          assert old in text, "reader body Box anchor not found"
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Run unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Commit and push to main
+        shell: bash
+        run: |
+          git add app/src/main/java/com/lumina/reader/ui/reader/ReaderContent.kt
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix paged reader bottom-line clipping"
+          git push origin HEAD:main
