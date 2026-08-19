@@ -1,4 +1,4 @@
-name: Validate reader stats patch
+name: Deploy reader status and stats update
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  validate:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -53,9 +53,9 @@ jobs:
             }
         }
     }'''
-          new = '''    // Keep the status bar visible in reading mode so the clock, battery and
-    // system indicators remain available. Only the navigation bar stays immersive
-    // while reader controls are hidden.
+          new = '''    // Keep the Android status bar visible in reading mode so the clock,
+    // battery level and system indicators are always available. Only the
+    // navigation bar stays immersive while reader controls are hidden.
     DisposableEffect(showControls, settings.theme) {
         val window = (context as? Activity)?.window
         if (window != null) {
@@ -152,18 +152,27 @@ jobs:
                     }
                 }
 
-                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
-                item { LibraryCard(state) }
+                item { SectionTitle("Последние чтения", Icons.Default.History) }
 
                 if (state.recentSessions.isNotEmpty()) {
-                    item { SectionTitle("Последние чтения", Icons.Default.History) }
                     itemsIndexed(
                         items = state.recentSessions.take(5),
                         key = { _, session -> session.id }
                     ) { _, session ->
                         RecentSessionCard(session)
                     }
+                } else {
+                    item {
+                        Text(
+                            text = "Недавних сессий пока нет",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+
+                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
+                item { LibraryCard(state) }
 
                 if (state.ignoredSessionCount > 0) {'''
           stats.write_text(replace_once(text, old, new, "stats most-read section"), encoding="utf-8")
@@ -184,30 +193,52 @@ jobs:
         run: |
           set -o pipefail
           chmod +x gradlew
-          ./gradlew testDebugUnitTest assembleDebug --no-daemon 2>&1 | tee /tmp/validation-build.log
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon 2>&1 | tee /tmp/reader-stats-build.log
 
-      - name: Publish validation result
+      - name: Persist validated source to main
+        id: persist
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          git add \
+            app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt \
+            app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt
+          test -n "$(git diff --cached --name-only)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Show reader status bar and refresh statistics"
+          git push origin HEAD:main
+          git rev-parse HEAD > /tmp/main-source-sha.txt
+
+      - name: Publish deployment result
+        if: always()
         shell: bash
         env:
           BUILD_OUTCOME: ${{ steps.build.outcome }}
+          PERSIST_OUTCOME: ${{ steps.persist.outcome }}
         run: |
           {
             echo "build=$BUILD_OUTCOME"
-            echo
-            if [ -f /tmp/validation-build.log ]; then
-              tail -n 500 /tmp/validation-build.log
+            echo "persist=$PERSIST_OUTCOME"
+            if [ -f /tmp/main-source-sha.txt ]; then
+              echo "main_source_sha=$(cat /tmp/main-source-sha.txt)"
             fi
-          } > /tmp/ci-validation.txt
+            echo
+            if [ -f /tmp/reader-stats-build.log ]; then
+              tail -n 500 /tmp/reader-stats-build.log
+            fi
+          } > /tmp/reader-stats-result.txt
+
           git reset --hard HEAD
           git clean -fd
-          git checkout -B automation/ci-validation-result
-          cp /tmp/ci-validation.txt ci-validation.txt
-          git add ci-validation.txt
+          git checkout -B automation/reader-stats-result
+          cp /tmp/reader-stats-result.txt reader-stats-result.txt
+          git add reader-stats-result.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Record reader stats validation result"
-          git push origin HEAD:refs/heads/automation/ci-validation-result --force
+          git commit -m "Record reader stats deployment result"
+          git push origin HEAD:refs/heads/automation/reader-stats-result --force
 
-      - name: Fail workflow when build failed
-        if: steps.build.outcome != 'success'
+      - name: Fail if validation or persist failed
+        if: steps.build.outcome != 'success' || steps.persist.outcome != 'success'
         run: exit 1
