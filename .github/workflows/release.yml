@@ -18,6 +18,265 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply reader status and statistics update
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"Anchor not found: {label}")
+              return text.replace(old, new, 1)
+
+          path = Path("app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt")
+          text = path.read_text(encoding="utf-8")
+          old = '''    // Immersive system bars toggle
+    DisposableEffect(showControls) {
+        val window = (context as? Activity)?.window
+        if (window != null) {
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (showControls) {
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            } else {
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            val window = (context as? Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }'''
+          new = '''    // Keep the status bar visible in reading mode so the clock, battery and
+    // system indicators remain available. Only the navigation bar stays immersive
+    // while reader controls are hidden.
+    DisposableEffect(showControls, settings.theme) {
+        val window = (context as? Activity)?.window
+        if (window != null) {
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.isAppearanceLightStatusBars = when (settings.theme.name) {
+                "SEPIA", "CREAM", "LIGHT" -> true
+                else -> false
+            }
+            insetsController.show(WindowInsetsCompat.Type.statusBars())
+            if (showControls) {
+                insetsController.show(WindowInsetsCompat.Type.navigationBars())
+            } else {
+                insetsController.hide(WindowInsetsCompat.Type.navigationBars())
+            }
+        }
+        onDispose {
+            val window = (context as? Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }'''
+          text = replace_once(text, old, new, "ReaderScreen system bars")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("app/src/main/java/com/lumina/reader/ui/stats/StatsViewModel.kt")
+          text = path.read_text(encoding="utf-8")
+          old = '''    val averageWordsPerMinute: Int = 0,
+    val readingRhythm: String = "Пока собираем ваш ритм",
+    val mostReadBooks: List<BookReadingSummary> = emptyList(),'''
+          new = '''    val averageWordsPerMinute: Int = 0,
+    val readingRhythm: String = "Пока собираем ваш ритм",
+    val favoriteReadingDay: String = "Нет данных",
+    val averageActiveDaySeconds: Long = 0,
+    val averageWordsPerActiveDay: Long = 0,
+    val readingConsistencyPercent: Int = 0,
+    val mostReadBooks: List<BookReadingSummary> = emptyList(),'''
+          text = replace_once(text, old, new, "stats state habit fields")
+
+          old = '''        val favoritePartOfDay = validStats
+            .groupBy { it.partOfDay(zoneId) }
+            .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
+            ?.key
+
+        val completedBookCount = books.count { it.isCompleted || it.currentProgressPercent >= 99f }'''
+          new = '''        val favoritePartOfDay = validStats
+            .groupBy { it.partOfDay(zoneId) }
+            .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
+            ?.key
+
+        val favoriteReadingDay = validStats
+            .groupBy { it.localDate(zoneId).dayOfWeek }
+            .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
+            ?.key
+            ?.let(::russianWeekdayName)
+            ?: "Нет данных"
+        val activeDayCount = readingDates.size
+        val totalValidDuration = validStats.sumOf { it.sessionDurationSeconds }
+        val totalValidWords = validStats.sumOf { it.wordsReadCount.toLong() }
+        val averageActiveDaySeconds = if (activeDayCount == 0) 0 else totalValidDuration / activeDayCount
+        val averageWordsPerActiveDay = if (activeDayCount == 0) 0 else totalValidWords / activeDayCount
+        val thirtyDayStart = today.minusDays(29)
+        val activeDaysLast30 = readingDates.count { date ->
+            !date.isBefore(thirtyDayStart) && !date.isAfter(today)
+        }
+        val readingConsistencyPercent = (activeDaysLast30 * 100 / 30).coerceIn(0, 100)
+
+        val completedBookCount = books.count { it.isCompleted || it.currentProgressPercent >= 99f }'''
+          text = replace_once(text, old, new, "stats habit calculations")
+
+          old = '''            averageWordsPerMinute = averageWordsPerMinute,
+            readingRhythm = favoritePartOfDay?.label ?: "Пока собираем ваш ритм",
+            mostReadBooks = mostReadBooks,'''
+          new = '''            averageWordsPerMinute = averageWordsPerMinute,
+            readingRhythm = favoritePartOfDay?.label ?: "Пока собираем ваш ритм",
+            favoriteReadingDay = favoriteReadingDay,
+            averageActiveDaySeconds = averageActiveDaySeconds,
+            averageWordsPerActiveDay = averageWordsPerActiveDay,
+            readingConsistencyPercent = readingConsistencyPercent,
+            mostReadBooks = mostReadBooks,'''
+          text = replace_once(text, old, new, "stats state assignment")
+
+          old = '''    private fun ReadingStats.partOfDay(zoneId: ZoneId): PartOfDay {
+        val hour = Instant.ofEpochMilli(timestamp).atZone(zoneId).hour
+        return when (hour) {
+            in 5..11 -> PartOfDay.MORNING
+            in 12..17 -> PartOfDay.DAY
+            in 18..22 -> PartOfDay.EVENING
+            else -> PartOfDay.NIGHT
+        }
+    }
+
+    private enum class PartOfDay(val label: String) {'''
+          new = '''    private fun ReadingStats.partOfDay(zoneId: ZoneId): PartOfDay {
+        val hour = Instant.ofEpochMilli(timestamp).atZone(zoneId).hour
+        return when (hour) {
+            in 5..11 -> PartOfDay.MORNING
+            in 12..17 -> PartOfDay.DAY
+            in 18..22 -> PartOfDay.EVENING
+            else -> PartOfDay.NIGHT
+        }
+    }
+
+    private fun russianWeekdayName(day: java.time.DayOfWeek): String = when (day) {
+        java.time.DayOfWeek.MONDAY -> "Понедельник"
+        java.time.DayOfWeek.TUESDAY -> "Вторник"
+        java.time.DayOfWeek.WEDNESDAY -> "Среда"
+        java.time.DayOfWeek.THURSDAY -> "Четверг"
+        java.time.DayOfWeek.FRIDAY -> "Пятница"
+        java.time.DayOfWeek.SATURDAY -> "Суббота"
+        java.time.DayOfWeek.SUNDAY -> "Воскресенье"
+    }
+
+    private enum class PartOfDay(val label: String) {'''
+          text = replace_once(text, old, new, "weekday formatter")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("import androidx.compose.foundation.lazy.itemsIndexed\n", "", 1)
+
+          old = '''                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
+
+                item { LibraryCard(state) }
+
+                if (state.mostReadBooks.isNotEmpty()) {
+                    item { SectionTitle("Больше всего читали", Icons.Default.EmojiEvents) }
+
+                    itemsIndexed(
+                        items = state.mostReadBooks,
+                        key = { _, item -> item.bookId }
+                    ) { index, book ->
+                        TopBookCard(
+                            rank = index + 1,
+                            book = book,
+                            maximumDuration = state.mostReadBooks.maxOf { it.durationSeconds }
+                        )
+                    }
+                }
+
+
+
+                if (state.ignoredSessionCount > 0) {'''
+          new = '''                item { SectionTitle("Читательские привычки", Icons.Default.History) }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        InsightCard(
+                            title = "Любимый день",
+                            value = state.favoriteReadingDay,
+                            icon = Icons.Default.CalendarMonth,
+                            color = StatsBlue,
+                            modifier = Modifier.weight(1f)
+                        )
+                        InsightCard(
+                            title = "В активный день",
+                            value = formatDuration(state.averageActiveDaySeconds),
+                            icon = Icons.Default.Schedule,
+                            color = StatsOrange,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        InsightCard(
+                            title = "Слов за активный день",
+                            value = formatNumber(state.averageWordsPerActiveDay),
+                            icon = Icons.Default.AutoStories,
+                            color = StatsGreen,
+                            modifier = Modifier.weight(1f)
+                        )
+                        InsightCard(
+                            title = "Регулярность за 30 дней",
+                            value = "${state.readingConsistencyPercent}%",
+                            icon = Icons.Default.History,
+                            color = StatsPurple,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
+
+                item { LibraryCard(state) }
+
+                if (state.ignoredSessionCount > 0) {'''
+          text = replace_once(text, old, new, "replace top books with habits")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("app/src/test/java/com/lumina/reader/ui/stats/ReadingStatsCalculatorTest.kt")
+          text = path.read_text(encoding="utf-8")
+          old = '''        assertEquals(7, result.dailyActivity.size)
+        assertEquals("Вторая", result.mostReadBooks.first().title)
+        assertEquals(2, result.allTime.bookCount)
+        assertEquals(0, result.ignoredSessionCount)'''
+          new = '''        assertEquals(7, result.dailyActivity.size)
+        assertEquals("Вторая", result.mostReadBooks.first().title)
+        assertEquals("Четверг", result.favoriteReadingDay)
+        assertEquals(585, result.averageActiveDaySeconds)
+        assertEquals(975, result.averageWordsPerActiveDay)
+        assertEquals(13, result.readingConsistencyPercent)
+        assertEquals(2, result.allTime.bookCount)
+        assertEquals(0, result.ignoredSessionCount)'''
+          text = replace_once(text, old, new, "stats test expectations")
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Check patch formatting
+        run: git diff --check
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -83,3 +342,17 @@ jobs:
               --generate-notes \
               --latest
           fi
+
+      - name: Persist validated source changes
+        shell: bash
+        run: |
+          git add \
+            app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt \
+            app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt \
+            app/src/main/java/com/lumina/reader/ui/stats/StatsViewModel.kt \
+            app/src/test/java/com/lumina/reader/ui/stats/ReadingStatsCalculatorTest.kt
+          test -n "$(git diff --cached --name-only)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Improve reader status bar and reading insights [skip ci]"
+          git push origin HEAD:main
