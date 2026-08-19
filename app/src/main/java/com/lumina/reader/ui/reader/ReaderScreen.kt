@@ -71,16 +71,23 @@ fun ReaderScreen(
         }
     }
 
-    // Immersive system bars toggle
-    DisposableEffect(showControls) {
+    // Keep the Android status bar visible in reading mode so the clock,
+    // battery level and system indicators stay available. Only the navigation
+    // bar remains immersive while the reader controls are hidden.
+    DisposableEffect(showControls, settings.theme) {
         val window = (context as? Activity)?.window
         if (window != null) {
             val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.isAppearanceLightStatusBars = when (settings.theme.name) {
+                "SEPIA", "CREAM", "LIGHT" -> true
+                else -> false
+            }
+            insetsController.show(WindowInsetsCompat.Type.statusBars())
             if (showControls) {
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
+                insetsController.show(WindowInsetsCompat.Type.navigationBars())
             } else {
-                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.hide(WindowInsetsCompat.Type.navigationBars())
             }
         }
         onDispose {
