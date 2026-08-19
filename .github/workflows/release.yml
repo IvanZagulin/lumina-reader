@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: lumina-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-release:
@@ -21,161 +21,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: true
-
-      - name: Apply reader status and statistics update
-        id: patch
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              if old not in text:
-                  raise SystemExit(f"Anchor not found: {label}")
-              return text.replace(old, new, 1)
-
-          reader = Path("app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt")
-          text = reader.read_text(encoding="utf-8")
-          old = '''    // Immersive system bars toggle
-    DisposableEffect(showControls) {
-        val window = (context as? Activity)?.window
-        if (window != null) {
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (showControls) {
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
-            } else {
-                insetsController.hide(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-        onDispose {
-            val window = (context as? Activity)?.window
-            if (window != null) {
-                val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }'''
-          new = '''    // Keep the status bar visible in reading mode so the clock, battery and
-    // system indicators remain available. Only the navigation bar stays immersive
-    // while reader controls are hidden.
-    DisposableEffect(showControls, settings.theme) {
-        val window = (context as? Activity)?.window
-        if (window != null) {
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.isAppearanceLightStatusBars = when (settings.theme.name) {
-                "SEPIA", "CREAM", "LIGHT" -> true
-                else -> false
-            }
-            insetsController.show(WindowInsetsCompat.Type.statusBars())
-            if (showControls) {
-                insetsController.show(WindowInsetsCompat.Type.navigationBars())
-            } else {
-                insetsController.hide(WindowInsetsCompat.Type.navigationBars())
-            }
-        }
-        onDispose {
-            val window = (context as? Activity)?.window
-            if (window != null) {
-                val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }'''
-          text = replace_once(text, old, new, "ReaderScreen system bars")
-          reader.write_text(text, encoding="utf-8")
-
-          stats = Path("app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt")
-          text = stats.read_text(encoding="utf-8")
-          old = '''                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
-
-                item { LibraryCard(state) }
-
-                if (state.mostReadBooks.isNotEmpty()) {
-                    item { SectionTitle("Больше всего читали", Icons.Default.EmojiEvents) }
-
-                    itemsIndexed(
-                        items = state.mostReadBooks,
-                        key = { _, item -> item.bookId }
-                    ) { index, book ->
-                        TopBookCard(
-                            rank = index + 1,
-                            book = book,
-                            maximumDuration = state.mostReadBooks.maxOf { it.durationSeconds }
-                        )
-                    }
-                }
-
-
-
-                if (state.ignoredSessionCount > 0) {'''
-          new = '''                item { SectionTitle("Ещё немного цифр", Icons.Default.History) }
-
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        InsightCard(
-                            title = "Всего сессий",
-                            value = formatNumber(state.allTime.sessionCount.toLong()),
-                            icon = Icons.Default.History,
-                            color = StatsBlue,
-                            modifier = Modifier.weight(1f)
-                        )
-                        InsightCard(
-                            title = "Примерно страниц",
-                            value = formatNumber(state.allTime.estimatedPages),
-                            icon = Icons.Default.AutoStories,
-                            color = StatsPurple,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        InsightCard(
-                            title = "Рекорд серии",
-                            value = "${state.bestStreakDays} ${dayWord(state.bestStreakDays)}",
-                            icon = Icons.Default.LocalFireDepartment,
-                            color = StatsOrange,
-                            modifier = Modifier.weight(1f)
-                        )
-                        InsightCard(
-                            title = "Книг открыто",
-                            value = formatNumber(state.allTime.bookCount.toLong()),
-                            icon = Icons.AutoMirrored.Filled.MenuBook,
-                            color = StatsGreen,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
-
-                item { LibraryCard(state) }
-
-                if (state.recentSessions.isNotEmpty()) {
-                    item { SectionTitle("Последние чтения", Icons.Default.History) }
-
-                    itemsIndexed(
-                        items = state.recentSessions.take(5),
-                        key = { _, session -> session.id }
-                    ) { _, session ->
-                        RecentSessionCard(session)
-                    }
-                }
-
-                if (state.ignoredSessionCount > 0) {'''
-          text = replace_once(text, old, new, "replace most-read section")
-          stats.write_text(text, encoding="utf-8")
-          PY
-          git diff --check
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -211,10 +56,10 @@ jobs:
             -PsigningStorePassword=android \
             -PsigningKeyAlias=AndroidDebugKey \
             -PsigningKeyPassword=android \
-            --no-daemon 2>&1 | tee /tmp/lumina-build.log
+            --no-daemon 2>&1 | tee /tmp/lumina-release-build.log
 
       - name: Verify update signing certificate
-        id: cert
+        id: certificate
         env:
           EXPECTED_CERT_SHA256: 646f6722051e0d181095efa4a0166f74adb1ff1eb588d1ca06965bd18a618f51
         run: |
@@ -248,49 +93,49 @@ jobs:
               --latest
           fi
 
-      - name: Persist validated source changes
-        id: persist
+      - name: Record successful deployment
+        if: success()
         shell: bash
         run: |
-          git add \
-            app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt \
-            app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt
-          test -n "$(git diff --cached --name-only)"
+          printf 'status=success\nversion=%s\nsource_sha=%s\n' \
+            "$VERSION_NAME" "$GITHUB_SHA" > /tmp/latest-release-status.txt
+          git reset --hard HEAD
+          git clean -fd
+          git checkout -B automation/latest-release-status
+          cp /tmp/latest-release-status.txt latest-release-status.txt
+          git add latest-release-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Show reader status bar and refresh statistics [skip ci]"
-          git push origin HEAD:main
+          git commit -m "Record successful release deployment"
+          git push origin HEAD:refs/heads/automation/latest-release-status --force
 
-      - name: Save diagnostics on failure
+      - name: Record failed deployment
         if: failure()
         shell: bash
         env:
-          PATCH_OUTCOME: ${{ steps.patch.outcome }}
           SIGNING_OUTCOME: ${{ steps.signing.outcome }}
           BUILD_OUTCOME: ${{ steps.build.outcome }}
-          CERT_OUTCOME: ${{ steps.cert.outcome }}
+          CERT_OUTCOME: ${{ steps.certificate.outcome }}
           PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
-          PERSIST_OUTCOME: ${{ steps.persist.outcome }}
         run: |
           {
-            echo "patch=$PATCH_OUTCOME"
+            echo 'status=failure'
+            echo "source_sha=$GITHUB_SHA"
             echo "signing=$SIGNING_OUTCOME"
             echo "build=$BUILD_OUTCOME"
             echo "certificate=$CERT_OUTCOME"
             echo "publish=$PUBLISH_OUTCOME"
-            echo "persist=$PERSIST_OUTCOME"
             echo
-            if [ -f /tmp/lumina-build.log ]; then
-              echo "--- build log tail ---"
-              tail -n 300 /tmp/lumina-build.log
+            if [ -f /tmp/lumina-release-build.log ]; then
+              tail -n 400 /tmp/lumina-release-build.log
             fi
-          } > /tmp/ci-last-failure.txt
+          } > /tmp/latest-release-status.txt
           git reset --hard HEAD
           git clean -fd
-          git checkout -B automation/ci-diagnostics
-          cp /tmp/ci-last-failure.txt ci-last-failure.txt
-          git add ci-last-failure.txt
+          git checkout -B automation/latest-release-status
+          cp /tmp/latest-release-status.txt latest-release-status.txt
+          git add latest-release-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Record latest CI failure diagnostics"
-          git push origin HEAD:refs/heads/automation/ci-diagnostics --force
+          git commit -m "Record failed release deployment"
+          git push origin HEAD:refs/heads/automation/latest-release-status --force
