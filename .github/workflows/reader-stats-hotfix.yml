@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/reader-stats-hotfix.yml
+      - .github/reader-stats-trigger
 
 permissions:
   contents: write
@@ -58,9 +59,9 @@ jobs:
             }
         }
     }'''
-          new = '''    // Keep the status bar visible in reading mode so the clock, battery and
-    // system indicators remain available. Only the navigation bar stays immersive
-    // while reader controls are hidden.
+          new = '''    // Keep the Android status bar visible in reading mode so the clock,
+    // battery level and system indicators are always available. Only the
+    // navigation bar stays immersive while reader controls are hidden.
     DisposableEffect(showControls, settings.theme) {
         val window = (context as? Activity)?.window
         if (window != null) {
@@ -183,6 +184,7 @@ jobs:
           cache: gradle
 
       - name: Restore signing key
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         run: |
@@ -196,7 +198,10 @@ jobs:
           echo "VERSION_CODE=$((200000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Test and build APK
+        id: build
+        shell: bash
         run: |
+          set -o pipefail
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug \
             -PversionCodeOverride="$VERSION_CODE" \
@@ -205,9 +210,10 @@ jobs:
             -PsigningStorePassword=android \
             -PsigningKeyAlias=AndroidDebugKey \
             -PsigningKeyPassword=android \
-            --no-daemon
+            --no-daemon 2>&1 | tee /tmp/reader-stats-hotfix-build.log
 
       - name: Verify signing certificate
+        id: certificate
         env:
           EXPECTED_CERT_SHA256: 646f6722051e0d181095efa4a0166f74adb1ff1eb588d1ca06965bd18a618f51
         run: |
@@ -215,23 +221,83 @@ jobs:
           test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256"
 
       - name: Publish release
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           APK="LuminaReader-${VERSION_NAME}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           sha256sum "$APK" > "$APK.sha256"
-          gh release create "v${VERSION_NAME}" "$APK" "$APK.sha256" \
-            --title "Lumina Reader ${VERSION_NAME}" \
-            --generate-notes \
-            --latest
+          if gh release view "v${VERSION_NAME}" >/dev/null 2>&1; then
+            gh release upload "v${VERSION_NAME}" "$APK" "$APK.sha256" --clobber
+          else
+            gh release create "v${VERSION_NAME}" "$APK" "$APK.sha256" \
+              --title "Lumina Reader ${VERSION_NAME}" \
+              --generate-notes \
+              --latest
+          fi
 
       - name: Persist validated source in main
+        id: persist
+        shell: bash
         run: |
           git add \
             app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt \
             app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt
+          test -n "$(git diff --cached --name-only)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Show reader status bar and refresh statistics [skip ci]"
           git push origin HEAD:main
+          git rev-parse HEAD > /tmp/main-source-sha.txt
+
+      - name: Record success result
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "status=success"
+            echo "version=$VERSION_NAME"
+            echo "main_source_sha=$(cat /tmp/main-source-sha.txt)"
+          } > /tmp/reader-stats-hotfix-result.txt
+          git reset --hard HEAD
+          git clean -fd
+          git checkout -B automation/reader-stats-hotfix-result
+          cp /tmp/reader-stats-hotfix-result.txt reader-stats-hotfix-result.txt
+          git add reader-stats-hotfix-result.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Record successful reader stats deployment"
+          git push origin HEAD:refs/heads/automation/reader-stats-hotfix-result --force
+
+      - name: Record failure result
+        if: failure()
+        shell: bash
+        env:
+          SIGNING_OUTCOME: ${{ steps.signing.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CERT_OUTCOME: ${{ steps.certificate.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          PERSIST_OUTCOME: ${{ steps.persist.outcome }}
+        run: |
+          {
+            echo "status=failure"
+            echo "signing=$SIGNING_OUTCOME"
+            echo "build=$BUILD_OUTCOME"
+            echo "certificate=$CERT_OUTCOME"
+            echo "publish=$PUBLISH_OUTCOME"
+            echo "persist=$PERSIST_OUTCOME"
+            echo
+            if [ -f /tmp/reader-stats-hotfix-build.log ]; then
+              tail -n 500 /tmp/reader-stats-hotfix-build.log
+            fi
+          } > /tmp/reader-stats-hotfix-result.txt
+          git reset --hard HEAD
+          git clean -fd
+          git checkout -B automation/reader-stats-hotfix-result
+          cp /tmp/reader-stats-hotfix-result.txt reader-stats-hotfix-result.txt
+          git add reader-stats-hotfix-result.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Record failed reader stats deployment"
+          git push origin HEAD:refs/heads/automation/reader-stats-hotfix-result --force
