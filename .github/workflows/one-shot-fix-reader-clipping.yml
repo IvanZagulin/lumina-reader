@@ -30,8 +30,6 @@ jobs:
                   raise SystemExit(f"Anchor not found: {label}")
               return text.replace(old, new, 1)
 
-          # Reader: keep Android status bar visible so time/battery are always shown,
-          # while preserving immersive navigation when reading controls are hidden.
           path = Path("app/src/main/java/com/lumina/reader/ui/reader/ReaderScreen.kt")
           text = path.read_text(encoding="utf-8")
           old = '''    // Immersive system bars toggle
@@ -84,8 +82,6 @@ jobs:
           text = replace_once(text, old, new, "ReaderScreen system bars")
           path.write_text(text, encoding="utf-8")
 
-          # Stats model/calculator: add habit metrics while keeping existing data
-          # contracts intact for other code.
           path = Path("app/src/main/java/com/lumina/reader/ui/stats/StatsViewModel.kt")
           text = path.read_text(encoding="utf-8")
           old = '''    val averageWordsPerMinute: Int = 0,
@@ -178,11 +174,9 @@ jobs:
           text = replace_once(text, old, new, "weekday formatter")
           path.write_text(text, encoding="utf-8")
 
-          # Stats UI: remove the ranked-books section and replace it with habit metrics.
           path = Path("app/src/main/java/com/lumina/reader/ui/stats/StatsScreen.kt")
           text = path.read_text(encoding="utf-8")
           text = text.replace("import androidx.compose.foundation.lazy.itemsIndexed\n", "", 1)
-          text = text.replace("import androidx.compose.material.icons.filled.EmojiEvents\n", "", 1)
 
           old = '''                item { SectionTitle("Библиотека", Icons.AutoMirrored.Filled.MenuBook) }
 
@@ -260,7 +254,6 @@ jobs:
           text = replace_once(text, old, new, "replace top books with habits")
           path.write_text(text, encoding="utf-8")
 
-          # Extend calculator tests for the new statistics.
           path = Path("app/src/test/java/com/lumina/reader/ui/stats/ReadingStatsCalculatorTest.kt")
           text = path.read_text(encoding="utf-8")
           old = '''        assertEquals(7, result.dailyActivity.size)
