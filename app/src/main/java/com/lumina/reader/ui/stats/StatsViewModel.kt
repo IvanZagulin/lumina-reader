@@ -223,6 +223,17 @@ internal object ReadingStatsCalculator {
             .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
             ?.key
 
+        val favoriteWeekday = validStats
+            .groupBy { it.localDate(zoneId).dayOfWeek }
+            .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
+            ?.key
+            ?.let(::weekdayLabel)
+
+        val readingRhythm = listOfNotNull(
+            favoritePartOfDay?.label,
+            favoriteWeekday?.let { "Любимый день — $it" }
+        ).joinToString(" · ").ifBlank { "Пока собираем ваш ритм" }
+
         val completedBookCount = books.count { it.isCompleted || it.currentProgressPercent >= 99f }
         val achievement = when {
             currentStreak(readingDates.toSet(), today) < 7 -> AchievementProgress(
@@ -259,8 +270,8 @@ internal object ReadingStatsCalculator {
             },
             longestSessionSeconds = validStats.maxOfOrNull { it.sessionDurationSeconds } ?: 0,
             averageWordsPerMinute = averageWordsPerMinute,
-            readingRhythm = favoritePartOfDay?.label ?: "Пока собираем ваш ритм",
-            mostReadBooks = mostReadBooks,
+            readingRhythm = readingRhythm,
+            mostReadBooks = emptyList(),
             recentSessions = recentSessions,
             libraryBookCount = books.size,
             readingBookCount = books.count {
@@ -327,6 +338,16 @@ internal object ReadingStatsCalculator {
             in 18..22 -> PartOfDay.EVENING
             else -> PartOfDay.NIGHT
         }
+    }
+
+    private fun weekdayLabel(day: java.time.DayOfWeek): String = when (day) {
+        java.time.DayOfWeek.MONDAY -> "понедельник"
+        java.time.DayOfWeek.TUESDAY -> "вторник"
+        java.time.DayOfWeek.WEDNESDAY -> "среда"
+        java.time.DayOfWeek.THURSDAY -> "четверг"
+        java.time.DayOfWeek.FRIDAY -> "пятница"
+        java.time.DayOfWeek.SATURDAY -> "суббота"
+        java.time.DayOfWeek.SUNDAY -> "воскресенье"
     }
 
     private enum class PartOfDay(val label: String) {
