@@ -14,7 +14,7 @@ class ReadingStatsCalculatorTest {
     private val now = Instant.parse("2026-08-14T12:00:00Z").toEpochMilli()
 
     @Test
-    fun `calculates period totals streaks and top books`() {
+    fun `calculates period totals streaks and reading habits`() {
         val stats = listOf(
             session(1, "2026-08-14T10:00:00Z", 600, 1_000),
             session(1, "2026-08-14T11:00:00Z", 300, 500),
@@ -40,7 +40,8 @@ class ReadingStatsCalculatorTest {
         assertEquals(3, result.bestStreakDays)
         assertEquals(4, result.activeReadingDays)
         assertEquals(7, result.dailyActivity.size)
-        assertEquals("Вторая", result.mostReadBooks.first().title)
+        assertTrue(result.mostReadBooks.isEmpty())
+        assertTrue(result.readingRhythm.contains("Любимый день"))
         assertEquals(2, result.allTime.bookCount)
         assertEquals(0, result.ignoredSessionCount)
     }
