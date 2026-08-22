@@ -28,6 +28,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.navigation.LuminaNavGraph
+import com.lumina.reader.core.preferences.AppDisplayController
 import com.lumina.reader.core.reminder.ReadingReminderScheduler
 import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
@@ -64,6 +65,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        AppDisplayController.applyPreferredRefreshRate(this)
+        AppDisplayController.applySavedBrightness(this)
 
         ReadingReminderScheduler.schedule(this)
         if (
@@ -111,6 +115,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppDisplayController.applyPreferredRefreshRate(this)
+        AppDisplayController.applySavedBrightness(this)
     }
 
     override fun onNewIntent(intent: Intent) {

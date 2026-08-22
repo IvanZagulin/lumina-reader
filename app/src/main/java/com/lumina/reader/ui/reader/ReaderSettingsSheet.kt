@@ -1,5 +1,6 @@
 package com.lumina.reader.ui.reader
 
+import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,16 +15,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReadingTheme
+import com.lumina.reader.core.preferences.AppDisplayController
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +36,15 @@ fun ReaderSettingsSheet(
     onSettingsChanged: ((ReaderSettings) -> ReaderSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    var useSystemBrightness by remember {
+        mutableStateOf(AppDisplayController.useSystemBrightness(context))
+    }
+    var brightness by remember {
+        mutableFloatStateOf(AppDisplayController.savedBrightness(context))
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -51,6 +64,106 @@ fun ReaderSettingsSheet(
             )
 
             Spacer(modifier = Modifier.height(18.dp))
+
+            // Display brightness. Preview is applied directly to the window while
+            // dragging, but SharedPreferences are written only when the drag ends.
+            Text(
+                text = "Яркость экрана",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Автояркость",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Использовать системную яркость Android",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = useSystemBrightness,
+                    onCheckedChange = { enabled ->
+                        useSystemBrightness = enabled
+                        AppDisplayController.saveBrightness(
+                            context = context,
+                            useSystemBrightness = enabled,
+                            brightness = brightness
+                        )
+                        activity?.let {
+                            AppDisplayController.applyBrightness(
+                                activity = it,
+                                useSystemBrightness = enabled,
+                                brightness = brightness
+                            )
+                        }
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Slider(
+                    value = brightness,
+                    onValueChange = { value ->
+                        brightness = value
+                        if (!useSystemBrightness) {
+                            activity?.let {
+                                AppDisplayController.applyBrightness(
+                                    activity = it,
+                                    useSystemBrightness = false,
+                                    brightness = value
+                                )
+                            }
+                        }
+                    },
+                    onValueChangeFinished = {
+                        AppDisplayController.saveBrightness(
+                            context = context,
+                            useSystemBrightness = useSystemBrightness,
+                            brightness = brightness
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !useSystemBrightness,
+                    valueRange = 0.05f..1f
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "${(brightness * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (useSystemBrightness) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+            Text(
+                text = if (useSystemBrightness) {
+                    "Яркостью управляет датчик освещения и системные настройки."
+                } else {
+                    "Эта яркость будет использоваться во всём Lumina Reader."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(20.dp))
 
             // 1. Reading Themes
             Text(
