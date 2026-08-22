@@ -3,7 +3,6 @@ package com.lumina.reader.core.preferences
 import android.app.Activity
 import android.content.Context
 import android.os.Build
-import android.view.Surface
 import android.view.WindowManager
 
 /**
@@ -61,9 +60,9 @@ object AppDisplayController {
     }
 
     /**
-     * Ask Android for the fastest mode available at the current resolution.
-     * On a Galaxy S25 this resolves to 120 Hz. Android may still override the
-     * request for battery saver, thermal throttling or user display settings.
+     * Ask Android for the fastest display mode available at the current
+     * resolution. Android can still override this preference for power saver,
+     * thermal throttling or user display settings.
      */
     @Suppress("DEPRECATION")
     fun applyPreferredRefreshRate(activity: Activity) {
@@ -89,13 +88,6 @@ object AppDisplayController {
         params.preferredDisplayModeId = preferredMode.modeId
         params.preferredRefreshRate = preferredMode.refreshRate
         activity.window.attributes = params
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            activity.window.decorView.setFrameRate(
-                preferredMode.refreshRate,
-                Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
-            )
-        }
     }
 
     private fun preferences(context: Context) =
