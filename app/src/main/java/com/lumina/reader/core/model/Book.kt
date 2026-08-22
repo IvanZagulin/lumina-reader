@@ -69,7 +69,9 @@ data class Book(
     val tags: String = "",
     val seriesName: String = "",
     val seriesOrder: Int = 0
-)
+) {
+    fun isDone(): Boolean = isCompleted || currentProgressPercent >= 99f
+}
 
 data class Chapter(
     val index: Int,
