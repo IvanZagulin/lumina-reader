@@ -5,6 +5,7 @@ import com.lumina.reader.core.model.ReadingStats
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,11 +40,15 @@ class ReadingStatsCalculatorTest {
         assertEquals(3, result.currentStreakDays)
         assertEquals(3, result.bestStreakDays)
         assertEquals(4, result.activeReadingDays)
-        assertEquals(7, result.dailyActivity.size)
-        assertTrue(result.mostReadBooks.isEmpty())
+        assertEquals(370, result.dailyActivity.size)
+        assertEquals(2, result.mostReadBooks.size)
+        assertEquals("Вторая", result.mostReadBooks.first().title)
         assertTrue(result.readingRhythm.contains("Любимый день"))
         assertEquals(2, result.allTime.bookCount)
         assertEquals(0, result.ignoredSessionCount)
+        assertEquals(24, result.hourlyActivity.size)
+        assertEquals(7, result.weekdayActivity.size)
+        assertEquals(12, result.monthlyActivity.size)
     }
 
     @Test
@@ -94,15 +99,38 @@ class ReadingStatsCalculatorTest {
     }
 
     @Test
-    fun `empty history still produces seven chart days`() {
+    fun `empty history still produces full heatmap history`() {
         val result = ReadingStatsCalculator.calculate(emptyList(), emptyList(), now, zone)
 
         assertEquals(0, result.allTime.sessionCount)
         assertEquals(0, result.currentStreakDays)
         assertEquals(0, result.bestStreakDays)
-        assertEquals(7, result.dailyActivity.size)
+        assertEquals(370, result.dailyActivity.size)
         assertTrue(result.mostReadBooks.isEmpty())
         assertTrue(result.recentSessions.isEmpty())
+    }
+
+    @Test
+    fun `uses completion timestamps for monthly and yearly book goals`() {
+        val completedAt = Instant.parse("2026-08-10T12:00:00Z").toEpochMilli()
+        val completedBook = book(1, "Готовая").copy(
+            isCompleted = true,
+            currentProgressPercent = 100f,
+            completedAt = completedAt
+        )
+
+        val result = ReadingStatsCalculator.calculate(
+            stats = listOf(session(1, "2026-08-10T10:00:00Z", 600, 1_000)),
+            books = listOf(completedBook),
+            nowMillis = now,
+            zoneId = zone,
+            goalSettings = StatsGoalSettings(yearlyBooksTarget = 12)
+        )
+
+        assertEquals(1, result.completedBooksThisYear)
+        assertTrue(result.yearlyGoalProgress > 0f)
+        assertEquals(1, result.monthlyActivity.last().completedBooks)
+        assertNotNull(result.bookOfMonth)
     }
 
     private fun session(

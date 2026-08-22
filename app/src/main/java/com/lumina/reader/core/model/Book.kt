@@ -63,6 +63,7 @@ data class Book(
     val description: String = "",
     val isFavorite: Boolean = false,
     val isCompleted: Boolean = false,
+    val completedAt: Long? = null,
     val collection: String = "Основная",
     val tags: String = "",
     val seriesName: String = "",

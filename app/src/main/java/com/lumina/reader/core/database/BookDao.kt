@@ -33,16 +33,38 @@ interface BookDao {
     @Query("""
         UPDATE books
         SET isCompleted = :isComp,
+            completedAt = CASE WHEN :isComp THEN :completedAt ELSE NULL END,
             currentProgressPercent = CASE WHEN :isComp THEN 100.0 ELSE currentProgressPercent END
         WHERE id = :id
     """)
-    suspend fun updateCompleted(id: Long, isComp: Boolean)
+    suspend fun updateCompleted(
+        id: Long,
+        isComp: Boolean,
+        completedAt: Long = System.currentTimeMillis()
+    )
 
     @Query("UPDATE books SET collection = :collection WHERE id = :id")
     suspend fun updateCollection(id: Long, collection: String)
 
-    @Query("UPDATE books SET currentChapterIndex = :chapterIndex, currentParagraphIndex = :paragraphIndex, currentProgressPercent = :progress, lastReadTimestamp = :timestamp WHERE id = :bookId")
-    suspend fun updateProgress(bookId: Long, chapterIndex: Int, paragraphIndex: Int, progress: Float, timestamp: Long = System.currentTimeMillis())
+    @Query("""
+        UPDATE books
+        SET currentChapterIndex = :chapterIndex,
+            currentParagraphIndex = :paragraphIndex,
+            currentProgressPercent = :progress,
+            lastReadTimestamp = :timestamp,
+            completedAt = CASE
+                WHEN :progress >= 99.0 AND completedAt IS NULL THEN :timestamp
+                ELSE completedAt
+            END
+        WHERE id = :bookId
+    """)
+    suspend fun updateProgress(
+        bookId: Long,
+        chapterIndex: Int,
+        paragraphIndex: Int,
+        progress: Float,
+        timestamp: Long = System.currentTimeMillis()
+    )
 
     @Query("UPDATE books SET collection = :collection, seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
     suspend fun updateOrganization(
