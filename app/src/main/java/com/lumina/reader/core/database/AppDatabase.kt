@@ -19,7 +19,7 @@ import com.lumina.reader.core.model.ReadingStats
         ReadingHighlight::class,
         ReadingStats::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -32,15 +32,17 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        private fun migrateLibraryOrganization(database: SupportSQLiteDatabase) {
-            val existingColumns = mutableSetOf<String>()
+        private fun tableColumns(database: SupportSQLiteDatabase): MutableSet<String> {
+            val result = mutableSetOf<String>()
             database.query("PRAGMA table_info(`books`)").use { cursor ->
                 val nameIndex = cursor.getColumnIndex("name")
-                while (cursor.moveToNext()) {
-                    existingColumns += cursor.getString(nameIndex)
-                }
+                while (cursor.moveToNext()) result += cursor.getString(nameIndex)
             }
+            return result
+        }
 
+        private fun migrateLibraryOrganization(database: SupportSQLiteDatabase) {
+            val existingColumns = tableColumns(database)
             fun addColumnIfMissing(name: String, definition: String) {
                 if (name !in existingColumns) {
                     database.execSQL("ALTER TABLE `books` ADD COLUMN `$name` $definition")
@@ -57,17 +59,10 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private fun migrateCompletionHistory(database: SupportSQLiteDatabase) {
-            val existingColumns = mutableSetOf<String>()
-            database.query("PRAGMA table_info(`books`)").use { cursor ->
-                val nameIndex = cursor.getColumnIndex("name")
-                while (cursor.moveToNext()) {
-                    existingColumns += cursor.getString(nameIndex)
-                }
-            }
+            val existingColumns = tableColumns(database)
             if ("completedAt" !in existingColumns) {
                 database.execSQL("ALTER TABLE `books` ADD COLUMN `completedAt` INTEGER")
             }
-
             database.execSQL(
                 """
                 UPDATE `books`
@@ -78,29 +73,57 @@ abstract class AppDatabase : RoomDatabase() {
             )
         }
 
+        private fun migrateStartedHistory(database: SupportSQLiteDatabase) {
+            val existingColumns = tableColumns(database)
+            if ("startedAt" !in existingColumns) {
+                database.execSQL("ALTER TABLE `books` ADD COLUMN `startedAt` INTEGER")
+            }
+
+            // Prefer the first real reading session. This keeps historical
+            // completion-duration analytics useful after upgrading from v6.
+            database.execSQL(
+                """
+                UPDATE `books`
+                SET `startedAt` = (
+                    SELECT MIN(`timestamp`)
+                    FROM `reading_stats`
+                    WHERE `reading_stats`.`bookId` = `books`.`id`
+                )
+                WHERE `startedAt` IS NULL
+                  AND (`currentProgressPercent` > 0.0 OR `isCompleted` = 1)
+                  AND EXISTS (
+                    SELECT 1 FROM `reading_stats`
+                    WHERE `reading_stats`.`bookId` = `books`.`id`
+                  )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                UPDATE `books`
+                SET `startedAt` = COALESCE(`completedAt`, `lastReadTimestamp`)
+                WHERE `startedAt` IS NULL
+                  AND (`currentProgressPercent` > 0.0 OR `isCompleted` = 1)
+                """.trimIndent()
+            )
+        }
+
         val MIGRATION_1_5 = object : Migration(1, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) =
-                migrateLibraryOrganization(database)
+            override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
         }
-
         val MIGRATION_2_5 = object : Migration(2, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) =
-                migrateLibraryOrganization(database)
+            override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
         }
-
         val MIGRATION_3_5 = object : Migration(3, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) =
-                migrateLibraryOrganization(database)
+            override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
         }
-
         val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) =
-                migrateLibraryOrganization(database)
+            override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
         }
-
         val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(database: SupportSQLiteDatabase) =
-                migrateCompletionHistory(database)
+            override fun migrate(database: SupportSQLiteDatabase) = migrateCompletionHistory(database)
+        }
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) = migrateStartedHistory(database)
         }
 
         fun getDatabase(context: Context): AppDatabase {
@@ -114,7 +137,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_2_5,
                     MIGRATION_3_5,
                     MIGRATION_4_5,
-                    MIGRATION_5_6
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
                 ).build()
                 INSTANCE = instance
                 instance

@@ -33,6 +33,10 @@ interface BookDao {
     @Query("""
         UPDATE books
         SET isCompleted = :isComp,
+            startedAt = CASE
+                WHEN :isComp AND startedAt IS NULL THEN :completedAt
+                ELSE startedAt
+            END,
             completedAt = CASE WHEN :isComp THEN :completedAt ELSE NULL END,
             currentProgressPercent = CASE WHEN :isComp THEN 100.0 ELSE currentProgressPercent END
         WHERE id = :id
@@ -52,6 +56,12 @@ interface BookDao {
             currentParagraphIndex = :paragraphIndex,
             currentProgressPercent = :progress,
             lastReadTimestamp = :timestamp,
+            startedAt = CASE
+                WHEN startedAt IS NULL
+                 AND (:progress > 0.0 OR :chapterIndex > 0 OR :paragraphIndex > 0)
+                THEN :timestamp
+                ELSE startedAt
+            END,
             completedAt = CASE
                 WHEN :progress >= 99.0 AND completedAt IS NULL THEN :timestamp
                 ELSE completedAt
