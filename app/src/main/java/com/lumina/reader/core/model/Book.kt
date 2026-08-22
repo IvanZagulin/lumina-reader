@@ -58,6 +58,7 @@ data class Book(
     val currentProgressPercent: Float = 0f,
     val totalChapters: Int = 1,
     val lastReadTimestamp: Long = System.currentTimeMillis(),
+    val startedAt: Long? = null,
     val fileSizeBytes: Long = 0L,
     val language: String = "ru",
     val description: String = "",
