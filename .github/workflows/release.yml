@@ -1,3 +1,4 @@
+# Publishes optimized release APKs; keep this on the release build type.
 name: Build and publish update
 
 on:
