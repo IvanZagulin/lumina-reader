@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +29,7 @@ fun StatsScreenWithAchievements(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val advancedViewModel: AdvancedStatsViewModel = viewModel()
+    val advancedViewModel: AdvancedStatsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val advanced by advancedViewModel.uiState.collectAsState()
     var showAchievements by remember { mutableStateOf(false) }
     var showAnalytics by remember { mutableStateOf(false) }
