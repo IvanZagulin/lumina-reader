@@ -44,6 +44,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
+            isDebuggable = false
+            if (ciSigningStoreFile != null) {
+                // CI uses the same update key as previous APKs so Android accepts
+                // the optimized release build as an in-place application update.
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

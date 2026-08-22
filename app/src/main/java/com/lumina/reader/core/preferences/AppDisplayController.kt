@@ -16,6 +16,7 @@ object AppDisplayController {
     private const val KEY_SCREEN_BRIGHTNESS = "screen_brightness"
     private const val DEFAULT_BRIGHTNESS = 0.70f
     private const val MIN_BRIGHTNESS = 0.05f
+    private const val TARGET_REFRESH_RATE = 120f
 
     fun useSystemBrightness(context: Context): Boolean =
         preferences(context).getBoolean(KEY_USE_SYSTEM_BRIGHTNESS, true)
@@ -60,34 +61,41 @@ object AppDisplayController {
     }
 
     /**
-     * Ask Android for the fastest display mode available at the current
-     * resolution. Android can still override this preference for power saver,
-     * thermal throttling or user display settings.
+     * Request a high refresh rate without pinning the app to a specific display
+     * mode. On Android 14+ the platform accepts an intended rate and selects the
+     * best compatible display mode. Older Android versions require a supported
+     * refresh rate, so use the fastest one reported by the current display.
      */
     @Suppress("DEPRECATION")
     fun applyPreferredRefreshRate(activity: Activity) {
-        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            activity.display
+        val targetRefreshRate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            TARGET_REFRESH_RATE
         } else {
-            activity.windowManager.defaultDisplay
-        } ?: return
+            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                activity.display
+            } else {
+                activity.windowManager.defaultDisplay
+            } ?: return
 
-        val currentMode = display.mode
-        val preferredMode = display.supportedModes
-            .asSequence()
-            .filter {
-                it.physicalWidth == currentMode.physicalWidth &&
-                    it.physicalHeight == currentMode.physicalHeight
-            }
-            .maxByOrNull { it.refreshRate }
-            ?: return
-
-        if (preferredMode.refreshRate <= 60.5f) return
+            display.supportedModes
+                .asSequence()
+                .map { it.refreshRate }
+                .maxOrNull()
+                ?: display.refreshRate
+        }
 
         val params = activity.window.attributes
-        params.preferredDisplayModeId = preferredMode.modeId
-        params.preferredRefreshRate = preferredMode.refreshRate
+        // preferredRefreshRate is ignored while preferredDisplayModeId is set.
+        params.preferredDisplayModeId = 0
+        params.preferredRefreshRate = targetRefreshRate
         activity.window.attributes = params
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            // Favor responsiveness while the user is touching/scrolling instead
+            // of allowing power-saving heuristics to aggressively drop the rate.
+            activity.window.setFrameRateBoostOnTouchEnabled(true)
+            activity.window.setFrameRatePowerSavingsBalanced(false)
+        }
     }
 
     private fun preferences(context: Context) =
