@@ -20,7 +20,7 @@ import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.reader.ReaderScreen
 import com.lumina.reader.ui.reader.ReaderViewModel
 import com.lumina.reader.ui.reader.ReaderViewModelFactory
-import com.lumina.reader.ui.stats.StatsScreen
+import com.lumina.reader.ui.stats.StatsScreenWithAchievements
 import com.lumina.reader.ui.stats.StatsViewModel
 
 @Composable
@@ -75,7 +75,7 @@ fun LuminaNavGraph(
 
         composable(Screen.Stats.route) {
             val statsViewModel: StatsViewModel = viewModel()
-            StatsScreen(
+            StatsScreenWithAchievements(
                 viewModel = statsViewModel,
                 onBack = { navController.popBackStack() }
             )
