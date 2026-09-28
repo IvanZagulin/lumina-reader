@@ -49,6 +49,7 @@ fun LibraryScreen(
     val collections by viewModel.collections.collectAsState()
     val seriesNames by viewModel.seriesNames.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val hasAnyBooks by viewModel.hasAnyBooks.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -223,6 +224,7 @@ fun LibraryScreen(
                             {
                                 Icon(
                                     imageVector = when (status) {
+                                        ReadingStatus.UNREAD -> Icons.Default.BookmarkBorder
                                         ReadingStatus.ALL -> Icons.Default.AutoStories
                                         ReadingStatus.READING -> Icons.Default.MenuBook
                                         ReadingStatus.FAVORITES -> Icons.Default.Favorite
@@ -325,14 +327,25 @@ fun LibraryScreen(
                             }
                         }
                         Spacer(modifier = Modifier.height(16.dp))
+                        val everythingRead = searchQuery.isEmpty() &&
+                            selectedStatus == ReadingStatus.UNREAD &&
+                            hasAnyBooks
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "Ничего не найдено" else "Здесь пока пусто",
+                            text = when {
+                                searchQuery.isNotEmpty() -> "Ничего не найдено"
+                                everythingRead -> "Все книги прочитаны"
+                                else -> "Здесь пока пусто"
+                            },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "Попробуйте изменить поисковый запрос" else "Нажмите «+» чтобы добавить книгу (EPUB, FB2, PDF, TXT)",
+                            text = when {
+                                searchQuery.isNotEmpty() -> "Попробуйте изменить поисковый запрос"
+                                everythingRead -> "Добавьте новую книгу через «+» или откройте вкладку «Все»"
+                                else -> "Нажмите «+» чтобы добавить книгу (EPUB, FB2, PDF, TXT)"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

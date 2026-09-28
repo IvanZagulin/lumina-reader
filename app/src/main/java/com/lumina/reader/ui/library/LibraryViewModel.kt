@@ -44,6 +44,16 @@ internal fun List<Book>.sortedForLibrary(): List<Book> = sortedWith(
     )
 )
 
+/**
+ * Main screen order: books already started come first, most recently read on
+ * top, followed by untouched books in the usual library order.
+ */
+internal fun List<Book>.sortedForUnread(): List<Book> {
+    val (started, notStarted) = filterNot(Book::isDone)
+        .partition { it.currentProgressPercent > 0f }
+    return started.sortedByDescending(Book::lastReadTimestamp) + notStarted.sortedForLibrary()
+}
+
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
@@ -55,7 +65,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedFormat = MutableStateFlow<BookFormat?>(null)
     val selectedFormat = _selectedFormat.asStateFlow()
 
-    private val _selectedStatus = MutableStateFlow(ReadingStatus.ALL)
+    private val _selectedStatus = MutableStateFlow(ReadingStatus.UNREAD)
     val selectedStatus = _selectedStatus.asStateFlow()
 
     private val _selectedCollection = MutableStateFlow<String?>(null)
@@ -86,6 +96,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Distinguishes an empty library from "everything has been read". */
+    val hasAnyBooks: StateFlow<Boolean> = bookDao.getAllBooks()
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val shelfSelection = combine(_selectedCollection, _selectedSeries, ::ShelfSelection)
 
     val books: StateFlow<List<Book>> = combine(
@@ -99,6 +114,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         // 1. Filter by Status / Tabs
         filtered = when (status) {
+            ReadingStatus.UNREAD -> filtered.sortedForUnread()
             ReadingStatus.ALL -> filtered.sortedForLibrary()
             ReadingStatus.READING -> filtered
                 .filter { it.currentProgressPercent > 0f && !it.isCompleted }

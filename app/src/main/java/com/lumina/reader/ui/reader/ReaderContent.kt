@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -90,6 +91,8 @@ fun ReaderContent(
     val chapterLengths = remember(parsedBook) {
         parsedBook?.chapters?.let(::chapterTextLengths) ?: IntArray(0)
     }
+    val platformTextToolbar = LocalTextToolbar.current
+    val selection = remember(platformTextToolbar) { ReaderSelectionState(platformTextToolbar) }
     val latestNextChapter by rememberUpdatedState(onNextChapter)
     val latestPreviousChapter by rememberUpdatedState(onPreviousChapter)
     val visibleChapterTitle = remember(chapter.title, chapter.index) {
@@ -111,6 +114,7 @@ fun ReaderContent(
             .fillMaxSize()
             .background(settings.theme.bgComposeColor)
     ) {
+      CompositionLocalProvider(LocalTextToolbar provides selection) {
         if (book.format == BookFormat.PDF) {
             DisposableEffect(settings.volumeKeyNavigation) {
                 if (settings.volumeKeyNavigation) {
@@ -215,8 +219,10 @@ fun ReaderContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
+                    .trackSelectionGestures(selection)
+                    .pointerInput(selection) {
                         detectTapGestures { offset ->
+                            if (selection.dismissOnTap()) return@detectTapGestures
                             val screenWidth = size.width
                             val x = offset.x
                             if (x in (screenWidth * 0.25f)..(screenWidth * 0.75f)) {
@@ -225,6 +231,7 @@ fun ReaderContent(
                         }
                     }
             ) {
+              key(selection.resetKey) {
                 SelectionContainer {
                     LazyColumn(
                         state = listState,
@@ -290,6 +297,7 @@ fun ReaderContent(
                         }
                     }
                 }
+              }
             }
         } else {
             PagedChapterViewer(
@@ -309,6 +317,7 @@ fun ReaderContent(
                 onJumpToPosition = onJumpToPosition,
                 onPageProgressChanged = onPageProgressChanged,
                 onToggleProgressDisplay = onToggleProgressDisplay,
+                selection = selection,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -595,6 +604,7 @@ fun ReaderContent(
             }
             */
         }
+      }
     }
 }
 
@@ -647,6 +657,7 @@ private fun PagedChapterViewer(
     onJumpToPosition: (chapterIndex: Int, paragraphIndex: Int) -> Unit,
     onPageProgressChanged: (chapterIndex: Int, percent: Float) -> Unit,
     onToggleProgressDisplay: () -> Unit,
+    selection: ReaderSelectionState,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -893,6 +904,8 @@ private fun PagedChapterViewer(
                             onNextChapter()
                         }
                         null -> {
+                            // A selection left on the previous page is no longer visible.
+                            if (selection.hasSelection) selection.clear()
                             val localPage = pagerLayout.contentPageForPager(pagerPage)
                             localPage
                                 ?.let(pages::getOrNull)
@@ -920,8 +933,10 @@ private fun PagedChapterViewer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(turnRequests, pagerLayout.pageCount) {
+                    .trackSelectionGestures(selection)
+                    .pointerInput(turnRequests, pagerLayout.pageCount, selection) {
                         detectTapGestures { offset ->
+                            if (selection.dismissOnTap()) return@detectTapGestures
                             when {
                                 offset.x < size.width * 0.30f ->
                                     turnRequests.tryEmit(PageTurnDirection.PREVIOUS)
@@ -995,6 +1010,7 @@ private fun PagedChapterViewer(
                                 }
                                 .clipToBounds()
                         ) {
+                          key(selection.resetKey) {
                             SelectionContainer {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
@@ -1060,6 +1076,7 @@ private fun PagedChapterViewer(
                                     }
                                 }
                             }
+                          }
                         }
 
                         ReaderProgressFooter(

@@ -37,6 +37,7 @@ enum class BookFormat {
 }
 
 enum class ReadingStatus(val title: String) {
+    UNREAD("Непрочитанные"),
     ALL("Все"),
     READING("Читаю"),
     FAVORITES("Избранное"),

@@ -53,6 +53,26 @@ class LibrarySeriesTest {
         )
     }
 
+    @Test
+    fun mainScreenShowsOnlyUnreadBooksWithStartedOnesFirst() {
+        val books = listOf(
+            book(title = "Новая Б", order = 0).copy(seriesName = ""),
+            book(title = "Дочитана", order = 0).copy(seriesName = "", isCompleted = true),
+            book(title = "Почти всё", order = 0)
+                .copy(seriesName = "", currentProgressPercent = 99.5f),
+            book(title = "Давно начата", order = 0)
+                .copy(seriesName = "", currentProgressPercent = 40f, lastReadTimestamp = 1_000L),
+            book(title = "Новая А", order = 0).copy(seriesName = ""),
+            book(title = "Читаю сейчас", order = 0)
+                .copy(seriesName = "", currentProgressPercent = 5f, lastReadTimestamp = 2_000L)
+        )
+
+        assertEquals(
+            listOf("Читаю сейчас", "Давно начата", "Новая А", "Новая Б"),
+            books.sortedForUnread().map(Book::title)
+        )
+    }
+
     private fun book(title: String, order: Int) = Book(
         title = title,
         filePath = "$title.fb2",
