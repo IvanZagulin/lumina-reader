@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -755,7 +754,8 @@ private fun PagedChapterViewer(
                             contentHeightPx = contentHeightPx,
                             firstPageTitleHeightPx = chapterTitleHeightPx,
                             paragraphSpacingPx = paragraphSpacingPx,
-                            bionic = bionic
+                            bionic = bionic,
+                            checkCancelled = { ensureActive() }
                         ).map { page -> page.blocks.firstOrNull()?.paragraphIndex ?: 0 }
                             .toIntArray()
                     }
@@ -1301,7 +1301,8 @@ private fun paginateMeasuredChapter(
     contentHeightPx: Int,
     firstPageTitleHeightPx: Int,
     paragraphSpacingPx: Int,
-    bionic: Boolean
+    bionic: Boolean,
+    checkCancelled: () -> Unit = {}
 ): List<MeasuredReaderPage> {
     val pages = mutableListOf<MeasuredReaderPage>()
     var blocks = mutableListOf<MeasuredPageBlock>()
@@ -1322,6 +1323,7 @@ private fun paginateMeasuredChapter(
     }
 
     paragraphs.forEachIndexed { paragraphIndex, rawParagraph ->
+        checkCancelled()
         if (rawParagraph.isBlank()) {
             // FB2 often contains formatting-only <empty-line/> nodes. They have
             // no visual block, so reserving height for them creates mysteriously
