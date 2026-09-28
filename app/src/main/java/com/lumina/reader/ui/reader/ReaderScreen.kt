@@ -150,6 +150,15 @@ fun ReaderScreen(
                         onParagraphVisible = { pIndex -> viewModel.onParagraphVisible(pIndex) },
                         onParagraphFragmentVisible = { pIndex, fragmentIndex, text ->
                             viewModel.onParagraphFragmentVisible(pIndex, fragmentIndex, text)
+                        },
+                        onJumpToPosition = { chIndex, pIndex -> viewModel.goToPosition(chIndex, pIndex) },
+                        onPageProgressChanged = { chIndex, percent ->
+                            viewModel.onPageProgressChanged(chIndex, percent)
+                        },
+                        onToggleProgressDisplay = {
+                            viewModel.updateSettings {
+                                it.copy(showBookPagesInFooter = !it.showBookPagesInFooter)
+                            }
                         }
                     )
                 } else {

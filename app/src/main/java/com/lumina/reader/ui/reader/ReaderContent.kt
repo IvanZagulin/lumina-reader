@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
@@ -35,7 +36,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -56,11 +60,13 @@ import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReaderSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import android.util.Log
+import android.widget.Toast
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -75,10 +81,16 @@ fun ReaderContent(
     onPreviousChapter: () -> Unit,
     onParagraphVisible: (Int) -> Unit,
     onParagraphFragmentVisible: (paragraphIndex: Int, fragmentIndex: Int, text: String) -> Unit,
+    onJumpToPosition: (chapterIndex: Int, paragraphIndex: Int) -> Unit,
+    onPageProgressChanged: (chapterIndex: Int, percent: Float) -> Unit,
+    onToggleProgressDisplay: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     val navigationOwner = remember { Any() }
+    val chapterLengths = remember(parsedBook) {
+        parsedBook?.chapters?.let(::chapterTextLengths) ?: IntArray(0)
+    }
     val latestNextChapter by rememberUpdatedState(onNextChapter)
     val latestPreviousChapter by rememberUpdatedState(onPreviousChapter)
     val visibleChapterTitle = remember(chapter.title, chapter.index) {
@@ -121,6 +133,38 @@ fun ReaderContent(
                 onPreviousPage = onPreviousChapter,
                 modifier = Modifier.fillMaxSize()
             )
+
+            // Every PDF page is its own chapter, so the position is exact.
+            val pdfPage = chapter.index + 1
+            val pdfPosition = BookPosition(
+                pageNumber = pdfPage,
+                totalPages = totalChapters,
+                percent = pdfPage * 100f / totalChapters,
+                isExact = true
+            )
+            var showPdfJumpDialog by remember { mutableStateOf(false) }
+            ReaderProgressFooter(
+                chapterLabel = null,
+                position = pdfPosition,
+                showPages = settings.showBookPagesInFooter,
+                settings = settings,
+                onToggle = onToggleProgressDisplay,
+                onLongPress = { showPdfJumpDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            )
+            if (showPdfJumpDialog) {
+                BookJumpDialog(
+                    position = pdfPosition,
+                    byPages = settings.showBookPagesInFooter,
+                    onDismiss = { showPdfJumpDialog = false },
+                    onJump = { pageIndex ->
+                        showPdfJumpDialog = false
+                        onJumpToPosition(pageIndex, 0)
+                    }
+                )
+            }
         } else if (settings.isContinuousScroll) {
             // 1. Continuous Vertical Scroll Mode
             val initialListIndex = when (initialParagraphIndex) {
@@ -262,6 +306,10 @@ fun ReaderContent(
                 onPreviousChapter = latestPreviousChapter,
                 onParagraphVisible = onParagraphVisible,
                 onParagraphFragmentVisible = onParagraphFragmentVisible,
+                chapterLengths = chapterLengths,
+                onJumpToPosition = onJumpToPosition,
+                onPageProgressChanged = onPageProgressChanged,
+                onToggleProgressDisplay = onToggleProgressDisplay,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -596,15 +644,32 @@ private fun PagedChapterViewer(
     onPreviousChapter: () -> Unit,
     onParagraphVisible: (Int) -> Unit,
     onParagraphFragmentVisible: (paragraphIndex: Int, fragmentIndex: Int, text: String) -> Unit,
+    chapterLengths: IntArray,
+    onJumpToPosition: (chapterIndex: Int, paragraphIndex: Int) -> Unit,
+    onPageProgressChanged: (chapterIndex: Int, percent: Float) -> Unit,
+    onToggleProgressDisplay: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     val density = LocalDensity.current
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val layoutDirection = LocalLayoutDirection.current
     val textMeasurer = rememberTextMeasurer(cacheSize = 64)
     val visibleChapterTitle = remember(chapter.title, chapter.index) {
         displayChapterTitle(chapter.title, chapter.index)
     }
-    var measuredBodyHeightPx by remember(chapter.index) { mutableStateOf(0) }
+    // The page body has the same size in every chapter. Keeping the measured
+    // height across chapter changes lets a new chapter paginate once with the
+    // real viewport and keeps the whole-book page map valid.
+    var measuredBodyHeightPx by remember { mutableStateOf(0) }
+    var bookPageMap by remember(parsedBook) { mutableStateOf<BookPageMap?>(null) }
+    // A book-wide page jump into another chapter: open exactly that page even
+    // when it starts in the middle of a long paragraph.
+    var pendingJump by remember { mutableStateOf<BookPageLocation?>(null) }
+    LaunchedEffect(chapter.index) {
+        if (pendingJump?.chapterIndex != chapter.index) pendingJump = null
+    }
 
     BoxWithConstraints(modifier = modifier) {
         val contentWidthPx = with(density) {
@@ -647,6 +712,58 @@ private fun PagedChapterViewer(
             ).size.height + paragraphSpacingPx
         }
 
+        // Paginate the whole book in the background with exactly the same
+        // metrics as the visible chapter, so the footer can show real
+        // book-wide page numbers. Until it finishes the footer extrapolates.
+        val bodyMeasured = measuredBodyHeightPx > 0
+        LaunchedEffect(
+            parsedBook,
+            bodyMeasured,
+            contentWidthPx,
+            contentHeightPx,
+            paragraphSpacingPx,
+            textStyle,
+            titleStyle,
+            settings.isBionicReadingEnabled
+        ) {
+            bookPageMap = null
+            val chapters = parsedBook?.chapters
+            if (!bodyMeasured || chapters.isNullOrEmpty()) return@LaunchedEffect
+            val bionic = settings.isBionicReadingEnabled
+            val map = withContext(Dispatchers.Default) {
+                // A private measurer without a cache: TextMeasurer caches are
+                // not meant to be shared with the UI thread.
+                val backgroundMeasurer = TextMeasurer(
+                    fontFamilyResolver,
+                    density,
+                    layoutDirection,
+                    0
+                )
+                BookPageMap(
+                    chapters.map { bookChapter ->
+                        ensureActive()
+                        val chapterTitleHeightPx = backgroundMeasurer.measure(
+                            text = displayChapterTitle(bookChapter.title, bookChapter.index),
+                            style = titleStyle,
+                            constraints = Constraints(maxWidth = contentWidthPx)
+                        ).size.height + paragraphSpacingPx
+                        paginateMeasuredChapter(
+                            paragraphs = bookChapter.paragraphs,
+                            textMeasurer = backgroundMeasurer,
+                            textStyle = textStyle,
+                            contentWidthPx = contentWidthPx,
+                            contentHeightPx = contentHeightPx,
+                            firstPageTitleHeightPx = chapterTitleHeightPx,
+                            paragraphSpacingPx = paragraphSpacingPx,
+                            bionic = bionic
+                        ).map { page -> page.blocks.firstOrNull()?.paragraphIndex ?: 0 }
+                            .toIntArray()
+                    }
+                )
+            }
+            bookPageMap = map
+        }
+
         val pages = remember(
             chapter.index,
             chapter.paragraphs,
@@ -677,12 +794,19 @@ private fun PagedChapterViewer(
             settings.fontFamily,
             settings.isBionicReadingEnabled
         ) {
+            val pendingLocalPage = pendingJump
+                ?.takeIf { it.chapterIndex == chapter.index }
+                ?.localPage
             val initialLocalPage = when {
+                pendingLocalPage != null -> pendingLocalPage
                 initialParagraphIndex == Int.MAX_VALUE -> pages.lastIndex
                 else -> pages.indexOfFirst { initialParagraphIndex in it.paragraphIndices }
                     .takeIf { it >= 0 }
                     ?: 0
             }.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            if (pendingLocalPage != null) {
+                LaunchedEffect(Unit) { pendingJump = null }
+            }
             val pagerLayout = ChapterPagerLayout(
                 contentPageCount = pages.size,
                 hasPreviousChapter = chapter.index > 0,
@@ -700,7 +824,6 @@ private fun PagedChapterViewer(
                 )
             }
             var showPageJumpDialog by remember(chapter.index) { mutableStateOf(false) }
-            var pageNumberInput by remember(chapter.index) { mutableStateOf("1") }
 
             LaunchedEffect(pagerState, pagerLayout) {
                 var requestedPage = pagerState.currentPage
@@ -744,6 +867,18 @@ private fun PagedChapterViewer(
                 onDispose { ReaderPageNavigation.unregister(navigationOwner) }
             }
 
+            val reportPageProgress by rememberUpdatedState<(Int) -> Unit>({ localPage ->
+                onPageProgressChanged(
+                    chapter.index,
+                    bookPosition(chapter.index, localPage, pages.size, chapterLengths, bookPageMap).percent
+                )
+            })
+
+            // Re-report the current page once the exact book page map arrives.
+            LaunchedEffect(pagerState, pagerLayout, bookPageMap) {
+                pagerLayout.contentPageForPager(pagerState.settledPage)?.let(reportPageProgress)
+            }
+
             LaunchedEffect(pagerState, pages, chapter.index) {
                 var boundaryTransitionCommitted = false
                 snapshotFlow { pagerState.settledPage }.collect { pagerPage ->
@@ -757,21 +892,27 @@ private fun PagedChapterViewer(
                             boundaryTransitionCommitted = true
                             onNextChapter()
                         }
-                        null -> pagerLayout.contentPageForPager(pagerPage)
-                            ?.let(pages::getOrNull)
-                            ?.blocks
-                            .orEmpty()
-                            .forEach { block ->
-                                when (block) {
-                                    is MeasuredPageBlock.TextBlock -> onParagraphFragmentVisible(
-                                        block.paragraphIndex,
-                                        block.fragmentIndex,
-                                        block.text
-                                    )
-                                    is MeasuredPageBlock.ImageBlock ->
-                                        onParagraphVisible(block.paragraphIndex)
+                        null -> {
+                            val localPage = pagerLayout.contentPageForPager(pagerPage)
+                            localPage
+                                ?.let(pages::getOrNull)
+                                ?.blocks
+                                .orEmpty()
+                                .forEach { block ->
+                                    when (block) {
+                                        is MeasuredPageBlock.TextBlock -> onParagraphFragmentVisible(
+                                            block.paragraphIndex,
+                                            block.fragmentIndex,
+                                            block.text
+                                        )
+                                        is MeasuredPageBlock.ImageBlock ->
+                                            onParagraphVisible(block.paragraphIndex)
+                                    }
                                 }
-                            }
+                            // After the paragraphs so the reported percentage
+                            // is tied to the position that was just recorded.
+                            localPage?.let(reportPageProgress)
+                        }
                     }
                 }
             }
@@ -921,88 +1062,65 @@ private fun PagedChapterViewer(
                             }
                         }
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Глава ${chapter.index + 1} из $totalChapters",
-                                fontSize = 11.sp,
-                                color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.72f)
-                            )
-                            val progress = ((chapter.index.toFloat() +
-                                contentPageIndex.toFloat() / pages.size.coerceAtLeast(1)) /
-                                totalChapters * 100f).coerceIn(0f, 100f)
-                            Text(
-                                text = String.format(java.util.Locale.US, "%.1f%%", progress),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.82f)
-                            )
-                            Text(
-                                text = "Стр. ${contentPageIndex + 1} из ${pages.size}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = settings.theme.secondaryTextComposeColor,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        pageNumberInput = (contentPageIndex + 1).toString()
-                                        showPageJumpDialog = true
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                            )
-                        }
+                        ReaderProgressFooter(
+                            chapterLabel = "Глава ${chapter.index + 1} из $totalChapters",
+                            position = bookPosition(
+                                chapterIndex = chapter.index,
+                                localPage = contentPageIndex,
+                                chapterPageCount = pages.size,
+                                chapterLengths = chapterLengths,
+                                pageMap = bookPageMap
+                            ),
+                            showPages = settings.showBookPagesInFooter,
+                            settings = settings,
+                            onToggle = onToggleProgressDisplay,
+                            onLongPress = {
+                                if (bookPageMap != null) {
+                                    showPageJumpDialog = true
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Страницы книги ещё считаются, попробуйте через пару секунд",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        )
                     }
                 }
             }
 
-            if (showPageJumpDialog) {
-                val requestedPage = pageNumberInput.toIntOrNull()
-                val isValidPage = requestedPage != null && requestedPage in 1..pages.size
-                AlertDialog(
-                    onDismissRequest = { showPageJumpDialog = false },
-                    title = { Text("Перейти к странице") },
-                    text = {
-                        OutlinedTextField(
-                            value = pageNumberInput,
-                            onValueChange = { value ->
-                                pageNumberInput = value.filter(Char::isDigit).take(6)
-                            },
-                            label = { Text("Номер от 1 до ${pages.size}") },
-                            supportingText = {
-                                Text("Страницы текущей главы: ${pages.size}")
-                            },
-                            isError = pageNumberInput.isNotEmpty() && !isValidPage,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(
-                            enabled = isValidPage,
-                            onClick = {
-                                showPageJumpDialog = false
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(
-                                        page = pagerLayout.pagerPageForContent(requestedPage!! - 1),
-                                        animationSpec = tween(
-                                            durationMillis = 180,
-                                            easing = FastOutSlowInEasing
-                                        )
+            val pageMapForJump = bookPageMap
+            if (showPageJumpDialog && pageMapForJump != null) {
+                val settledLocalPage = pagerLayout.contentPageForPager(pagerState.settledPage) ?: 0
+                BookJumpDialog(
+                    position = bookPosition(
+                        chapterIndex = chapter.index,
+                        localPage = settledLocalPage,
+                        chapterPageCount = pages.size,
+                        chapterLengths = chapterLengths,
+                        pageMap = pageMapForJump
+                    ),
+                    byPages = settings.showBookPagesInFooter,
+                    onDismiss = { showPageJumpDialog = false },
+                    onJump = { globalPageIndex ->
+                        showPageJumpDialog = false
+                        val target = pageMapForJump.locate(globalPageIndex)
+                        if (target.chapterIndex == chapter.index) {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(
+                                    page = pagerLayout.pagerPageForContent(
+                                        target.localPage.coerceIn(0, pages.lastIndex)
+                                    ),
+                                    animationSpec = tween(
+                                        durationMillis = 180,
+                                        easing = FastOutSlowInEasing
                                     )
-                                }
+                                )
                             }
-                        ) {
-                            Text("Перейти")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showPageJumpDialog = false }) {
-                            Text("Отмена")
+                        } else {
+                            pendingJump = target
+                            onJumpToPosition(target.chapterIndex, target.paragraphIndex)
                         }
                     }
                 )
@@ -1043,6 +1161,136 @@ private fun ChapterBoundaryPage(
             }
         }
     }
+}
+
+/**
+ * Footer under every page. Tapping the book position switches between the
+ * percentage and book-wide page numbers; a long press opens the jump dialog.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReaderProgressFooter(
+    chapterLabel: String?,
+    position: BookPosition,
+    showPages: Boolean,
+    settings: ReaderSettings,
+    onToggle: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Equal weights on both sides keep the position exactly centred.
+        Text(
+            text = chapterLabel.orEmpty(),
+            fontSize = 11.sp,
+            color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.72f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = if (showPages) {
+                val approximate = if (position.isExact) "" else "≈ "
+                "${approximate}${position.pageNumber} из ${position.totalPages}"
+            } else {
+                formatBookPercent(position.percent)
+            },
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = settings.theme.secondaryTextComposeColor.copy(alpha = 0.85f),
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .combinedClickable(
+                    onClickLabel = if (showPages) "Показать процент" else "Показать страницы книги",
+                    onLongClickLabel = "Перейти к месту в книге",
+                    onLongClick = onLongPress,
+                    onClick = onToggle
+                )
+                .padding(horizontal = 12.dp, vertical = 5.dp)
+        )
+        Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+/** Jump to a book-wide page number, or to a percentage when [byPages] is false. */
+@Composable
+private fun BookJumpDialog(
+    position: BookPosition,
+    byPages: Boolean,
+    onDismiss: () -> Unit,
+    onJump: (globalPageIndex: Int) -> Unit
+) {
+    val totalPages = position.totalPages.coerceAtLeast(1)
+    var input by remember(byPages) {
+        mutableStateOf(
+            if (byPages) position.pageNumber.toString()
+            else position.percent.toInt().toString()
+        )
+    }
+    val targetPageIndex: Int? = if (byPages) {
+        input.toIntOrNull()?.takeIf { it in 1..totalPages }?.minus(1)
+    } else {
+        input.replace(',', '.').toFloatOrNull()
+            ?.takeIf { it in 0f..100f }
+            ?.let { percent ->
+                (kotlin.math.ceil(percent / 100.0 * totalPages).toInt() - 1)
+                    .coerceIn(0, totalPages - 1)
+            }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (byPages) "Перейти к странице" else "Перейти к месту в книге") },
+        text = {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { value ->
+                    input = if (byPages) {
+                        value.filter(Char::isDigit).take(6)
+                    } else {
+                        value.filter { it.isDigit() || it == '.' || it == ',' }.take(5)
+                    }
+                },
+                label = {
+                    Text(if (byPages) "Страница от 1 до $totalPages" else "Процент от 0 до 100")
+                },
+                supportingText = {
+                    Text(
+                        if (byPages) {
+                            "Сейчас: ${position.pageNumber} из $totalPages"
+                        } else {
+                            "Сейчас: ${formatBookPercent(position.percent)} · страница " +
+                                "${targetPageIndex?.plus(1) ?: "—"} из $totalPages"
+                        }
+                    )
+                },
+                isError = input.isNotEmpty() && targetPageIndex == null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (byPages) KeyboardType.Number else KeyboardType.Decimal
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = targetPageIndex != null,
+                onClick = { targetPageIndex?.let(onJump) }
+            ) {
+                Text("Перейти")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
+            }
+        }
+    )
 }
 
 private fun paginateMeasuredChapter(

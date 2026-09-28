@@ -23,6 +23,7 @@ class ReaderPreferences(private val context: Context) {
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val VOLUME_NAV = booleanPreferencesKey("volume_key_nav")
         val TTS_SPEED = floatPreferencesKey("tts_speed")
+        val FOOTER_BOOK_PAGES = booleanPreferencesKey("footer_book_pages")
     }
 
     val settingsFlow: Flow<ReaderSettings> = context.dataStore.data.map { preferences ->
@@ -41,6 +42,7 @@ class ReaderPreferences(private val context: Context) {
         val screenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: true
         val volumeNav = preferences[PreferencesKeys.VOLUME_NAV] ?: true
         val ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f
+        val footerBookPages = preferences[PreferencesKeys.FOOTER_BOOK_PAGES] ?: false
 
         ReaderSettings(
             fontSizeSp = fontSize,
@@ -52,7 +54,8 @@ class ReaderPreferences(private val context: Context) {
             isContinuousScroll = continuous,
             keepScreenOn = screenOn,
             volumeKeyNavigation = volumeNav,
-            ttsSpeed = ttsSpeed
+            ttsSpeed = ttsSpeed,
+            showBookPagesInFooter = footerBookPages
         )
     }
 
@@ -72,7 +75,8 @@ class ReaderPreferences(private val context: Context) {
                 isContinuousScroll = preferences[PreferencesKeys.CONTINUOUS_SCROLL] ?: false,
                 keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: true,
                 volumeKeyNavigation = preferences[PreferencesKeys.VOLUME_NAV] ?: true,
-                ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f
+                ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f,
+                showBookPagesInFooter = preferences[PreferencesKeys.FOOTER_BOOK_PAGES] ?: false
             )
             val updated = transform(current)
             preferences[PreferencesKeys.FONT_SIZE] = updated.fontSizeSp
@@ -85,6 +89,7 @@ class ReaderPreferences(private val context: Context) {
             preferences[PreferencesKeys.KEEP_SCREEN_ON] = updated.keepScreenOn
             preferences[PreferencesKeys.VOLUME_NAV] = updated.volumeKeyNavigation
             preferences[PreferencesKeys.TTS_SPEED] = updated.ttsSpeed
+            preferences[PreferencesKeys.FOOTER_BOOK_PAGES] = updated.showBookPagesInFooter
         }
     }
 }

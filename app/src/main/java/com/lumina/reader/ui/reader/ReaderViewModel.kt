@@ -88,6 +88,23 @@ class ReaderViewModel(
     private val countedTextFragments = mutableSetOf<Triple<Int, Int, Int>>()
     private var progressUpdateJob: Job? = null
 
+    @Volatile
+    private var chapterLengths: IntArray = IntArray(0)
+
+    /**
+     * Book percentage the paged reader displayed for a position. It is exact
+     * once the whole book has been paginated, so the library shows the same
+     * number as the reader footer.
+     */
+    private data class ReportedProgress(
+        val chapterIndex: Int,
+        val paragraphIndex: Int,
+        val percent: Float
+    )
+
+    @Volatile
+    private var reportedProgress: ReportedProgress? = null
+
     init {
         loadBook()
     }
@@ -128,6 +145,7 @@ class ReaderViewModel(
                     _currentParagraphIndex.value = position.paragraphIndex
                     Log.d("ReaderViewModel", "Parsed book: chapters=${parsed.chapters.size}, images=${parsed.images.size} keys=${parsed.images.keys.joinToString(",")}")
                     com.lumina.reader.core.repository.BookCacheRepository.put(file.absolutePath, parsed)
+                    chapterLengths = chapterTextLengths(parsed.chapters)
                     _parsedBook.value = parsed
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -146,6 +164,29 @@ class ReaderViewModel(
             _currentParagraphIndex.value = 0
             scheduleProgressUpdate(index, 0)
         }
+    }
+
+    /** Opens [chapterIndex] at the page that contains [paragraphIndex]. */
+    fun goToPosition(chapterIndex: Int, paragraphIndex: Int) {
+        val parsed = _parsedBook.value ?: return
+        if (chapterIndex !in parsed.chapters.indices) return
+        val safeParagraph = paragraphIndex.coerceIn(
+            0,
+            parsed.chapters[chapterIndex].paragraphs.lastIndex.coerceAtLeast(0)
+        )
+        _currentChapterIndex.value = chapterIndex
+        _currentParagraphIndex.value = safeParagraph
+        scheduleProgressUpdate(chapterIndex, safeParagraph)
+    }
+
+    /** Called by the paged reader whenever the footer percentage changes. */
+    fun onPageProgressChanged(chapterIndex: Int, percent: Float) {
+        if (chapterIndex != _currentChapterIndex.value) return
+        val paragraphIndex = _currentParagraphIndex.value
+        val progress = ReportedProgress(chapterIndex, paragraphIndex, percent.coerceIn(0f, 100f))
+        if (reportedProgress == progress) return
+        reportedProgress = progress
+        scheduleProgressUpdate(chapterIndex, paragraphIndex)
     }
 
     fun nextChapter() {
@@ -220,21 +261,11 @@ class ReaderViewModel(
     }
 
     private fun calculateProgress(chapterIndex: Int, paragraphIndex: Int): Float {
-        val parsed = _parsedBook.value
-        val totalChapters = (parsed?.chapters?.size ?: 1).coerceAtLeast(1)
-        val paragraphCount = parsed?.chapters
-            ?.getOrNull(chapterIndex)
-            ?.paragraphs
-            ?.size
-            ?.coerceAtLeast(1)
-            ?: 1
-        val chapterFraction = if (paragraphIndex == Int.MAX_VALUE) {
-            1f
-        } else {
-            paragraphIndex.coerceIn(0, paragraphCount).toFloat() / paragraphCount.toFloat()
-        }
-        return ((chapterIndex.coerceAtLeast(0) + chapterFraction) / totalChapters.toFloat() * 100f)
-            .coerceIn(0f, 100f)
+        reportedProgress
+            ?.takeIf { it.chapterIndex == chapterIndex && it.paragraphIndex == paragraphIndex }
+            ?.let { return it.percent }
+        val chapters = _parsedBook.value?.chapters ?: return 0f
+        return paragraphProgressPercent(chapters, chapterLengths, chapterIndex, paragraphIndex)
     }
 
     private fun scheduleProgressUpdate(chapterIndex: Int, paragraphIndex: Int) {

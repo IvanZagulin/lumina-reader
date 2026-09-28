@@ -105,5 +105,7 @@ data class ReaderSettings(
     val keepScreenOn: Boolean = true,
     val volumeKeyNavigation: Boolean = true,
     val ttsSpeed: Float = 1.0f,
-    val ttsPitch: Float = 1.0f
+    val ttsPitch: Float = 1.0f,
+    /** Footer shows book-wide page numbers instead of the percentage. */
+    val showBookPagesInFooter: Boolean = false
 )
