@@ -140,6 +140,55 @@ class DownloadUiMapperTest {
     }
 
     @Test
+    fun successIsAnnouncedOnceAtTheEndOfABatch() {
+        val meta = mapOf(a to DownloadMeta("Дюна"), b to DownloadMeta("Мессия"))
+        val running = mapOf(a to DownloadState.Running(5, 10), b to DownloadState.Running(1, 10))
+        val firstDone = mapOf(a to DownloadState.Completed(1, "Дюна"), b to DownloadState.Running(9, 10))
+        // Another book is still downloading: the island keeps showing progress.
+        assertNull(DownloadUiMapper.announcement(running, firstDone, setOf(a, b), meta))
+
+        val allDone = mapOf(a to DownloadState.Completed(1, "Дюна"), b to DownloadState.Completed(2, "Мессия"))
+        val success = DownloadUiMapper.announcement(firstDone, allDone, setOf(a, b), meta) as IslandAnnouncement.Success
+        assertEquals(b, success.row.key)
+        assertEquals(2, success.count)
+        assertEquals("✓ На полке: 2 книги", success.headline)
+
+        // Nothing changed: nothing to announce.
+        assertNull(DownloadUiMapper.announcement(allDone, allDone, emptySet(), meta))
+    }
+
+    @Test
+    fun singleSuccessAndDuplicateHeadlines() {
+        val done = DownloadUiMapper.announcement(
+            mapOf(a to DownloadState.Running(5, 10)),
+            mapOf(a to DownloadState.Completed(1, "Дюна")),
+            setOf(a),
+            emptyMap()
+        ) as IslandAnnouncement.Success
+        assertEquals(1, done.count)
+        assertEquals("✓ На полке", done.headline)
+
+        val duplicate = DownloadUiMapper.announcement(
+            mapOf(a to DownloadState.Running(5, 10)),
+            mapOf(a to DownloadState.Completed(1, "Дюна", alreadyInLibrary = true)),
+            setOf(a),
+            emptyMap()
+        ) as IslandAnnouncement.Success
+        assertEquals("✓ Уже на полке", duplicate.headline)
+    }
+
+    @Test
+    fun failureIsAnnouncedAtOnceEvenDuringABatch() {
+        val before = mapOf(a to DownloadState.Running(5, 10), b to DownloadState.Running(1, 10))
+        val after = mapOf(a to DownloadState.Failed("Нет сети"), b to DownloadState.Running(2, 10))
+        val failure = DownloadUiMapper.announcement(before, after, setOf(a, b), emptyMap())
+        assertTrue(failure is IslandAnnouncement.Failure)
+        assertEquals("Нет сети", failure!!.row.errorMessage)
+        // A cancelled download just disappears.
+        assertNull(DownloadUiMapper.announcement(before, mapOf(b to DownloadState.Running(2, 10)), setOf(a, b), emptyMap()))
+    }
+
+    @Test
     fun russianPlurals() {
         assertEquals("книга", pluralBooks(1))
         assertEquals("книги", pluralBooks(3))

@@ -21,7 +21,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -217,7 +216,7 @@ internal fun CatalogMonogram(name: String, modifier: Modifier = Modifier) {
 @Composable
 private fun CheckDot(check: ConnectionCheck) {
     when (check) {
-        ConnectionCheck.Running -> CircularProgressIndicator(
+        ConnectionCheck.Running -> LoadingSpinner(
             modifier = Modifier
                 .size(10.dp)
                 .semantics { contentDescription = "Проверяем соединение" },

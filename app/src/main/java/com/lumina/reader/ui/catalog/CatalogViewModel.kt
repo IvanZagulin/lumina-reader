@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -279,6 +280,25 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Searches all enabled catalogues for [query] once the catalogue list is
+     * known (the library's «Искать в каталогах»). Unlike [search] it does not
+     * race the first read of the catalogue preferences.
+     */
+    fun searchAllCatalogs(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val enabled = catalogPreferences.catalogs.first().filter { it.enabled }
+            pageJob?.cancel()
+            loadMoreJob?.cancel()
+            mutableState.update {
+                it.copy(query = trimmed, catalogs = enabled, pages = emptyList(), selected = null)
+            }
+            runGlobalSearch(trimmed, mutableState.value.scope)
+        }
+    }
+
     fun clearSearch() {
         searchJob?.cancel()
         mutableState.update { it.copy(query = "", globalSearch = null) }
@@ -365,6 +385,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         if (importer.downloads.value[url]?.isActive != true) return
         importer.cancel(url)
         AppMessages.post("Загрузка отменена")
+    }
+
+    /** Removes a finished or failed download from the lists (the catalogue home's «✕»). */
+    fun dismissDownload(url: String) {
+        importer.dismiss(url)
     }
 
     /** Title, author and cover for the download island and sheet (UI labels only). */

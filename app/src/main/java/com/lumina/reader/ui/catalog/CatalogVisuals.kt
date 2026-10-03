@@ -24,8 +24,10 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -36,7 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +61,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaShape
+import com.lumina.reader.ui.theme.rememberReducedMotion
 
 /** The 8 cloth colours of generated covers and monograms (spec §4.3). */
 internal val CatalogCloth = listOf(
@@ -234,19 +237,21 @@ internal fun CatalogCover(
                 .fillMaxSize()
                 .clip(LuminaShape.Book)
                 .background(cloth)
-                .drawWithContent {
-                    drawContent()
+                .drawWithCache {
+                    // Hinge groove along the spine; the brush is built once per size.
                     val groove = 10.dp.toPx().coerceAtMost(size.width / 4f)
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0f to Color.Black.copy(alpha = 0.28f),
-                            0.4f to Color.Black.copy(alpha = 0.10f),
-                            0.6f to Color.White.copy(alpha = 0.14f),
-                            1f to Color.Transparent,
-                            endX = groove
-                        ),
-                        size = size.copy(width = groove)
+                    val brush = Brush.horizontalGradient(
+                        0f to Color.Black.copy(alpha = 0.28f),
+                        0.4f to Color.Black.copy(alpha = 0.10f),
+                        0.6f to Color.White.copy(alpha = 0.14f),
+                        1f to Color.Transparent,
+                        endX = groove
                     )
+                    val grooveSize = size.copy(width = groove)
+                    onDrawWithContent {
+                        drawContent()
+                        drawRect(brush = brush, size = grooveSize)
+                    }
                 }
                 .clearAndSetSemantics { },
             contentAlignment = Alignment.Center
@@ -319,6 +324,26 @@ internal fun CatalogCover(
                 )
             }
         }
+    }
+}
+
+/** Indeterminate progress line; a static partial line under reduced motion (no infinite animation, spec §11). */
+@Composable
+internal fun LoadingLine(modifier: Modifier = Modifier) {
+    if (rememberReducedMotion()) {
+        LinearProgressIndicator(progress = { 0.3f }, modifier = modifier, gapSize = 0.dp, drawStopIndicator = {})
+    } else {
+        LinearProgressIndicator(modifier = modifier)
+    }
+}
+
+/** Indeterminate spinner; a static arc under reduced motion (spec §11). */
+@Composable
+internal fun LoadingSpinner(modifier: Modifier = Modifier, strokeWidth: Dp = 2.dp) {
+    if (rememberReducedMotion()) {
+        CircularProgressIndicator(progress = { 0.25f }, modifier = modifier, strokeWidth = strokeWidth)
+    } else {
+        CircularProgressIndicator(modifier = modifier, strokeWidth = strokeWidth)
     }
 }
 

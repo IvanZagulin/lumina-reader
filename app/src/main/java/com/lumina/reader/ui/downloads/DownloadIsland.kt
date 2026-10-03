@@ -121,11 +121,10 @@ fun DownloadIsland(
     var announcement by remember { mutableStateOf<IslandAnnouncement?>(null) }
 
     LaunchedEffect(downloads) {
-        val finished = DownloadUiMapper.newlyFinished(previous, downloads)
+        val next = DownloadUiMapper.announcement(previous, downloads, batch, meta)
         previous = downloads
         batch = DownloadUiMapper.nextBatch(batch, downloads)
-        val key = finished.lastOrNull() ?: return@LaunchedEffect
-        val next = DownloadUiMapper.announcementFor(key, downloads[key], meta[key]) ?: return@LaunchedEffect
+        if (next == null) return@LaunchedEffect
         announcement = next
         if (next is IslandAnnouncement.Failure) LuminaHaptics.reject(view) else LuminaHaptics.confirm(view)
     }
@@ -199,6 +198,7 @@ fun DownloadIsland(
             is IslandContent.Announce -> when (val shown = target.announcement) {
                 is IslandAnnouncement.Success -> SuccessCard(
                     row = shown.row,
+                    headline = shown.headline,
                     onClick = onOpenDownloads,
                     onOpen = { bookId ->
                         announcement = null
@@ -326,10 +326,9 @@ private fun CompactRing(progress: IslandProgress, reducedMotion: Boolean, onClic
 }
 
 @Composable
-private fun SuccessCard(row: DownloadRowUi, onClick: () -> Unit, onOpen: (Long) -> Unit) {
+private fun SuccessCard(row: DownloadRowUi, headline: String, onClick: () -> Unit, onOpen: (Long) -> Unit) {
     val capsule = Lumina.colors.inverseCapsule
     val onCapsule = Lumina.colors.onInverseCapsule
-    val headline = if (row.phase == DownloadPhase.IN_LIBRARY) "✓ Уже на полке" else "✓ На полке"
     IslandSurface(
         color = capsule,
         contentColor = onCapsule,

@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -70,7 +71,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumina.reader.core.library.AppMessages
+import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.network.AiMessage
+import com.lumina.reader.ui.downloads.DownloadMetaRegistry
+import com.lumina.reader.ui.downloads.DownloadRowActions
+import com.lumina.reader.ui.downloads.DownloadRowUi
+import com.lumina.reader.ui.downloads.DownloadTaskRow
+import com.lumina.reader.ui.downloads.DownloadUiMapper
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
@@ -82,11 +90,14 @@ private val CommandPattern = Regex("\\[(DOWNLOAD|ORGANIZE):.*?\\]")
 
 private enum class ChatRole { USER, ASSISTANT, STATUS }
 
-/** One message as the chat shows it; [key] is its position in the conversation. */
+/**
+ * One message as the chat shows it; [key] is its position in the conversation.
+ * [downloadKey] links a status line to the download it started (a card under it).
+ */
 @Immutable
-private data class ChatLine(val key: Int, val role: ChatRole, val text: String)
+private data class ChatLine(val key: Int, val role: ChatRole, val text: String, val downloadKey: String? = null)
 
-private fun toChatLines(messages: List<AiMessage>): List<ChatLine> =
+private fun toChatLines(messages: List<AiMessage>, downloadCards: Map<Int, String>): List<ChatLine> =
     messages.withIndex().mapNotNull { (index, message) ->
         val role = when (message.role) {
             "user" -> ChatRole.USER
@@ -96,7 +107,7 @@ private fun toChatLines(messages: List<AiMessage>): List<ChatLine> =
         }
         // Commands are executed by the app and never shown.
         val text = message.content.replace(CommandPattern, "").trim()
-        if (text.isEmpty()) null else ChatLine(index, role, text)
+        if (text.isEmpty()) null else ChatLine(index, role, text, downloadCards[index])
     }
 
 /**
@@ -117,8 +128,29 @@ fun AiChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val downloadCards by viewModel.downloadCards.collectAsState()
     var inputText by rememberSaveable { mutableStateOf("") }
-    val lines = remember(messages) { toChatLines(messages).asReversed() }
+    val lines = remember(messages, downloadCards) { toChatLines(messages, downloadCards).asReversed() }
+
+    // Download cards (spec §7.11): the live state of the books the assistant downloads.
+    val context = LocalContext.current
+    val importer = remember(context) { BookImporter.get(context) }
+    val downloads by importer.downloads.collectAsState()
+    val downloadMeta by DownloadMetaRegistry.meta.collectAsState()
+    val downloadRows = remember(downloadCards, downloads, downloadMeta) {
+        downloadCards.values.mapNotNull { key ->
+            downloads[key]?.let { state -> key to DownloadUiMapper.row(key, state, downloadMeta[key]) }
+        }.toMap()
+    }
+    val downloadActions = remember(importer) {
+        DownloadRowActions(
+            onCancel = importer::cancel,
+            onRetry = { key -> importer.retry(key) },
+            onDismiss = importer::dismiss,
+            // The navigation host opens the reader for these requests.
+            onOpen = AppMessages::requestOpenBook
+        )
+    }
     val listState = rememberLazyListState()
     val reducedMotion = rememberReducedMotion()
 
@@ -167,7 +199,17 @@ fun AiChatScreen(
                         when (line.role) {
                             ChatRole.USER -> UserBubble(line.text)
                             ChatRole.ASSISTANT -> AssistantMessage(line.text)
-                            ChatRole.STATUS -> StatusLine(line.text)
+                            ChatRole.STATUS -> {
+                                val row = line.downloadKey?.let { downloadRows[it] }
+                                if (row == null) {
+                                    StatusLine(line.text)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        StatusLine(line.text)
+                                        ChatDownloadCard(row = row, actions = downloadActions, reducedMotion = reducedMotion)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -280,6 +322,27 @@ private fun StatusLine(text: String) {
             text = text,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** A small hairline card with the live state of a download the assistant started. */
+@Composable
+private fun ChatDownloadCard(row: DownloadRowUi, actions: DownloadRowActions, reducedMotion: Boolean) {
+    Surface(
+        shape = LuminaShape.Card,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier
+            .widthIn(max = 360.dp)
+            .fillMaxWidth()
+    ) {
+        DownloadTaskRow(
+            row = row,
+            actions = actions,
+            reducedMotion = reducedMotion,
+            compact = true,
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp)
         )
     }
 }

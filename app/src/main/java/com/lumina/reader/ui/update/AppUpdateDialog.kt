@@ -127,7 +127,7 @@ fun AppUpdateDialog(
                     .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
             ) {
                 when (step) {
-                    AppUpdateDialogState.Checking -> CheckingStep(onDismiss)
+                    AppUpdateDialogState.Checking -> CheckingStep(onDismiss, reducedMotion)
                     is AppUpdateDialogState.Available -> ReleaseStep(
                         release = step.release,
                         downloading = null,
@@ -149,6 +149,7 @@ fun AppUpdateDialog(
                         message = "Открываем системный установщик…",
                         icon = { Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                         showProgress = true,
+                        reducedMotion = reducedMotion,
                         primaryLabel = null,
                         onPrimary = {},
                         secondaryLabel = "Скрыть",
@@ -204,9 +205,14 @@ private fun SheetTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.ColumnScope.CheckingStep(onDismiss: () -> Unit) {
+private fun androidx.compose.foundation.layout.ColumnScope.CheckingStep(onDismiss: () -> Unit, reducedMotion: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+        // No infinite animation under reduced motion (spec §11): a static arc instead.
+        if (reducedMotion) {
+            CircularProgressIndicator(progress = { 0.25f }, modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+        } else {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+        }
         Spacer(Modifier.width(14.dp))
         SheetTitle("Ищем обновления")
     }
@@ -407,7 +413,8 @@ private fun androidx.compose.foundation.layout.ColumnScope.MessageStep(
     primaryLabel: String?,
     onPrimary: () -> Unit,
     secondaryLabel: String,
-    onSecondary: () -> Unit
+    onSecondary: () -> Unit,
+    reducedMotion: Boolean = false
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         icon()
@@ -416,12 +423,15 @@ private fun androidx.compose.foundation.layout.ColumnScope.MessageStep(
     }
     Spacer(Modifier.height(10.dp))
     if (showProgress) {
-        LinearProgressIndicator(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(LuminaShape.Pill)
-        )
+        val barModifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(LuminaShape.Pill)
+        if (reducedMotion) {
+            LinearProgressIndicator(progress = { 1f }, modifier = barModifier, gapSize = 0.dp, drawStopIndicator = {})
+        } else {
+            LinearProgressIndicator(modifier = barModifier)
+        }
         Spacer(Modifier.height(10.dp))
     }
     Text(

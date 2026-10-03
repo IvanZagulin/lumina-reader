@@ -23,7 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.lumina.reader.ui.theme.LuminaDimens
@@ -314,14 +314,13 @@ private fun StatsHero(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(glow, Color.Transparent),
-                            center = Offset(size.width * 0.78f, -size.height * 0.1f),
-                            radius = size.maxDimension * 0.9f
-                        )
+                .drawWithCache {
+                    val brush = Brush.radialGradient(
+                        colors = listOf(glow, Color.Transparent),
+                        center = Offset(size.width * 0.78f, -size.height * 0.1f),
+                        radius = size.maxDimension * 0.9f
                     )
+                    onDrawBehind { drawRect(brush = brush) }
                 }
                 .padding(20.dp)
         ) {

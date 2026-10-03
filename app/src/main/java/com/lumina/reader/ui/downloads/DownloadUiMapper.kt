@@ -93,7 +93,16 @@ data class IslandProgress(
 sealed interface IslandAnnouncement {
     val row: DownloadRowUi
 
-    data class Success(override val row: DownloadRowUi) : IslandAnnouncement
+    /** [count] books of the finished batch are on the shelf; [row] is the last one. */
+    data class Success(override val row: DownloadRowUi, val count: Int = 1) : IslandAnnouncement {
+        val headline: String
+            get() = when {
+                count > 1 -> "✓ На полке: $count ${pluralBooks(count)}"
+                row.phase == DownloadPhase.IN_LIBRARY -> "✓ Уже на полке"
+                else -> "✓ На полке"
+            }
+    }
+
     data class Failure(override val row: DownloadRowUi) : IslandAnnouncement
 }
 
@@ -191,6 +200,31 @@ object DownloadUiMapper {
             lead = lead,
             fraction = fraction
         )
+    }
+
+    /**
+     * What the island announces after the map changed from [previous] to
+     * [current], or null. A failure is announced at once. A success waits
+     * until nothing is downloading any more, so «Скачать все» ends with one
+     * card for the whole [batch] (the batch as it was before this change)
+     * instead of a card and a vibration per book.
+     */
+    fun announcement(
+        previous: Map<String, DownloadState>,
+        current: Map<String, DownloadState>,
+        batch: Set<String>,
+        meta: Map<String, DownloadMeta>
+    ): IslandAnnouncement? {
+        val finished = newlyFinished(previous, current)
+        if (finished.isEmpty()) return null
+        val failed = finished.lastOrNull { current[it] is DownloadState.Failed }
+        if (failed != null) {
+            return IslandAnnouncement.Failure(row(failed, current.getValue(failed), meta[failed]))
+        }
+        if (current.values.any { it.isActive }) return null
+        val key = finished.last()
+        val count = (batch + finished).count { current[it] is DownloadState.Completed }.coerceAtLeast(1)
+        return IslandAnnouncement.Success(row(key, current.getValue(key), meta[key]), count)
     }
 
     /** What the island announces for a download that just finished, or null. */

@@ -13,7 +13,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -140,17 +140,14 @@ internal fun BrassMedallion(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .drawBehind {
-                if (locked) {
-                    drawRect(lockedColor)
-                } else {
-                    drawRect(
-                        Brush.radialGradient(
-                            colors = listOf(MedallionLight, MedallionDark),
-                            center = Offset(this.size.width * 0.35f, this.size.height * 0.3f),
-                            radius = this.size.maxDimension * 0.75f
-                        )
-                    )
+            .drawWithCache {
+                val foil = Brush.radialGradient(
+                    colors = listOf(MedallionLight, MedallionDark),
+                    center = Offset(this.size.width * 0.35f, this.size.height * 0.3f),
+                    radius = this.size.maxDimension * 0.75f
+                )
+                onDrawBehind {
+                    if (locked) drawRect(lockedColor) else drawRect(foil)
                 }
             },
         contentAlignment = Alignment.Center

@@ -47,7 +47,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -126,8 +125,7 @@ fun CatalogScreen(
         val query = initialQuery?.trim().orEmpty()
         if (!initialQueryHandled && query.isNotEmpty()) {
             initialQueryHandled = true
-            viewModel.onQueryChange(query)
-            viewModel.search()
+            viewModel.searchAllCatalogs(query)
         }
     }
 
@@ -158,7 +156,8 @@ fun CatalogScreen(
             onCancelDownload = viewModel::cancelDownload,
             onOpenBook = onOpenBook,
             onPopToPage = viewModel::popToPage,
-            onOpenDownloads = { showDownloads = true }
+            onOpenDownloads = { showDownloads = true },
+            onDismissDownload = viewModel::dismissDownload
         )
     }
     val homeActions = remember(sourcesViewModel) {
@@ -229,7 +228,8 @@ class CatalogScreenActions(
     val onCancelDownload: (String) -> Unit,
     val onOpenBook: (Long) -> Unit,
     val onPopToPage: (Long) -> Unit = {},
-    val onOpenDownloads: () -> Unit = {}
+    val onOpenDownloads: () -> Unit = {},
+    val onDismissDownload: (String) -> Unit = {}
 ) {
     internal fun chipCallbacks(catalog: OpdsCatalogConfig, publication: OpdsEntry.Publication) = ChipCallbacks(
         onDownload = { acquisition -> onDownload(catalog, publication, acquisition) },
@@ -373,7 +373,7 @@ private fun CatalogHome(
         DownloadRowActions(
             onCancel = actions.onCancelDownload,
             onRetry = actions.onRetryDownload,
-            onDismiss = {},
+            onDismiss = actions.onDismissDownload,
             onOpen = actions.onOpenBook
         )
     }
@@ -671,13 +671,13 @@ private fun FeedContent(
                 .height(2.dp)
         ) {
             if (page.isLoading && page.entries.isNotEmpty()) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LoadingLine(modifier = Modifier.fillMaxWidth())
             }
         }
         Box(modifier = Modifier.weight(1f)) {
             when {
                 page.isLoading && page.entries.isEmpty() -> Column {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(2.dp))
+                    LoadingLine(modifier = Modifier.fillMaxWidth().height(2.dp))
                     CatalogSkeleton()
                 }
                 page.error != null && page.entries.isEmpty() -> CatalogMessageCard(
@@ -816,7 +816,7 @@ private fun LoadMoreFooter(
         contentAlignment = Alignment.Center
     ) {
         when {
-            isLoading -> LinearProgressIndicator(
+            isLoading -> LoadingLine(
                 modifier = Modifier
                     .fillMaxWidth(0.5f)
                     .height(3.dp)
@@ -994,7 +994,7 @@ private fun SearchSectionHeader(
             )
         }
         if (section.isLoading) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            LoadingSpinner(modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
         } else if (section.entries.isNotEmpty()) {
             TextButton(onClick = onShowAll) { Text("Все результаты") }
