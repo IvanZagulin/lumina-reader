@@ -206,7 +206,7 @@ class GitHubUpdateRepository(private val context: Context) {
 
     private companion object {
         const val RELEASES_URL =
-            "https://api.github.com/repos/IvanZagulin/lumina-reader/releases?per_page=30"
+            "https://api.github.com/repos/IvanZagulin/lumina-reader/releases?per_page=100"
         const val GITHUB_ACCEPT = "application/vnd.github+json"
         const val APK_ACCEPT = "application/vnd.android.package-archive, application/octet-stream"
         const val CHECKSUM_ACCEPT = "application/octet-stream, text/plain"
