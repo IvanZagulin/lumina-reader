@@ -1,6 +1,9 @@
+@file:OptIn(ExperimentalTextApi::class)
+
 package com.lumina.reader.ui.reader
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight

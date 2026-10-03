@@ -2,6 +2,7 @@ package com.lumina.reader.ui.reader
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +67,7 @@ internal fun ReaderContent(
     settings: ReaderSettings,
     navigationRequest: NavigationRequest?,
     positionProvider: () -> ReaderPosition,
+    textInfo: BookTextInfo,
     highlights: List<ReadingHighlight>,
     searchMatch: SearchMatch?,
     minutesLeftInChapter: Int?,
@@ -93,8 +95,8 @@ internal fun ReaderContent(
         ReaderSelectionState(platformTextToolbar, clipboard)
     }
     val navigationOwner = remember { Any() }
-    val chapterLengths = remember(parsedBook) { chapterTextLengths(parsedBook.chapters) }
-    val localeTag = remember(parsedBook) { detectTextLocaleTag(bookTextSample(parsedBook)) }
+    val chapterLengths = textInfo.chapterLengths
+    val localeTag = textInfo.localeTag
     val typography = remember(settings, localeTag) { settings.toTypography(localeTag) }
     val accent = MaterialTheme.colorScheme.primary
     val colors = remember(settings.theme, accent) {
@@ -196,13 +198,19 @@ internal fun ReaderContent(
                 settings = settings,
                 onCopy = { selection.copySelection() },
                 onHighlight = {
-                    selection.captureSelection()?.let { captured ->
+                    val captured = selection.captureSelection()
+                    if (captured != null) {
                         latestTextSelected(captured.text, captured.location, SelectionIntent.HIGHLIGHT)
+                    } else {
+                        showSelectionError(context)
                     }
                 },
                 onNote = {
-                    selection.captureSelection()?.let { captured ->
+                    val captured = selection.captureSelection()
+                    if (captured != null) {
                         latestTextSelected(captured.text, captured.location, SelectionIntent.NOTE)
+                    } else {
+                        showSelectionError(context)
                     }
                 }
             )
@@ -219,6 +227,10 @@ internal fun ReaderContent(
             onDismiss = { openNoteId = null }
         )
     }
+}
+
+private fun showSelectionError(context: Context) {
+    Toast.makeText(context, "Не удалось прочитать выделенный текст", Toast.LENGTH_SHORT).show()
 }
 
 /** Layout coordinates kept outside snapshot state; they are read on demand. */

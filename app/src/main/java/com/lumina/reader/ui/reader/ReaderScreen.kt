@@ -137,6 +137,7 @@ private fun ReaderScreenContent(
     val searchMatch by viewModel.activeSearchMatch.collectAsState()
     val minutesLeft by viewModel.minutesLeftInChapter.collectAsState()
     val pdfDocument by viewModel.pdfDocument.collectAsState()
+    val textInfo by viewModel.textInfo.collectAsState()
 
     var showControls by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -213,8 +214,12 @@ private fun ReaderScreenContent(
         Box(modifier = Modifier.fillMaxSize()) {
             val currentBook = book
             val currentParsedBook = parsedBook
+            // Text info is published with the book; waiting for it avoids
+            // paginating once without the book language and once with it.
+            val textInfoPending = currentParsedBook != null &&
+                textInfo.chapterLengths.size != currentParsedBook.chapters.size
             when {
-                isLoading -> Box(
+                isLoading || textInfoPending -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
@@ -229,6 +234,7 @@ private fun ReaderScreenContent(
                     settings = settings,
                     navigationRequest = navigationRequest,
                     positionProvider = { viewModel.position.value },
+                    textInfo = textInfo,
                     highlights = highlights,
                     searchMatch = searchMatch,
                     minutesLeftInChapter = minutesLeft,

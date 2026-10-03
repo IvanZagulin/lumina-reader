@@ -111,6 +111,15 @@ internal class ScrollItems(
     }
 }
 
+/**
+ * Facts about the whole book text that the reader needs on every page:
+ * the plain-text length of each chapter and the language for hyphenation.
+ */
+internal class BookTextInfo(
+    val chapterLengths: IntArray,
+    val localeTag: String?
+)
+
 /** A sample of the book text, enough to tell its script. */
 internal fun bookTextSample(book: ParsedBook, maxChars: Int = 4_000): String {
     val builder = StringBuilder()

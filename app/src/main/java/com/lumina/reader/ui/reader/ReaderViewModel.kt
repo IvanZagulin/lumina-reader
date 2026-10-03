@@ -83,6 +83,11 @@ class ReaderViewModel(
     /** Decoded illustrations of this book. */
     internal val imageCache = ReaderImageCache(ReaderImageCache.defaultMaxBytes())
 
+    private val _textInfo = MutableStateFlow(BookTextInfo(IntArray(0), null))
+
+    /** Text lengths and language of the book, computed once off the main thread. */
+    internal val textInfo: StateFlow<BookTextInfo> = _textInfo.asStateFlow()
+
     // ---- Position and navigation ------------------------------------------
 
     private val _position = MutableStateFlow(ReaderPosition(0, 0, 0))
@@ -242,7 +247,12 @@ class ReaderViewModel(
                         charOffset = currentBook.currentCharOffset
                     )
                     Log.d(TAG, "Opened book: chapters=${parsed.chapters.size}, images=${parsed.images.size}")
-                    chapterLengths = chapterTextLengths(parsed.chapters)
+                    val lengths = chapterTextLengths(parsed.chapters)
+                    chapterLengths = lengths
+                    _textInfo.value = BookTextInfo(
+                        chapterLengths = lengths,
+                        localeTag = detectTextLocaleTag(bookTextSample(parsed))
+                    )
                     val position = restored.position
                     _position.value = position
                     _currentChapterIndex.value = position.chapterIndex
