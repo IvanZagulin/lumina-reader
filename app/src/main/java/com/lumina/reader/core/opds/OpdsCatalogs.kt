@@ -31,6 +31,13 @@ data class OpdsCatalogConfig(
             emptyMap()
         }
 
+    /**
+     * [authHeaders] for a request to [url], but only when the URL belongs to
+     * this catalogue: covers on a CDN or another site never get the password.
+     */
+    fun authHeadersFor(url: String?): Map<String, String> =
+        if (url != null && hasCredentials && owns(url)) authHeaders() else emptyMap()
+
     /** True when [url] belongs to this catalogue (its own host or a mirror). */
     fun owns(url: String): Boolean {
         val host = OpdsUrls.host(url) ?: return false

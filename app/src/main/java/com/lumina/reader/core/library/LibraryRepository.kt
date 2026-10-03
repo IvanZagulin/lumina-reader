@@ -33,8 +33,11 @@ class LibraryRepository(context: Context) {
             if (bookDao.countBooksWithPath(book.filePath) == 0) {
                 deleteQuietly(book.filePath)
             }
+            // Duplicates added by older versions may share one cover file.
             val cover = book.coverPath
-            if (cover != null) deleteQuietly(cover)
+            if (cover != null && bookDao.getAllBooksOnce().none { it.coverPath == cover }) {
+                deleteQuietly(cover)
+            }
         }
     }
 

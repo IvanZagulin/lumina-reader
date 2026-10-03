@@ -354,7 +354,6 @@ private fun FeedPageContent(
             message = if (page.searchQuery != null) "Ничего не найдено" else "В этом разделе пока пусто"
         )
         else -> {
-            val authHeaders = remember(page.catalog) { page.catalog.authHeaders() }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 24.dp),
@@ -368,7 +367,6 @@ private fun FeedPageContent(
                     EntryItem(
                         catalog = page.catalog,
                         entry = entry,
-                        authHeaders = authHeaders,
                         downloads = downloads,
                         actions = actions
                     )
@@ -392,7 +390,6 @@ private fun FeedPageContent(
 private fun EntryItem(
     catalog: OpdsCatalogConfig,
     entry: OpdsEntry,
-    authHeaders: Map<String, String>,
     downloads: Map<String, DownloadState>,
     actions: CatalogScreenActions
 ) {
@@ -403,7 +400,8 @@ private fun EntryItem(
         )
         is OpdsEntry.Publication -> PublicationRow(
             publication = entry,
-            authHeaders = authHeaders,
+            // Credentials only go to the catalogue's own hosts, never to a CDN.
+            authHeaders = catalog.authHeadersFor(entry.thumbnailUrl),
             download = publicationDownload(entry, downloads),
             actions = actions.downloadActions(catalog, entry),
             onClick = { actions.onSelectPublication(catalog, entry) }
@@ -443,7 +441,6 @@ private fun GlobalSearchContent(
                     onShowAll = { actions.onOpenSearchSection(section) }
                 )
             }
-            val authHeaders = section.catalog.authHeaders()
             items(
                 items = section.entries,
                 key = { "${section.catalog.id}|${it.key}" },
@@ -452,7 +449,6 @@ private fun GlobalSearchContent(
                 EntryItem(
                     catalog = section.catalog,
                     entry = entry,
-                    authHeaders = authHeaders,
                     downloads = downloads,
                     actions = actions
                 )

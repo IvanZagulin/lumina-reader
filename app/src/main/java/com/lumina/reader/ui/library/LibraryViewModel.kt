@@ -311,6 +311,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun deleteBook(book: Book) {
         importer.launchInBackground {
             repository.deleteBook(book)
+            // Catalogue rows of this book offer the download again.
+            importer.forgetBook(book.id)
             AppMessages.post("Книга «${book.title}» удалена")
         }
     }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -55,6 +56,8 @@ class OpdsRepository(
                 if (e.code == 401 || e.code == 403) throw e
                 lastError = e
             } catch (e: Exception) {
+                // A cancelled call fails with an IOException: stop instead of trying mirrors.
+                ensureActive()
                 lastError = e
             }
         }

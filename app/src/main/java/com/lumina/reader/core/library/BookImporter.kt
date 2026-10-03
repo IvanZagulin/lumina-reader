@@ -24,12 +24,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -200,16 +202,20 @@ class BookImporter private constructor(context: Context) {
         return true
     }
 
-    /** Starts (or joins) the download and waits until it is completed or failed. */
+    /**
+     * Starts (or joins) the download and waits until it is completed or failed.
+     * A download cancelled by the user (its state disappears) ends as [DownloadState.Failed].
+     */
     suspend fun downloadAndAwait(request: DownloadRequest): DownloadState {
         val current = mutableDownloads.value[request.key]
         if (current is DownloadState.Completed && bookDao.getBookById(current.bookId) != null) {
             return current
         }
         download(request)
-        return downloads
-            .mapNotNull { it[request.key] }
-            .first { it.isFinished }
+        val finished = downloads
+            .map { it[request.key] }
+            .first { it == null || it.isFinished }
+        return finished ?: DownloadState.Failed("Загрузка отменена")
     }
 
     fun retry(key: String): Boolean {
@@ -226,6 +232,17 @@ class BookImporter private constructor(context: Context) {
     fun dismiss(key: String) {
         val state = mutableDownloads.value[key] ?: return
         if (state.isFinished) dispatch(DownloadEvent.Cleared(key))
+    }
+
+    /**
+     * Forgets completed downloads that point at [bookId] (the book was deleted),
+     * so catalogue rows offer the download again instead of "Открыть".
+     */
+    fun forgetBook(bookId: Long) {
+        mutableDownloads.value
+            .filterValues { it is DownloadState.Completed && it.bookId == bookId }
+            .keys
+            .forEach { key -> dispatch(DownloadEvent.Cleared(key)) }
     }
 
     private suspend fun runDownload(request: DownloadRequest) {
@@ -281,11 +298,14 @@ class BookImporter private constructor(context: Context) {
                     temp.delete()
                 }
             }
-        } catch (e: CancellationException) {
-            dispatch(DownloadEvent.Cleared(key))
-            notifier.cancel(key)
-            throw e
         } catch (e: Exception) {
+            // A cancelled download may also end with an IOException from the
+            // closed connection: it is cleared, not reported as a failure.
+            if (e is CancellationException || !currentCoroutineContext().isActive) {
+                dispatch(DownloadEvent.Cleared(key))
+                notifier.cancel(key)
+                throw e
+            }
             Log.w(TAG, "Download of ${request.url} failed", e)
             reportFailure(key, title, describeNetworkError(e))
         }

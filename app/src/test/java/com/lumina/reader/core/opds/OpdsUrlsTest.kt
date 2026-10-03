@@ -114,4 +114,23 @@ class OpdsUrlsTest {
         assertEquals("A — B", OpdsText.decodeEntities("A &#8212; B"))
         assertEquals("x", OpdsText.normalize("  x \n\n\n "))
     }
+
+    @Test
+    fun credentialsOnlyGoToTheCatalogueOwnHosts() {
+        val catalog = OpdsCatalogConfig(
+            id = "user:1",
+            name = "Моя библиотека",
+            url = "https://books.example.org/opds",
+            username = "reader",
+            password = "secret",
+            mirrorBaseUrls = listOf("https://mirror.example.net")
+        )
+        val expected = mapOf("Authorization" to "Basic cmVhZGVyOnNlY3JldA==")
+        assertEquals(expected, catalog.authHeaders())
+        assertEquals(expected, catalog.authHeadersFor("https://books.example.org/covers/1.jpg"))
+        assertEquals(expected, catalog.authHeadersFor("https://mirror.example.net/covers/1.jpg"))
+        assertTrue(catalog.authHeadersFor("https://cdn.other.org/covers/1.jpg").isEmpty())
+        assertTrue(catalog.authHeadersFor(null).isEmpty())
+        assertTrue(catalog.copy(username = "").authHeadersFor("https://books.example.org/x").isEmpty())
+    }
 }

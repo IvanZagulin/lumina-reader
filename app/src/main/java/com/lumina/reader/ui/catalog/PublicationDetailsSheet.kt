@@ -41,7 +41,8 @@ fun PublicationDetailsSheet(
     onDismiss: () -> Unit
 ) {
     val publication = selected.publication
-    val authHeaders = remember(selected.catalog) { selected.catalog.authHeaders() }
+    val coverUrl = publication.coverUrl ?: publication.thumbnailUrl
+    val authHeaders = remember(selected.catalog, coverUrl) { selected.catalog.authHeadersFor(coverUrl) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -57,7 +58,7 @@ fun PublicationDetailsSheet(
         ) {
             Row {
                 CoverThumbnail(
-                    url = publication.coverUrl ?: publication.thumbnailUrl,
+                    url = coverUrl,
                     authHeaders = authHeaders,
                     width = 108.dp,
                     height = 160.dp

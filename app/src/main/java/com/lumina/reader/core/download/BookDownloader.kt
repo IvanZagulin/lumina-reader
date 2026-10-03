@@ -75,6 +75,9 @@ class BookDownloader(private val client: OkHttpClient = OpdsHttp.downloadClient)
                 // Wrong credentials are the same on every mirror.
                 if (e.code == 401) throw e
             } catch (e: Exception) {
+                // Cancelling closes the socket: the read fails with an IOException,
+                // which must end the download instead of trying the next mirror.
+                ensureActive()
                 lastError = e
             }
         }

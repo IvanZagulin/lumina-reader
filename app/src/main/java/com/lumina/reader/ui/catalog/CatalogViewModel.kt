@@ -10,6 +10,7 @@ import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.opds.OpdsAcquisition
 import com.lumina.reader.core.opds.OpdsCatalogConfig
 import com.lumina.reader.core.opds.OpdsEntry
+import com.lumina.reader.core.opds.OpdsFeed
 import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
@@ -175,10 +176,10 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         pageJob = viewModelScope.launch {
             try {
                 val query = page.searchQuery
-                val feed = when {
-                    query == null -> repository.fetchFeed(page.url, page.catalog)
-                    page.searchLink != null -> repository.searchWithLink(page.searchLink, page.catalog, query)
-                    else -> repository.searchCatalog(page.catalog, query, mutableState.value.scope.searchType)
+                val feed = if (query == null) {
+                    repository.fetchFeed(page.url, page.catalog)
+                } else {
+                    searchInCatalog(page, query)
                 }
                 updatePage(pageId) { current ->
                     current.copy(
@@ -197,6 +198,23 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 updatePage(pageId) { it.copy(isLoading = false, error = describeOpdsError(e)) }
             }
+        }
+    }
+
+    /**
+     * Search inside the open catalogue: the feed's own search link first; when
+     * it is unusable (no template, broken OpenSearch description) the
+     * catalogue-wide search with the known URL patterns.
+     */
+    private suspend fun searchInCatalog(page: CatalogPage, query: String): OpdsFeed {
+        val searchType = mutableState.value.scope.searchType
+        val link = page.searchLink ?: return repository.searchCatalog(page.catalog, query, searchType)
+        return try {
+            repository.searchWithLink(link, page.catalog, query)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            repository.searchCatalog(page.catalog, query, searchType)
         }
     }
 
