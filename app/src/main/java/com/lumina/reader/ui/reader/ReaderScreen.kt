@@ -178,9 +178,6 @@ private fun ReaderScreenContent(
     val searchState by viewModel.searchState.collectAsState()
     val searchMatch by viewModel.activeSearchMatch.collectAsState()
     val minutesLeft by viewModel.minutesLeftInChapter.collectAsState()
-    val minutesLeftInBook by viewModel.minutesLeftInBook.collectAsState()
-    val progressPercent by viewModel.progressPercent.collectAsState()
-    val position by viewModel.position.collectAsState()
     val pdfDocument by viewModel.pdfDocument.collectAsState()
     val textInfo by viewModel.textInfo.collectAsState()
 
@@ -253,7 +250,6 @@ private fun ReaderScreenContent(
             val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.isAppearanceLightStatusBars = !settings.theme.isDark
-            insetsController.isAppearanceLightNavigationBars = !settings.theme.isDark
             insetsController.show(WindowInsetsCompat.Type.statusBars())
             if (showControls) {
                 insetsController.show(WindowInsetsCompat.Type.navigationBars())
@@ -555,6 +551,7 @@ private fun ReaderScreenContent(
                     },
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
+                val progressPercent by viewModel.progressPercent.collectAsState()
                 val chapters = currentParsedBook?.chapters.orEmpty()
                 val starts = remember(textInfo) { chapterStartFractions(textInfo.chapterLengths) }
                 val fraction = (progressPercent / 100f).coerceIn(0f, 1f)
@@ -636,6 +633,9 @@ private fun ReaderScreenContent(
         val tab = navigationTab
         val navigationBook = parsedBook
         if (tab != null && navigationBook != null) {
+            val position by viewModel.position.collectAsState()
+            val progressPercent by viewModel.progressPercent.collectAsState()
+            val minutesLeftInBook by viewModel.minutesLeftInBook.collectAsState()
             BookNavigationSheet(
                 book = book,
                 parsedBook = navigationBook,
@@ -729,6 +729,7 @@ private fun ReaderScreenContent(
 
         val infoBook = book
         if (showBookInfo && infoBook != null) {
+            val progressPercent by viewModel.progressPercent.collectAsState()
             BookInfoDialog(
                 book = infoBook,
                 chapterCount = parsedBook?.chapters?.size ?: 0,

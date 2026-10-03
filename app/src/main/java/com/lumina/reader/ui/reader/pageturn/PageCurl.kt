@@ -322,8 +322,11 @@ internal fun Modifier.curlPage(
     .zIndex(-page.toFloat())
     .graphicsLayer {
         val o = pagerState.pageOffsetOf(page)
-        translationX = o * size.width
-        alpha = curlPageAlpha(page, o, curl.activePage)
+        val shown = curlPageAlpha(page, o, curl.activePage)
+        // Only shown pages are pinned in place; hidden ones stay off screen
+        // where they cannot catch touches meant for the visible page.
+        translationX = if (shown > 0f) o * size.width else 0f
+        alpha = shown
     }
     .drawWithContent {
         if (curl.activePage != page) {

@@ -83,12 +83,17 @@ internal fun Modifier.slidePage(
     .zIndex(-page.toFloat())
     .graphicsLayer {
         val o = pagerState.pageOffsetOf(page)
-        if (o < 0f) {
+        if (o <= -0.999f || o >= 0.999f) {
+            // Off screen: left where the pager put it, so a hidden page never
+            // lies over the visible one (it would catch touches and selection).
+            translationX = 0f
+            alpha = 0f
+        } else if (o < 0f) {
             translationX = 0.7f * o * size.width
-            alpha = if (o <= -0.999f) 0f else 1f
+            alpha = 1f
         } else {
             translationX = 0f
-            alpha = if (o >= 0.999f) 0f else 1f
+            alpha = 1f
         }
     }
     .drawWithCache {
@@ -125,15 +130,21 @@ internal fun Modifier.flipPage(
     .zIndex(-page.toFloat())
     .graphicsLayer {
         val o = pagerState.pageOffsetOf(page)
-        translationX = o * size.width
-        if (o > 0f) {
+        if (o <= -0.999f || o >= 0.999f) {
+            // Off screen and hidden; not pinned over the visible page.
+            translationX = 0f
+            rotationY = 0f
+            alpha = 0f
+        } else if (o > 0f) {
+            translationX = o * size.width
             transformOrigin = TransformOrigin(0f, 0.5f)
             cameraDistance = 12f * density
-            rotationY = LuminaMotion.HingeSign * 90f * o.coerceAtMost(1f)
-            alpha = if (o >= 0.999f) 0f else 1f
+            rotationY = LuminaMotion.HingeSign * 90f * o
+            alpha = 1f
         } else {
+            translationX = o * size.width
             rotationY = 0f
-            alpha = if (o <= -0.999f) 0f else 1f
+            alpha = 1f
         }
     }
     .flipShading(pagerState, page, pageColor)
