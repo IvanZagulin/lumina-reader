@@ -12,7 +12,8 @@ activityCompose = "1.11.0"
 androidxCompose = "1.11.2"
 androidxMaterial3 = "1.4.0"
 androidxIcons = "1.7.6"
-androidxLifecycle = "2.11.0"
+# 2.11 requires AGP 9.1+ and compileSdk 37; stay on 2.9 until the AGP 9 migration.
+androidxLifecycle = "2.9.4"
 androidxNavigation = "2.9.7"
 # Compose Multiplatform for the iPhone UI (:sharedUi, iOS targets only for now).
 # material3 1.9.0 is the CMP 1.11.1 plugin's own default.

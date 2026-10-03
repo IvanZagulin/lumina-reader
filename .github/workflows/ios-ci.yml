@@ -251,8 +251,34 @@ jobs:
           mkdir -p shots
           xcrun simctl list devices available | grep -F "$SIM_UDID" || true
           run_with_timeout 300 xcrun simctl boot "$SIM_UDID" || echo "boot returned non-zero (may already be booted)"
-          run_with_timeout 600 xcrun simctl bootstatus "$SIM_UDID" -b
-          run_with_timeout 180 xcrun simctl install "$SIM_UDID" "$APP"
+          # `simctl bootstatus -b` never returns on these runners although the
+          # device reports Booted; wait for that state ourselves instead.
+          for i in $(seq 1 60); do
+            if xcrun simctl list devices booted | grep -qF "$SIM_UDID"; then
+              echo "Simulator booted after $((i * 5)) s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "::error::Simulator did not reach the Booted state in 300 s"
+              exit 1
+            fi
+            sleep 5
+          done
+          # Give SpringBoard a moment, then install with a few retries.
+          sleep 30
+          installed=false
+          for attempt in 1 2 3 4; do
+            if run_with_timeout 180 xcrun simctl install "$SIM_UDID" "$APP"; then
+              installed=true
+              break
+            fi
+            echo "install attempt $attempt failed; retrying in 20 s"
+            sleep 20
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::Could not install LuminaReader on the simulator"
+            exit 1
+          fi
           # Routes grow as screens move to Compose Multiplatform (stage 8+).
           for route in home; do
             for appearance in light dark; do
