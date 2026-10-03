@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "LuminaReader"
-include(":app", ":shared")
+include(":app", ":shared", ":sharedUi")

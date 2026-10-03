@@ -15,14 +15,10 @@ kotlin {
         }
     }
 
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
-        // Stage 1 only: proves that the device framework links. Stage 2 moves the
-        // single framework to :sharedUi, which embeds this module.
-        target.binaries.framework {
-            baseName = "LuminaShared"
-            isStatic = true
-        }
-    }
+    // No framework here: :sharedUi produces the single "LuminaUI" framework and
+    // embeds this module, so the Kotlin runtime is linked into the app only once.
+    iosArm64()
+    iosSimulatorArm64()
 
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")

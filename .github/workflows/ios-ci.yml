@@ -1,5 +1,6 @@
-# Compiles and tests the Kotlin Multiplatform code for iOS on a macOS runner.
-# Android is verified by ci.yml (Linux); nothing here publishes anything.
+# Compiles and tests the Kotlin Multiplatform code for iOS and launches the
+# iPhone app on a simulator (screenshots are uploaded as an artifact). Android
+# is verified by ci.yml (Linux); nothing here publishes anything.
 name: iOS CI
 
 on:
@@ -84,7 +85,8 @@ jobs:
           chmod +x gradlew
           ./gradlew \
             :shared:compileKotlinIosArm64 \
-            :shared:linkReleaseFrameworkIosArm64 \
+            :sharedUi:compileKotlinIosArm64 \
+            :sharedUi:linkReleaseFrameworkIosArm64 \
             :shared:iosSimulatorArm64Test \
             --no-daemon --stacktrace --continue
 
@@ -96,4 +98,156 @@ jobs:
           path: |
             shared/build/reports/tests
             shared/build/test-results
+          if-no-files-found: ignore
+
+  simulator-smoke:
+    name: Simulator launch and screenshots
+    needs: shared
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          shopt -s nullglob
+          candidates=(/Applications/Xcode_26.0*.app)
+          if [ "${#candidates[@]}" -eq 0 ]; then candidates=(/Applications/Xcode_26*.app); fi
+          XCODE=""
+          if [ "${#candidates[@]}" -gt 0 ]; then
+            XCODE="$(printf '%s\n' "${candidates[@]}" | sort | tail -n 1)"
+          fi
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE/Contents/Developer"
+            echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Xcode 26 is not installed on this runner; using $(xcode-select -p)"
+          fi
+          xcodebuild -version
+
+      - name: Generate the Xcode project
+        shell: bash
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          cd iosApp
+          xcodegen generate
+
+      - name: Pick an iPhone simulator
+        shell: bash
+        run: |
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          SIM_UDID="$(python3 - "$RUNNER_TEMP/devices.json" <<'PY'
+          import json
+          import re
+          import sys
+
+          devices = json.load(open(sys.argv[1]))["devices"]
+          candidates = []
+          for runtime, entries in devices.items():
+              match = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if not match:
+                  continue
+              version = (int(match.group(1)), int(match.group(2)))
+              for device in entries:
+                  if device.get("isAvailable", True) and device["name"].startswith("iPhone"):
+                      # Newest runtime first, then the plainest name ("iPhone 17").
+                      candidates.append((version, -len(device["name"]), device["udid"], device["name"], runtime))
+          if not candidates:
+              sys.exit("No available iPhone simulator")
+          best = max(candidates)
+          print(f"Simulator: {best[3]} ({best[4]})", file=sys.stderr)
+          print(best[2])
+          PY
+          )"
+          echo "SIM_UDID=$SIM_UDID" >> "$GITHUB_ENV"
+
+      - name: Link the Kotlin framework for the simulator
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :sharedUi:linkDebugFrameworkIosSimulatorArm64 --no-daemon --stacktrace
+
+      - name: Build the app for the simulator
+        shell: bash
+        run: |
+          # arm64 only: Kotlin/Native and Compose Multiplatform have no x86_64
+          # simulator slice. The Xcode build phase reuses the linked framework.
+          xcodebuild \
+            -project iosApp/LuminaReader.xcodeproj \
+            -scheme LuminaReader \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath build/sim \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Launch on the simulator and take screenshots
+        shell: bash
+        run: |
+          APP=build/sim/Build/Products/Debug-iphonesimulator/LuminaReader.app
+          plutil -p "$APP/Info.plist"
+          mkdir -p shots
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcrun simctl install "$SIM_UDID" "$APP"
+          # Routes grow as screens move to Compose Multiplatform (stage 8+).
+          for route in home; do
+            for appearance in light dark; do
+              xcrun simctl ui "$SIM_UDID" appearance "$appearance"
+              LAUNCH="$(xcrun simctl launch --terminate-running-process "$SIM_UDID" com.lumina.reader -startRoute "$route")"
+              echo "$LAUNCH"
+              PID="${LAUNCH##*: }"
+              case "$PID" in
+                ''|*[!0-9]*) echo "::error::Could not launch LuminaReader: $LAUNCH"; exit 1 ;;
+              esac
+              sleep 12
+              xcrun simctl io "$SIM_UDID" screenshot "shots/$route-$appearance.png"
+              if ! kill -0 "$PID" 2>/dev/null; then
+                echo "::error::LuminaReader exited within 12 s (route $route, $appearance)"
+                exit 1
+              fi
+            done
+          done
+          ls -la shots
+
+      - name: Collect simulator logs
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p shots
+          if [ -n "${SIM_UDID:-}" ]; then
+            xcrun simctl spawn "$SIM_UDID" log show --last 5m --style compact \
+              --predicate 'process == "LuminaReader"' > shots/simulator.log 2>&1 || true
+          fi
+          find ~/Library/Logs/DiagnosticReports -name 'LuminaReader*' -exec cp {} shots/ \; 2>/dev/null || true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshots
+          path: shots
           if-no-files-found: ignore
