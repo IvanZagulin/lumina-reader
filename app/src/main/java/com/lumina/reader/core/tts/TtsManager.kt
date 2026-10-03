@@ -1,108 +1,97 @@
 package com.lumina.reader.core.tts
 
 import android.content.Context
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.lumina.reader.core.preferences.ReaderPreferences
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
+/** Legacy three-state view of [TtsStatus], kept for the existing reader UI. */
 enum class TtsState {
     IDLE,
     PLAYING,
     PAUSED
 }
 
-class TtsManager(context: Context) : TextToSpeech.OnInitListener {
+/**
+ * Legacy API kept for the reader screen until it switches to [TtsController].
+ * Now a thin adapter: playback runs in [TtsController] (sentence by sentence,
+ * in the background, with audio focus), started at the ORIGINAL paragraph
+ * index and stopping at the end of the given paragraphs. New code should use
+ * [TtsController] directly.
+ */
+class TtsManager(context: Context) {
 
-    private var tts: TextToSpeech? = null
-    private var isInitialized = false
-    private val _state = MutableStateFlow(TtsState.IDLE)
-    val state: StateFlow<TtsState> = _state.asStateFlow()
-
-    private var textQueue: List<String> = emptyList()
-    private var currentIndex = 0
-    private var speechRate = 1.0f
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     init {
-        tts = TextToSpeech(context.applicationContext, this)
-    }
-
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            isInitialized = true
-            tts?.language = Locale("ru", "RU")
-            tts?.setSpeechRate(speechRate)
-            setupListener()
+        TtsController.init(context)
+        // The reader screen never forwards the "speech rate" setting, so the
+        // adapter applies it (and later changes) itself.
+        scope.launch {
+            try {
+                ReaderPreferences(context.applicationContext).settingsFlow
+                    .map { it.ttsSpeed }
+                    .distinctUntilChanged()
+                    .collect { TtsController.setSpeechRate(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Unreadable settings: keep the current rate.
+            }
         }
     }
 
-    private fun setupListener() {
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                _state.value = TtsState.PLAYING
-            }
-
-            override fun onDone(utteranceId: String?) {
-                currentIndex++
-                if (currentIndex < textQueue.size) {
-                    speakCurrent()
-                } else {
-                    _state.value = TtsState.IDLE
-                }
-            }
-
-            override fun onError(utteranceId: String?) {
-                _state.value = TtsState.IDLE
-            }
-        })
-    }
+    val state: StateFlow<TtsState> = TtsController.state
+        .map { it.status.toLegacy() }
+        .stateIn(scope, SharingStarted.Eagerly, TtsController.state.value.status.toLegacy())
 
     fun play(paragraphs: List<String>, startIndex: Int = 0) {
-        if (!isInitialized) return
-        textQueue = paragraphs.filter { it.isNotBlank() }
-        currentIndex = startIndex.coerceIn(0, (textQueue.size - 1).coerceAtLeast(0))
-        if (textQueue.isNotEmpty()) {
-            _state.value = TtsState.PLAYING
-            speakCurrent()
-        }
-    }
-
-    private fun speakCurrent() {
-        if (currentIndex in textQueue.indices) {
-            val text = textQueue[currentIndex]
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "utt_$currentIndex")
-        }
+        TtsController.startInternal(
+            bookId = null,
+            bookTitle = "",
+            chapter = TtsChapter(index = 0, title = "", paragraphs = paragraphs),
+            startParagraph = startIndex,
+            source = NoFurtherChapters
+        )
     }
 
     fun pause() {
-        tts?.stop()
-        _state.value = TtsState.PAUSED
+        TtsController.pause()
     }
 
     fun resume() {
-        if (currentIndex < textQueue.size) {
-            _state.value = TtsState.PLAYING
-            speakCurrent()
-        }
+        TtsController.resume()
     }
 
     fun stop() {
-        tts?.stop()
-        _state.value = TtsState.IDLE
-        textQueue = emptyList()
-        currentIndex = 0
+        TtsController.stop()
     }
 
     fun setRate(rate: Float) {
-        speechRate = rate
-        tts?.setSpeechRate(rate)
+        TtsController.setSpeechRate(rate)
     }
 
     fun release() {
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
+        TtsController.stop()
+        scope.cancel()
     }
+
+    private object NoFurtherChapters : TtsChapterSource {
+        override suspend fun chapter(index: Int): TtsChapter? = null
+    }
+}
+
+internal fun TtsStatus.toLegacy(): TtsState = when (this) {
+    TtsStatus.IDLE -> TtsState.IDLE
+    TtsStatus.PREPARING, TtsStatus.PLAYING -> TtsState.PLAYING
+    TtsStatus.PAUSED, TtsStatus.ERROR -> TtsState.PAUSED
 }
