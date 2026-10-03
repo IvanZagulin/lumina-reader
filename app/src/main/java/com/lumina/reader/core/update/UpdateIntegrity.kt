@@ -16,7 +16,7 @@ class UpdateVerificationException(message: String) : IOException(message)
  */
 object UpdateIntegrity {
 
-    private val sha256Hex = Regex("^[0-9a-fA-F]{64}$")
+    private val sha256Pattern = Regex("^[0-9a-fA-F]{64}$")
     private val bsdChecksumLine = Regex("^SHA256 \\((.+)\\) = ([0-9a-fA-F]{64})$")
     private val whitespace = Regex("\\s+")
 
@@ -71,7 +71,7 @@ object UpdateIntegrity {
     fun checksumsMatch(expectedHex: String, actualHex: String): Boolean {
         val expected = expectedHex.trim()
         val actual = actualHex.trim()
-        if (!sha256Hex.matches(expected) || !sha256Hex.matches(actual)) return false
+        if (!sha256Pattern.matches(expected) || !sha256Pattern.matches(actual)) return false
         return MessageDigest.isEqual(
             expected.lowercase(Locale.ROOT).toByteArray(Charsets.US_ASCII),
             actual.lowercase(Locale.ROOT).toByteArray(Charsets.US_ASCII)
@@ -108,7 +108,7 @@ object UpdateIntegrity {
         }
         val parts = line.split(whitespace, limit = 2)
         val hash = parts[0]
-        if (!sha256Hex.matches(hash)) return null
+        if (!sha256Pattern.matches(hash)) return null
         return ChecksumEntry(
             hash = hash.lowercase(Locale.ROOT),
             fileName = parts.getOrNull(1)?.trim()?.removePrefix("*")?.normalizedFileName()

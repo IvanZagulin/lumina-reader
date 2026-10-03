@@ -38,8 +38,11 @@ class GitHubUpdateRepository(private val context: Context) {
         val connection = openConnection(RELEASES_URL)
         try {
             val responseCode = connection.responseCode
+            if (responseCode == 403 || responseCode == 429) {
+                throw IOException("GitHub временно ограничил число запросов. Попробуйте проверить обновления позже.")
+            }
             if (responseCode !in 200..299) {
-                throw IOException("GitHub API returned HTTP $responseCode")
+                throw IOException("GitHub вернул ошибку HTTP $responseCode. Попробуйте ещё раз позже.")
             }
             val releases: List<GitHubReleaseDto> =
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->

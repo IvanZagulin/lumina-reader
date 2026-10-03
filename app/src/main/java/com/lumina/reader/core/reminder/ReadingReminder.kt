@@ -22,6 +22,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +47,15 @@ object ReadingReminder {
     /** Fire-and-forget: reads the saved settings and (re)schedules or cancels the alarm. */
     fun reschedule(context: Context) {
         val appContext = context.applicationContext
-        scope.launch { rescheduleNow(appContext) }
+        scope.launch {
+            try {
+                rescheduleNow(appContext)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                // A reminder that could not be scheduled must never crash the app.
+            }
+        }
     }
 
     /** Suspending variant of [reschedule]; returns once the alarm has been updated. */
@@ -192,6 +201,8 @@ class ReadingReminderReceiver : BroadcastReceiver() {
                 try {
                     // Also handles BOOT_COMPLETED: alarms do not survive a reboot.
                     ReadingReminder.rescheduleNow(appContext)
+                } catch (error: Exception) {
+                    // Nothing sensible to do; the next app start reschedules again.
                 } finally {
                     pendingResult.finish()
                 }
