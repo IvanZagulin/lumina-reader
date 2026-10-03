@@ -1,6 +1,16 @@
 package com.lumina.reader.ui.update
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,33 +19,55 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.BuildConfig
+import com.lumina.reader.core.download.formatByteSize
+import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.update.AppRelease
-import java.util.Locale
+import com.lumina.reader.ui.theme.LuminaShape
+import com.lumina.reader.ui.theme.rememberReducedMotion
 
+/**
+ * The app update flow as a bottom sheet (spec §7.11). The state machine and
+ * the parameters are unchanged: Checking → Available → Downloading (the
+ * «Обновить» pill morphs into progress) → Installing / AwaitingInstallPermission,
+ * or Error. «У вас последняя версия» is a snackbar instead of a dialog.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppUpdateDialog(
     state: AppUpdateDialogState?,
@@ -45,312 +77,413 @@ fun AppUpdateDialog(
     onRetryCheck: () -> Unit,
     onRetryInstall: () -> Unit,
     /**
-     * "Открыть настройки" in the install-permission dialog. Defaults to
+     * "Открыть настройки" in the install-permission step. Defaults to
      * [onRetryInstall], which re-sends the downloaded APK to the Activity and
      * makes it open the "install unknown apps" settings again.
      */
     onOpenInstallSettings: (() -> Unit)? = null
 ) {
-    when (state) {
-        null -> Unit
-        AppUpdateDialogState.Checking -> CheckingDialog(onDismiss)
-        is AppUpdateDialogState.Available -> AvailableDialog(
-            release = state.release,
-            onDismiss = onDismiss,
-            onDownload = { onDownload(state.release) }
-        )
+    if (state is AppUpdateDialogState.UpToDate) {
+        val currentOnDismiss by rememberUpdatedState(onDismiss)
+        LaunchedEffect(state) {
+            AppMessages.post("У вас последняя версия — ${state.currentVersion}")
+            currentOnDismiss()
+        }
+        return
+    }
+    if (state == null) return
 
-        is AppUpdateDialogState.Downloading -> DownloadingDialog(
-            state = state,
-            onCancel = onCancelDownload
-        )
+    val currentState by rememberUpdatedState(state)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        // The download cannot be dismissed by a swipe, a scrim tap or back: only «Отмена».
+        confirmValueChange = { value -> value != SheetValue.Hidden || currentState !is AppUpdateDialogState.Downloading }
+    )
+    val reducedMotion = rememberReducedMotion()
 
-        is AppUpdateDialogState.Installing -> ProgressMessageDialog(
-            title = "Обновление готово",
-            message = "Открываем системный установщик…",
-            icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
-            onDismiss = onDismiss
-        )
-
-        is AppUpdateDialogState.AwaitingInstallPermission -> InstallPermissionDialog(
-            onOpenSettings = onOpenInstallSettings ?: onRetryInstall,
-            onDismiss = onDismiss
-        )
-
-        is AppUpdateDialogState.UpToDate -> UpToDateDialog(
-            currentVersion = state.currentVersion,
-            onDismiss = onDismiss
-        )
-
-        is AppUpdateDialogState.Error -> ErrorDialog(
-            state = state,
-            onDismiss = onDismiss,
-            onRetry = if (state.retryInstall) onRetryInstall else onRetryCheck
-        )
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = LuminaShape.Sheet,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp
+    ) {
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.stepKey() },
+            transitionSpec = {
+                if (reducedMotion) {
+                    (fadeIn(snap()) togetherWith fadeOut(snap())).using(SizeTransform(clip = false) { _, _ -> snap() })
+                } else {
+                    (fadeIn(tween(220, delayMillis = 60)) togetherWith fadeOut(tween(120)))
+                        .using(SizeTransform(clip = false) { _, _ -> tween(300) })
+                }
+            },
+            label = "updateStep"
+        ) { step ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+            ) {
+                when (step) {
+                    AppUpdateDialogState.Checking -> CheckingStep(onDismiss)
+                    is AppUpdateDialogState.Available -> ReleaseStep(
+                        release = step.release,
+                        downloading = null,
+                        onDownload = { onDownload(step.release) },
+                        onCancel = onCancelDownload,
+                        onLater = onDismiss,
+                        reducedMotion = reducedMotion
+                    )
+                    is AppUpdateDialogState.Downloading -> ReleaseStep(
+                        release = step.release,
+                        downloading = step,
+                        onDownload = {},
+                        onCancel = onCancelDownload,
+                        onLater = onDismiss,
+                        reducedMotion = reducedMotion
+                    )
+                    is AppUpdateDialogState.Installing -> MessageStep(
+                        title = "Обновление готово",
+                        message = "Открываем системный установщик…",
+                        icon = { Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        showProgress = true,
+                        primaryLabel = null,
+                        onPrimary = {},
+                        secondaryLabel = "Скрыть",
+                        onSecondary = onDismiss
+                    )
+                    is AppUpdateDialogState.AwaitingInstallPermission -> MessageStep(
+                        title = "Разрешите установку",
+                        message = "Чтобы установить обновление, включите «Разрешить установку из этого источника» " +
+                            "для Lumina Reader в системных настройках и вернитесь в приложение — " +
+                            "установка продолжится автоматически.",
+                        icon = { Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        showProgress = false,
+                        primaryLabel = "Открыть настройки",
+                        onPrimary = onOpenInstallSettings ?: onRetryInstall,
+                        secondaryLabel = "Отмена",
+                        onSecondary = onDismiss
+                    )
+                    is AppUpdateDialogState.Error -> MessageStep(
+                        title = "Обновление не завершено",
+                        message = step.message,
+                        icon = { Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        showProgress = false,
+                        primaryLabel = if (step.retryInstall) "Повторить установку" else "Проверить снова",
+                        onPrimary = if (step.retryInstall) onRetryInstall else onRetryCheck,
+                        secondaryLabel = "Закрыть",
+                        onSecondary = onDismiss
+                    )
+                    is AppUpdateDialogState.UpToDate -> Unit
+                }
+            }
+        }
     }
 }
 
+/** Available and Downloading share one step, so the pill can morph into the progress bar. */
+private fun AppUpdateDialogState.stepKey(): String = when (this) {
+    AppUpdateDialogState.Checking -> "checking"
+    is AppUpdateDialogState.Available, is AppUpdateDialogState.Downloading -> "release"
+    is AppUpdateDialogState.Installing -> "installing"
+    is AppUpdateDialogState.AwaitingInstallPermission -> "permission"
+    is AppUpdateDialogState.UpToDate -> "uptodate"
+    is AppUpdateDialogState.Error -> "error"
+}
+
 @Composable
-private fun CheckingDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { CircularProgressIndicator(modifier = Modifier.size(34.dp), strokeWidth = 3.dp) },
-        title = { Text("Ищем обновления") },
-        text = { Text("Проверяем свежий релиз Lumina Reader на GitHub…") },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Скрыть") }
-        },
-        shape = RoundedCornerShape(28.dp)
+private fun SheetTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.headlineMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.semantics { heading() }
     )
 }
 
 @Composable
-private fun AvailableDialog(
+private fun androidx.compose.foundation.layout.ColumnScope.CheckingStep(onDismiss: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+        Spacer(Modifier.width(14.dp))
+        SheetTitle("Ищем обновления")
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "Проверяем свежий релиз Lumina Reader на GitHub…",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(16.dp))
+    TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Скрыть") }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.ReleaseStep(
     release: AppRelease,
-    onDismiss: () -> Unit,
-    onDownload: () -> Unit
+    downloading: AppUpdateDialogState.Downloading?,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onLater: () -> Unit,
+    reducedMotion: Boolean
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
-        title = { Text("Доступно обновление") },
-        text = {
+    val colors = MaterialTheme.colorScheme
+    SheetTitle("Доступно обновление ${release.displayVersion}")
+    Spacer(Modifier.height(8.dp))
+    Surface(
+        shape = LuminaShape.Pill,
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer
+    ) {
+        Text(
+            text = "${BuildConfig.VERSION_NAME} → ${release.displayVersion}",
+            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+        )
+    }
+    if (release.title.isNotBlank() && release.title != release.tagName) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = release.title,
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    Changelog(notes = release.notes)
+    Spacer(Modifier.height(18.dp))
+
+    // The 48dp «Обновить» pill morphs into the progress bar while downloading.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(if (reducedMotion) snap() else tween(300))
+    ) {
+        if (downloading == null) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Button(
+                    onClick = onDownload,
+                    shape = LuminaShape.Pill,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                 ) {
                     Text(
-                        text = release.title,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("v${release.displayVersion}") }
+                        text = if (release.apkSizeBytes > 0L) "Обновить · ${formatByteSize(release.apkSizeBytes)}" else "Обновить",
+                        style = MaterialTheme.typography.labelLarge
                     )
                 }
-                if (release.notes.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = release.notes.take(MAX_NOTES_LENGTH),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 190.dp)
-                            .verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Новая версия готова к установке.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (release.apkSizeBytes > 0L) {
-                    Text(
-                        text = "Размер: ${release.apkSizeBytes.toReadableSize()}",
-                        modifier = Modifier.padding(top = 12.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                TextButton(onClick = onLater, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Позже")
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDownload) {
-                Text("Скачать и установить", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Позже") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
+        } else {
+            DownloadProgress(state = downloading, onCancel = onCancel, reducedMotion = reducedMotion)
+        }
+    }
 }
 
 @Composable
-private fun DownloadingDialog(
+private fun DownloadProgress(
     state: AppUpdateDialogState.Downloading,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    reducedMotion: Boolean
 ) {
-    val hasKnownSize = state.totalBytes > 0L
-    val progress = if (hasKnownSize) {
-        (state.downloadedBytes.toFloat() / state.totalBytes.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-
-    AlertDialog(
-        onDismissRequest = {},
-        icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
-        title = { Text("Загружаем обновление") },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                if (hasKnownSize) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "${state.downloadedBytes.toReadableSize()} из ${state.totalBytes.toReadableSize()}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+    val colors = MaterialTheme.colorScheme
+    val known = state.totalBytes > 0L
+    val fraction = if (known) (state.downloadedBytes.toFloat() / state.totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+    ) {
+        val barModifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(LuminaShape.Pill)
+        if (known || reducedMotion) {
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = barModifier,
+                color = colors.primary,
+                trackColor = colors.surfaceVariant,
+                gapSize = 0.dp,
+                drawStopIndicator = {}
+            )
+        } else {
+            LinearProgressIndicator(
+                modifier = barModifier,
+                color = colors.primary,
+                trackColor = colors.surfaceVariant,
+                gapSize = 0.dp
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (known) {
+                    "${formatByteSize(state.downloadedBytes)} / ${formatByteSize(state.totalBytes)} · ${(fraction * 100).toInt()}%"
                 } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    "Загружено ${formatByteSize(state.downloadedBytes)}"
+                },
+                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                color = colors.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onCancel) { Text("Отмена") }
+        }
+        Text(
+            text = "Можно отменить загрузку — книги и прогресс чтения не затрагиваются.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
+    }
+}
+
+/** Release notes as a bullet list: "- item" / "* item" / "• item" lines become bullets. */
+@Composable
+private fun Changelog(notes: String) {
+    val lines = remember(notes) { changelogLines(notes) }
+    if (lines.isEmpty()) {
+        Text(
+            text = "Новая версия готова к установке.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 220.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        lines.forEach { (bullet, text) ->
+            Row {
+                if (bullet) {
                     Text(
-                        "Загружено ${state.downloadedBytes.toReadableSize()}",
-                        modifier = Modifier.padding(top = 10.dp),
-                        style = MaterialTheme.typography.bodySmall
+                        text = "•",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.width(16.dp)
                     )
                 }
                 Text(
-                    "Можно отменить загрузку — книги и прогресс чтения не затрагиваются.",
-                    modifier = Modifier.padding(top = 14.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = text,
+                    style = if (bullet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleSmall,
+                    color = if (bullet) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
             }
-        },
-        confirmButton = {
-            OutlinedButton(onClick = onCancel) { Text("Отменить") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
+        }
+    }
 }
 
+/** (isBullet, text) lines of markdown-ish release notes; headings lose their "#". */
+internal fun changelogLines(notes: String): List<Pair<Boolean, String>> =
+    notes.take(MAX_NOTES_LENGTH)
+        .lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { line ->
+            when {
+                line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ") -> true to line.drop(2).trim()
+                line.startsWith("#") -> false to line.trimStart('#').trim()
+                else -> false to line
+            }
+        }
+        .filter { it.second.isNotEmpty() }
+
 @Composable
-private fun ProgressMessageDialog(
+private fun androidx.compose.foundation.layout.ColumnScope.MessageStep(
     title: String,
     message: String,
     icon: @Composable () -> Unit,
-    onDismiss: () -> Unit
+    showProgress: Boolean,
+    primaryLabel: String?,
+    onPrimary: () -> Unit,
+    secondaryLabel: String,
+    onSecondary: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = icon,
-        title = { Text(title) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 3.dp)
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(top = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Скрыть") }
-        },
-        shape = RoundedCornerShape(28.dp)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        icon()
+        Spacer(Modifier.width(12.dp))
+        SheetTitle(title, modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(10.dp))
+    if (showProgress) {
+        LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(LuminaShape.Pill)
+        )
+        Spacer(Modifier.height(10.dp))
+    }
+    Text(
+        text = message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+    Spacer(Modifier.height(18.dp))
+    if (primaryLabel != null) {
+        Button(
+            onClick = onPrimary,
+            shape = LuminaShape.Pill,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Text(primaryLabel, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+    TextButton(onClick = onSecondary, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+        Text(secondaryLabel)
+    }
 }
 
+/**
+ * Dismissible library banner «Доступна версия 1.8.0 · Обновить» (spec §7.11)
+ * for an update found in the background. Placed by the library screen.
+ */
 @Composable
-private fun InstallPermissionDialog(
-    onOpenSettings: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Security, contentDescription = null) },
-        title = { Text("Разрешите установку") },
-        text = {
-            Text(
-                text = "Чтобы установить обновление, включите «Разрешить установку из этого источника» " +
-                    "для Lumina Reader в системных настройках и вернитесь в приложение — " +
-                    "установка продолжится автоматически.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onOpenSettings) {
-                Text("Открыть настройки", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
-}
-
-@Composable
-private fun UpToDateDialog(currentVersion: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                Icons.Default.Verified,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-        },
-        title = { Text("Всё актуально") },
-        text = { Text("У вас уже установлена свежая версия Lumina Reader — $currentVersion.") },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Отлично") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
-}
-
-@Composable
-private fun ErrorDialog(
-    state: AppUpdateDialogState.Error,
+fun AppUpdateBanner(
+    release: AppRelease,
+    onUpdate: () -> Unit,
     onDismiss: () -> Unit,
-    onRetry: () -> Unit
+    modifier: Modifier = Modifier
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                Icons.Default.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onUpdate,
+        shape = LuminaShape.Card,
+        color = colors.primaryContainer,
+        contentColor = colors.onPrimaryContainer,
+        border = BorderStroke(1.dp, colors.outlineVariant),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = "Доступна версия ${release.displayVersion} · Обновить",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f)
             )
-        },
-        title = { Text("Обновление не завершено") },
-        text = { Text(state.message) },
-        confirmButton = {
-            TextButton(onClick = onRetry) {
-                Text(if (state.retryInstall) "Повторить установку" else "Проверить снова")
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Rounded.Close, contentDescription = "Скрыть уведомление об обновлении")
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
-}
-
-private fun Long.toReadableSize(): String {
-    if (this < 1024L) return "$this Б"
-    val kilobytes = this / 1024.0
-    if (kilobytes < 1024.0) return String.format(Locale.US, "%.1f КБ", kilobytes)
-    return String.format(Locale.US, "%.1f МБ", kilobytes / 1024.0)
+        }
+    }
 }
 
 private const val MAX_NOTES_LENGTH = 1_500
