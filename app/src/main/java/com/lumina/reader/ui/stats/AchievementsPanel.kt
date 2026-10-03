@@ -63,12 +63,13 @@ import androidx.compose.ui.unit.sp
 import java.time.DayOfWeek
 import kotlin.math.roundToInt
 
-private val AchievementGold = Color(0xFFF59E0B)
-private val AchievementOrange = Color(0xFFF97316)
-private val AchievementGreen = Color(0xFF10B981)
-private val AchievementBlue = Color(0xFF2563EB)
-private val AchievementIndigo = Color(0xFF6366F1)
-private val AchievementPurple = Color(0xFF8B5CF6)
+// Chart palette (spec §1.1, light values; this legacy panel builds its badges outside composition).
+private val AchievementGold = StatsPalette.Light.brass
+private val AchievementOrange = StatsPalette.Light.ochre
+private val AchievementGreen = StatsPalette.Light.emerald
+private val AchievementBlue = StatsPalette.Light.terracotta
+private val AchievementIndigo = StatsPalette.Light.indigo
+private val AchievementPurple = StatsPalette.Light.plum
 
 private data class AchievementBadge(
     val category: String,
@@ -125,7 +126,7 @@ fun AchievementsPanel(state: ReadingStatsUiState) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             unlockedCount.toString(),
-                            fontWeight = FontWeight.ExtraBold,
+                            fontWeight = FontWeight.SemiBold,
                             style = MaterialTheme.typography.titleLarge
                         )
                         Text(
@@ -140,7 +141,7 @@ fun AchievementsPanel(state: ReadingStatsUiState) {
                     Text(
                         "Достижения",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         if (unlockedCount == achievements.size) {
@@ -167,7 +168,7 @@ fun AchievementsPanel(state: ReadingStatsUiState) {
                         category,
                         modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     AchievementGrid(badges)
@@ -224,7 +225,7 @@ private fun NextAchievementCard(item: AchievementBadge) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Ближайшая цель · ${item.title}",
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -322,7 +323,7 @@ private fun AchievementTile(item: AchievementBadge, modifier: Modifier = Modifie
             Spacer(Modifier.height(9.dp))
             Text(
                 item.title,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis

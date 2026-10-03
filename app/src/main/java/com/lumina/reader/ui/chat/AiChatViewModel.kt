@@ -18,14 +18,15 @@ import com.lumina.reader.core.opds.FoundPublication
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
 import com.lumina.reader.core.preferences.CatalogPreferences
+import com.lumina.reader.ui.downloads.DownloadMeta
+import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -75,13 +76,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
-    private val _actionFlow = MutableSharedFlow<AiAction>()
+    private val _downloadCards = MutableStateFlow<Map<Int, String>>(emptyMap())
 
     /**
-     * Kept for the chat screen's API. Actions are executed by this view model
-     * and are no longer emitted here.
+     * Download cards of the chat (spec §7.11): index of the status message
+     * «Найдена «…». Начинаю загрузку…» in [messages] → the download key
+     * (acquisition URL) in [BookImporter.downloads]. UI state only.
      */
-    val actionFlow = _actionFlow.asSharedFlow()
+    val downloadCards: StateFlow<Map<Int, String>> = _downloadCards.asStateFlow()
 
     /** Limits parallel catalogue searches when the assistant asks for many books. */
     private val searchSlots = Semaphore(2)
@@ -139,8 +141,18 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Adds an app status line to the chat; it is not sent to the model. */
     fun reportExecutionResult(message: String) {
-        if (message.isBlank()) return
-        _messages.update { current -> current + AiMessage(ROLE_STATUS, message) }
+        addStatus(message)
+    }
+
+    /** Appends a status line and returns its index in [messages] (-1 when blank). */
+    private fun addStatus(message: String): Int {
+        if (message.isBlank()) return -1
+        var index = -1
+        _messages.update { current ->
+            index = current.size
+            current + AiMessage(ROLE_STATUS, message)
+        }
+        return index
     }
 
     private fun executeActions(actions: List<AiAction>) {
@@ -186,7 +198,19 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val title = best.publication.title
-        reportExecutionResult("Найдена «$title». Начинаю загрузку…")
+        val statusIndex = addStatus("Найдена «$title». Начинаю загрузку…")
+        if (statusIndex >= 0) _downloadCards.update { it + (statusIndex to acquisition.url) }
+        val cover = best.publication.thumbnailUrl ?: best.publication.coverUrl
+        DownloadMetaRegistry.put(
+            acquisition.url,
+            DownloadMeta(
+                title = title,
+                author = best.publication.authorLine,
+                coverUrl = cover,
+                coverHeaders = best.catalog.authHeadersFor(cover),
+                formatLabel = acquisition.label
+            )
+        )
         val outcome = importer.downloadAndAwait(
             DownloadRequest(
                 url = acquisition.url,

@@ -3,6 +3,7 @@ package com.lumina.reader.ui.catalog
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lumina.reader.core.database.AppDatabase
 import com.lumina.reader.core.download.DownloadRequest
 import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.library.AppMessages
@@ -15,11 +16,19 @@ import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
 import com.lumina.reader.core.preferences.CatalogPreferences
+import com.lumina.reader.ui.downloads.DownloadMeta
+import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -41,6 +50,15 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
     /** Download state per acquisition URL. */
     val downloads: StateFlow<Map<String, DownloadState>> = importer.downloads
+
+    /**
+     * Books already on the shelf by title and author, so catalogue rows can
+     * offer «В библиотеке · Открыть» instead of a second download (UI state only).
+     */
+    val libraryIndex: StateFlow<LibraryIndex> = AppDatabase.getDatabase(application).bookDao().getAllBooks()
+        .map { books -> LibraryIndex.build(books.map { LibraryIndex.Entry(it.id, it.title, it.author) }) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryIndex.Empty)
 
     private var nextPageId = 1L
     private var pageJob: Job? = null
@@ -114,6 +132,19 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
             }
             else -> false
         }
+    }
+
+    /** Breadcrumbs: returns to the page [pageId], dropping the levels above it. */
+    fun popToPage(pageId: Long) {
+        val state = mutableState.value
+        val index = state.pages.indexOfFirst { it.id == pageId }
+        if (index < 0 || index == state.pages.lastIndex) return
+        pageJob?.cancel()
+        loadMoreJob?.cancel()
+        val remaining = state.pages.take(index + 1)
+        mutableState.update { it.copy(pages = remaining, selected = null) }
+        val top = remaining.last()
+        if (!top.isLoaded) loadPage(top.id)
     }
 
     /** Leaves the catalogue completely and returns to the start screen. */
@@ -249,6 +280,25 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Searches all enabled catalogues for [query] once the catalogue list is
+     * known (the library's «Искать в каталогах»). Unlike [search] it does not
+     * race the first read of the catalogue preferences.
+     */
+    fun searchAllCatalogs(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val enabled = catalogPreferences.catalogs.first().filter { it.enabled }
+            pageJob?.cancel()
+            loadMoreJob?.cancel()
+            mutableState.update {
+                it.copy(query = trimmed, catalogs = enabled, pages = emptyList(), selected = null)
+            }
+            runGlobalSearch(trimmed, mutableState.value.scope)
+        }
+    }
+
     fun clearSearch() {
         searchJob?.cancel()
         mutableState.update { it.copy(query = "", globalSearch = null) }
@@ -310,6 +360,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun download(catalog: OpdsCatalogConfig, publication: OpdsEntry.Publication, acquisition: OpdsAcquisition) {
+        rememberMeta(catalog, publication, acquisition)
         importer.download(requestFor(catalog, publication, acquisition))
     }
 
@@ -318,6 +369,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         var started = 0
         items.forEach { (catalog, publication) ->
             val acquisition = publication.preferredAcquisition ?: return@forEach
+            rememberMeta(catalog, publication, acquisition)
             if (importer.download(requestFor(catalog, publication, acquisition))) started++
         }
         AppMessages.post(
@@ -330,7 +382,33 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun cancelDownload(url: String) {
+        if (importer.downloads.value[url]?.isActive != true) return
         importer.cancel(url)
+        AppMessages.post("Загрузка отменена")
+    }
+
+    /** Removes a finished or failed download from the lists (the catalogue home's «✕»). */
+    fun dismissDownload(url: String) {
+        importer.dismiss(url)
+    }
+
+    /** Title, author and cover for the download island and sheet (UI labels only). */
+    private fun rememberMeta(
+        catalog: OpdsCatalogConfig,
+        publication: OpdsEntry.Publication,
+        acquisition: OpdsAcquisition
+    ) {
+        val cover = publication.thumbnailUrl ?: publication.coverUrl
+        DownloadMetaRegistry.put(
+            acquisition.url,
+            DownloadMeta(
+                title = publication.title,
+                author = publication.authorLine,
+                coverUrl = cover,
+                coverHeaders = catalog.authHeadersFor(cover),
+                formatLabel = acquisition.label
+            )
+        )
     }
 
     private fun requestFor(

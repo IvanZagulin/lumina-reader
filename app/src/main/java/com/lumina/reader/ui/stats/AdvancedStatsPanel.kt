@@ -34,12 +34,19 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val AdvBlue = Color(0xFF2563EB)
-private val AdvIndigo = Color(0xFF6366F1)
-private val AdvPurple = Color(0xFF8B5CF6)
-private val AdvGreen = Color(0xFF10B981)
-private val AdvAmber = Color(0xFFF59E0B)
-private val AdvOrange = Color(0xFFF97316)
+// Chart palette (spec §1.1); names kept from the old hard-coded colours.
+private val AdvBlue: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().terracotta
+private val AdvGreen: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().emerald
+private val AdvAmber: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().brass
+private val AdvIndigo: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().indigo
+private val AdvPurple: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().plum
+private val AdvOrange: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().ochre
 private val RuLocale = Locale("ru", "RU")
 
 @Composable
@@ -54,7 +61,7 @@ fun AdvancedStatsPanel(
         Text(
             "Расширенная аналитика",
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.SemiBold
         )
         Text(
             "Поведение, история и прогнозы на основе ваших реальных сессий.",
@@ -68,7 +75,7 @@ fun AdvancedStatsPanel(
                     Modifier
                         .fillMaxWidth()
                         .height(120.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .clip(StatsBigCardShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 )
             }
@@ -121,7 +128,7 @@ private fun WrappedCard(state: AdvancedStatsUiState) {
             Text(
                 if (yearly) wrapped.title else formatMonthLong(YearMonth.parse(wrapped.key)),
                 fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.SemiBold
             )
             if (wrapped.comparisonDurationPercent != null) {
                 val value = wrapped.comparisonDurationPercent
@@ -157,6 +164,8 @@ private fun WrappedCard(state: AdvancedStatsUiState) {
 @Composable
 private fun RhythmMatrixCard(cells: List<RhythmMatrixCell>) {
     val max = cells.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1L) ?: 1L
+    val heat = statsPalette()
+    val heatInk = if (statsIsDark()) MaterialTheme.colorScheme.surface else Color.White
     StatCard {
         Header("День × время суток", "Когда чтение действительно случается", Icons.Default.GridView)
         Spacer(Modifier.height(14.dp))
@@ -188,10 +197,7 @@ private fun RhythmMatrixCard(cells: List<RhythmMatrixCell>) {
                             .padding(horizontal = 2.dp)
                             .height(30.dp)
                             .clip(RoundedCornerShape(7.dp))
-                            .background(
-                                if (value == 0L) MaterialTheme.colorScheme.surfaceVariant
-                                else AdvIndigo.copy(alpha = 0.18f + 0.82f * ratio)
-                            ),
+                            .background(heat.heatColor(if (value == 0L) 0f else ratio)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (value > 0) {
@@ -199,7 +205,8 @@ private fun RhythmMatrixCard(cells: List<RhythmMatrixCell>) {
                                 formatDurationTiny(value),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (ratio > 0.55f) Color.White else MaterialTheme.colorScheme.onSurface
+                                // The darker ramp steps need the inverse ink.
+                                color = if (ratio > 0.5f) heatInk else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -227,13 +234,13 @@ private fun RegularityCard(score: RegularityScore) {
             Box(contentAlignment = Alignment.Center) {
                 Ring(score.score / 100f, AdvGreen, Modifier.size(92.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(score.score.toString(), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(score.score.toString(), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                     Text("из 100", style = MaterialTheme.typography.labelSmall)
                 }
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(score.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(score.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
                     "≈ ${String.format(RuLocale, "%.1f", score.activeDaysPerWeek)} дня чтения в неделю",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -389,7 +396,7 @@ private fun SeriesStatsCard(data: List<SeriesReadingStats>) {
                     )
                 }
                 Spacer(Modifier.width(10.dp))
-                Text("${item.progressPercent}%", fontWeight = FontWeight.ExtraBold)
+                Text("${item.progressPercent}%", fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -411,7 +418,7 @@ private fun AuthorStatsCard(data: List<AuthorReadingStats>) {
         Spacer(Modifier.height(12.dp))
         if (visible.isEmpty()) EmptyInside("Авторов пока недостаточно") else visible.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${index + 1}", modifier = Modifier.width(28.dp), fontWeight = FontWeight.ExtraBold, color = AdvPurple)
+                Text("${index + 1}", modifier = Modifier.width(28.dp), fontWeight = FontWeight.SemiBold, color = AdvPurple)
                 Column(Modifier.weight(1f)) {
                     BarRow(
                         label = item.name,
@@ -461,7 +468,7 @@ private fun AbandonedBooksCard(data: List<AbandonedBookStats>) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text("${book.progressPercent}%", color = AdvOrange, fontWeight = FontWeight.ExtraBold)
+                    Text("${book.progressPercent}%", color = AdvOrange, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(9.dp))
             }
@@ -475,7 +482,7 @@ private fun BacklogCard(data: BacklogStats) {
     StatCard {
         Header("Книжный бэклог", "Сколько чтения уже лежит и ждёт своей судьбы", Icons.Default.Inventory2)
         Spacer(Modifier.height(10.dp))
-        Text(data.unfinishedBooks.toString(), fontSize = 38.sp, fontWeight = FontWeight.ExtraBold)
+        Text(data.unfinishedBooks.toString(), fontSize = 38.sp, fontWeight = FontWeight.SemiBold)
         Text("незавершённых книг", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(10.dp))
         Text(
@@ -508,7 +515,7 @@ private fun PredictionsCard(data: List<PredictionItem>) {
                         Text(item.title, fontWeight = FontWeight.Bold)
                         Text(item.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(item.value, fontWeight = FontWeight.ExtraBold, color = AdvGreen, textAlign = TextAlign.End)
+                    Text(item.value, fontWeight = FontWeight.SemiBold, color = AdvGreen, textAlign = TextAlign.End)
                 }
             }
         }
@@ -558,8 +565,9 @@ private fun ComparisonRow(label: String, current: Long, previous: Long, formatte
 private fun StatCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(Modifier.padding(16.dp), content = content)
     }
@@ -573,7 +581,7 @@ private fun Header(title: String, subtitle: String, icon: androidx.compose.ui.gr
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -594,7 +602,7 @@ private fun MetricGrid(items: List<Pair<String, String>>) {
 private fun MetricBox(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)) {
         Column(Modifier.padding(10.dp)) {
-            Text(value, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(value, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

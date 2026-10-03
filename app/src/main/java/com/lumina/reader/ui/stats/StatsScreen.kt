@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,6 +23,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.lumina.reader.ui.theme.LuminaDimens
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -48,12 +53,19 @@ import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-private val StatsBlue = Color(0xFF2563EB)
-private val StatsIndigo = Color(0xFF6366F1)
-private val StatsPurple = Color(0xFF8B5CF6)
-private val StatsOrange = Color(0xFFF97316)
-private val StatsGreen = Color(0xFF10B981)
-private val StatsAmber = Color(0xFFF59E0B)
+// Chart palette (spec §1.1); names kept from the old hard-coded colours.
+private val StatsBlue: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().terracotta
+private val StatsGreen: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().emerald
+private val StatsAmber: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().brass
+private val StatsIndigo: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().indigo
+private val StatsPurple: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().plum
+private val StatsOrange: Color
+    @Composable @ReadOnlyComposable get() = statsPalette().ochre
 private val RussianLocale = Locale("ru", "RU")
 
 private enum class TrendRange(val days: Int, val title: String) {
@@ -62,11 +74,16 @@ private enum class TrendRange(val days: Int, val title: String) {
     YEAR(365, "365 дней")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Reading statistics (spec §7.11): a top-level tab, so there is no back
+ * arrow ([onBack] is kept for callers). [quickActions] are pill buttons under
+ * the title (e.g. «Аналитика», «Достижения»).
+ */
 @Composable
 fun StatsScreen(
     viewModel: StatsViewModel,
-    onBack: () -> Unit
+    @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
+    quickActions: (@Composable RowScope.() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
     var selectedPeriodName by rememberSaveable { mutableStateOf(StatsPeriod.SEVEN_DAYS.name) }
@@ -77,54 +94,33 @@ fun StatsScreen(
     var showDailyGoalDialog by remember { mutableStateOf(false) }
     var showYearGoalDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Статистика",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Ваш читательский ритм",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { paddingValues ->
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         if (state.isLoading) {
             StatsLoading(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .statusBarsPadding()
             )
         } else {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 8.dp,
-                    bottom = 48.dp
+                    top = topInset + 8.dp,
+                    bottom = LuminaDimens.DockClearance
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                item(key = "header", contentType = "header") {
+                    StatsHeader(quickActions = quickActions)
+                }
                 item {
                     StatsHero(
                         state = state,
@@ -249,6 +245,27 @@ fun StatsScreen(
 }
 
 @Composable
+private fun StatsHeader(quickActions: (@Composable RowScope.() -> Unit)?) {
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 2.dp)) {
+        Text(
+            text = "Статистика",
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.semantics { heading() }
+        )
+        Text(
+            text = "Ваш читательский ритм",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (quickActions != null) {
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = quickActions)
+        }
+    }
+}
+
+@Composable
 private fun StatsLoading(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.padding(16.dp),
@@ -258,7 +275,7 @@ private fun StatsLoading(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(230.dp)
-                .clip(RoundedCornerShape(26.dp))
+                .clip(StatsBigCardShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
         )
         repeat(5) {
@@ -266,7 +283,7 @@ private fun StatsLoading(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(110.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(StatsCardShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             )
         }
@@ -281,21 +298,30 @@ private fun StatsHero(
 ) {
     val summary = state.summary(selectedPeriod)
     val comparison = state.comparison(selectedPeriod)
+    val colors = MaterialTheme.colorScheme
+    val glow = statsLampGlow()
+    val accent = StatsBlue
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+        border = statsCardBorder()
     ) {
+        // «Ваш год чтения» on a lamp glow instead of the old blue gradient.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(listOf(StatsBlue, StatsIndigo, StatsPurple))
-                )
+                .drawWithCache {
+                    val brush = Brush.radialGradient(
+                        colors = listOf(glow, Color.Transparent),
+                        center = Offset(size.width * 0.78f, -size.height * 0.1f),
+                        radius = size.maxDimension * 0.9f
+                    )
+                    onDrawBehind { drawRect(brush = brush) }
+                }
                 .padding(20.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -305,14 +331,14 @@ private fun StatsHero(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = periodTitle(selectedPeriod),
-                        color = Color.White.copy(alpha = 0.8f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium
+                        text = periodTitle(selectedPeriod).uppercase(),
+                        color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
+                        fontWeight = FontWeight.SemiBold
                     )
                     Surface(
-                        color = Color.White.copy(alpha = 0.16f),
-                        contentColor = Color.White,
+                        color = accent.copy(alpha = 0.12f),
+                        contentColor = colors.onSurface,
                         shape = RoundedCornerShape(50)
                     ) {
                         Row(
@@ -323,7 +349,7 @@ private fun StatsHero(
                                 Icons.Default.LocalFireDepartment,
                                 contentDescription = null,
                                 modifier = Modifier.size(15.dp),
-                                tint = Color(0xFFFFD18A)
+                                tint = accent
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
@@ -333,7 +359,7 @@ private fun StatsHero(
                                     "Начните серию"
                                 },
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -347,15 +373,13 @@ private fun StatsHero(
                 ) { duration ->
                     Text(
                         text = formatDuration(duration),
-                        color = Color.White,
-                        fontSize = 38.sp,
-                        lineHeight = 42.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        color = colors.onSurface,
+                        style = statsNumeralStyle()
                     )
                 }
                 Text(
                     text = "время за книгами",
-                    color = Color.White.copy(alpha = 0.74f),
+                    color = colors.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
 
@@ -400,9 +424,10 @@ private fun StatsHero(
 @Composable
 private fun ComparisonPill(percent: Int) {
     val sign = if (percent > 0) "+" else ""
+    val tint = if (percent >= 0) StatsGreen else MaterialTheme.colorScheme.error
     Surface(
-        color = Color.White.copy(alpha = 0.14f),
-        contentColor = Color.White,
+        color = tint.copy(alpha = 0.12f),
+        contentColor = tint,
         shape = RoundedCornerShape(50)
     ) {
         Row(
@@ -410,7 +435,7 @@ private fun ComparisonPill(percent: Int) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (percent >= 0) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                imageVector = if (percent >= 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
                 contentDescription = null,
                 modifier = Modifier.size(15.dp)
             )
@@ -418,7 +443,7 @@ private fun ComparisonPill(percent: Int) {
             Text(
                 "$sign$percent% к прошлому периоду",
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -428,21 +453,21 @@ private fun ComparisonPill(percent: Int) {
 private fun HeroMetric(value: String, label: String, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        color = Color.White.copy(alpha = 0.13f),
-        shape = RoundedCornerShape(13.dp)
+        color = MaterialTheme.colorScheme.surface,
+        border = statsCardBorder(),
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
             Text(
                 text = value,
-                color = Color.White,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1
             )
@@ -498,10 +523,9 @@ private fun GoalsCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside("Цели", "Ежедневная привычка и план на год")
@@ -609,7 +633,7 @@ private fun GoalTile(
             Text(
                 value,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1
             )
             Text(
@@ -656,8 +680,9 @@ private fun ActivityTrendCard(state: ReadingStatsUiState) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside(
@@ -756,14 +781,14 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
     val totalDays = ChronoUnit.DAYS.between(startMonday, today).toInt() + 1
     val weeks = ceil(totalDays / 7.0).toInt().coerceAtLeast(1)
     val maxSeconds = visible.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1L) ?: 1L
-    val primary = MaterialTheme.colorScheme.primary
-    val empty = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    val palette = statsPalette()
     val selected = MaterialTheme.colorScheme.onSurface
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside(
@@ -813,11 +838,7 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
                                 ?.div(maxSeconds.toFloat())
                                 ?.coerceIn(0f, 1f)
                                 ?: 0f
-                            val color = when {
-                                selectedDate == date -> selected
-                                ratio <= 0f -> empty
-                                else -> primary.copy(alpha = 0.18f + ratio * 0.82f)
-                            }
+                            val color = if (selectedDate == date) selected else palette.heatColor(ratio)
                             drawRoundRect(
                                 color = color,
                                 topLeft = Offset(
@@ -855,8 +876,9 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
 private fun ReaderProfileCard(state: ReadingStatsUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Box(
             modifier = Modifier
@@ -891,7 +913,7 @@ private fun ReaderProfileCard(state: ReadingStatsUiState) {
                         Text(
                             state.readerProfile.title,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold
+                            fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             "Ваш читательский профиль",
@@ -959,8 +981,9 @@ private fun ClockActivityCard(
 
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -997,7 +1020,7 @@ private fun ClockActivityCard(
                     Text(
                         peak?.let { "%02d:00".format(it.hour) } ?: "—",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         "пик",
@@ -1017,8 +1040,9 @@ private fun ReadingBasicsCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -1068,8 +1092,9 @@ private fun WeekdayRhythmCard(activity: List<WeekdayReadingActivity>) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside(
@@ -1188,8 +1213,9 @@ private fun RecordRow(first: RecordValue, second: RecordValue) {
 private fun RecordTile(record: RecordValue, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(13.dp)) {
             Surface(
@@ -1209,7 +1235,7 @@ private fun RecordTile(record: RecordValue, modifier: Modifier = Modifier) {
             Spacer(Modifier.height(9.dp))
             Text(
                 record.value,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1
             )
@@ -1235,18 +1261,18 @@ private fun EquivalentsCard(state: ReadingStatsUiState) {
     val hoursRemainder = (state.allTime.durationSeconds % 86_400) / 3_600
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = StatsBigCardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
-        )
+        ),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside("Эквиваленты", "Масштаб всего прочитанного")
             Spacer(Modifier.height(12.dp))
             Text(
                 formatNumber(state.allTime.wordsRead),
-                fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold
+                style = statsNumeralStyle()
             )
             Text(
                 "слов прочитано",
@@ -1287,8 +1313,9 @@ private fun BookOfMonthCard(book: BookReadingSummary) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1333,7 +1360,7 @@ private fun BookOfMonthCard(book: BookReadingSummary) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     book.title,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -1363,8 +1390,9 @@ private fun TopBooksCard(books: List<BookReadingSummary>) {
     val maxDuration = books.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1L) ?: 1L
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             books.forEachIndexed { index, book ->
@@ -1428,8 +1456,9 @@ private fun CompletedBooksByMonthCard(state: ReadingStatsUiState) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -1440,8 +1469,7 @@ private fun CompletedBooksByMonthCard(state: ReadingStatsUiState) {
                 Column {
                     Text(
                         "${state.completedBooksThisYear}",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        style = statsNumeralStyle()
                     )
                     Text(
                         "книг завершено в ${LocalDate.now().year}",
@@ -1522,8 +1550,9 @@ private fun MonthlyTrendCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -1542,7 +1571,7 @@ private fun MonthlyTrendCard(
                 Text(
                     valueLabel(latest),
                     color = color,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.SemiBold
                 )
             }
             Spacer(Modifier.height(14.dp))
@@ -1608,8 +1637,9 @@ private fun MonthlyTrendCard(
 private fun LibraryFunnelCard(state: ReadingStatsUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeaderInside(
@@ -1718,28 +1748,15 @@ private fun LibraryTag(
 private fun AchievementCard(state: ReadingStatsUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = StatsAmber.copy(alpha = 0.09f)
-        )
+        shape = StatsBigCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = statsCardBorder()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                color = StatsAmber.copy(alpha = 0.16f)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.EmojiEvents,
-                        contentDescription = null,
-                        tint = StatsAmber
-                    )
-                }
-            }
+            BrassMedallion(icon = Icons.Default.EmojiEvents, size = 48.dp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1787,14 +1804,14 @@ private fun SectionTitle(
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
 
 @Composable
 private fun SectionHeaderInside(title: String, subtitle: String) {
-    Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+    Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
     Text(
         subtitle,
         style = MaterialTheme.typography.labelSmall,
@@ -1808,7 +1825,7 @@ private fun EmptyStatsCard() {
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = RoundedCornerShape(18.dp)
+        shape = StatsCardShape
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
