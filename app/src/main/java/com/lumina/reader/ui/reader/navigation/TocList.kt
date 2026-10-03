@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -238,7 +237,7 @@ private fun TocRow(
                 )
             }
         } else {
-            Box(modifier = Modifier.size(width = 12.dp, height = 1.dp).fillMaxHeight())
+            Spacer(modifier = Modifier.width(12.dp))
         }
     }
 }
