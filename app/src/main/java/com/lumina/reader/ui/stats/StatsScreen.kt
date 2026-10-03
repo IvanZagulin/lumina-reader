@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.lumina.reader.core.text.formatGrouped
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaDimens
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -695,7 +696,8 @@ private fun ActivityTrendCard(state: ReadingStatsUiState) {
                     FilterChip(
                         selected = item == range,
                         onClick = { rangeName = item.name },
-                        label = { Text(item.title) }
+                        label = { Text(item.title) },
+                        border = LegacyM3Defaults.filterChipBorder(selected = item == range)
                     )
                 }
             }
@@ -801,7 +803,8 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
                     FilterChip(
                         selected = monthsBack == months,
                         onClick = { monthsBack = months },
-                        label = { Text("$months мес.") }
+                        label = { Text("$months мес.") },
+                        border = LegacyM3Defaults.filterChipBorder(selected = monthsBack == months)
                     )
                 }
             }
@@ -1875,7 +1878,8 @@ private fun DailyGoalDialog(
                                     DailyGoalType.WORDS -> "5000"
                                 }
                             },
-                            label = { Text(goalTypeLabel(item)) }
+                            label = { Text(goalTypeLabel(item)) },
+                            border = LegacyM3Defaults.filterChipBorder(selected = item == type)
                         )
                     }
                 }

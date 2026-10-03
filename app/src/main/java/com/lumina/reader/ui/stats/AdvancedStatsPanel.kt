@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.text.formatDecimal
 import com.lumina.reader.core.text.formatGrouped
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -111,8 +112,18 @@ private fun WrappedCard(state: AdvancedStatsUiState) {
         Header("Reading Wrapped", "Итоги месяца или года одним экраном", Icons.Default.AutoAwesome)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = !yearly, onClick = { yearly = false }, label = { Text("Месяцы") })
-            FilterChip(selected = yearly, onClick = { yearly = true }, label = { Text("Годы") })
+            FilterChip(
+                selected = !yearly,
+                onClick = { yearly = false },
+                label = { Text("Месяцы") },
+                border = LegacyM3Defaults.filterChipBorder(selected = !yearly)
+            )
+            FilterChip(
+                selected = yearly,
+                onClick = { yearly = true },
+                label = { Text("Годы") },
+                border = LegacyM3Defaults.filterChipBorder(selected = yearly)
+            )
         }
         Spacer(Modifier.height(8.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -120,7 +131,8 @@ private fun WrappedCard(state: AdvancedStatsUiState) {
                 FilterChip(
                     selected = item.key == selected?.key,
                     onClick = { selectedKey = item.key },
-                    label = { Text(if (yearly) item.title else formatMonth(YearMonth.parse(item.key))) }
+                    label = { Text(if (yearly) item.title else formatMonth(YearMonth.parse(item.key))) },
+                    border = LegacyM3Defaults.filterChipBorder(selected = item.key == selected?.key)
                 )
             }
         }

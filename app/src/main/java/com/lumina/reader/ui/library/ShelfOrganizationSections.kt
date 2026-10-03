@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.Book
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /** Values the two organisation sections save through `LibraryViewModel.updateBookOrganization`. */
 data class BookOrganization(val collection: String, val seriesName: String, val seriesOrder: Int)
@@ -195,6 +196,7 @@ private fun SuggestionRow(values: List<String>, withIcon: Boolean = false, onPic
             SuggestionChip(
                 onClick = { onPick(value) },
                 label = { Text(value, maxLines = 1) },
+                border = LegacyM3Defaults.suggestionChipBorder(),
                 icon = if (withIcon) {
                     { Icon(Icons.Rounded.Bookmarks, contentDescription = null, modifier = Modifier.size(15.dp)) }
                 } else {
@@ -220,6 +222,10 @@ private fun SectionButtons(
     ) {
         TextButton(onClick = onCancel) { Text("Отмена") }
         Spacer(Modifier.size(8.dp))
-        Button(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel) }
+        Button(
+            onClick = onConfirm,
+            enabled = confirmEnabled,
+            colors = LegacyM3Defaults.buttonColors()
+        ) { Text(confirmLabel) }
     }
 }

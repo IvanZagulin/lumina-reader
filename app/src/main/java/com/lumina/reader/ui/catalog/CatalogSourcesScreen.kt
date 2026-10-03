@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.opds.OpdsCatalogConfig
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaDimens
 
 /** Manage OPDS catalogues: show/hide, add, edit, delete, test the connection. */
@@ -180,7 +181,11 @@ private fun CatalogSourceRow(
             }
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onCheck, enabled = check != ConnectionCheck.Running) {
+                TextButton(
+                    onClick = onCheck,
+                    enabled = check != ConnectionCheck.Running,
+                    colors = LegacyM3Defaults.textButtonColors()
+                ) {
                     Icon(Icons.Rounded.NetworkCheck, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Проверить")

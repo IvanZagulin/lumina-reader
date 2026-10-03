@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.preferences.LibraryPreferences
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /** A user shelf with its book count, as listed in the manager. */
 data class ShelfEntry(val name: String, val bookCount: Int)
@@ -134,7 +135,8 @@ fun ShelfManagerSheet(
                         onCreate(newName)
                         newName = ""
                     },
-                    enabled = newName.isNotBlank()
+                    enabled = newName.isNotBlank(),
+                    colors = LegacyM3Defaults.buttonColors()
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
@@ -185,7 +187,8 @@ fun RenameShelfDialog(shelfName: String, onRename: (String) -> Unit, onDismiss: 
         confirmButton = {
             TextButton(
                 onClick = { onRename(name) },
-                enabled = name.isNotBlank() && name.trim() != shelfName
+                enabled = name.isNotBlank() && name.trim() != shelfName,
+                colors = LegacyM3Defaults.textButtonColors()
             ) { Text("Переименовать") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }

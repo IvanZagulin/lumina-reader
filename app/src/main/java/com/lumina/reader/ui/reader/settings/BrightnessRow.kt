@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.preferences.AppDisplayController
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /**
  * Screen brightness (§7.3): small sun · slider · large sun · «Авто». Uses
@@ -108,7 +109,8 @@ internal fun BrightnessRow(
                 selectedContainerColor = colors.selectedBg,
                 selectedLabelColor = colors.accent,
                 labelColor = colors.content
-            )
+            ),
+            border = LegacyM3Defaults.filterChipBorder(selected = useSystem)
         )
     }
 }

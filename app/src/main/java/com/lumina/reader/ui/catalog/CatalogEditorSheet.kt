@@ -57,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 
@@ -140,6 +141,7 @@ internal fun CatalogEditorSheet(
                                 Icon(Icons.Rounded.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
                             },
                             shape = LuminaShape.Pill,
+                            border = LegacyM3Defaults.assistChipBorder(),
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
@@ -219,6 +221,8 @@ internal fun CatalogEditorSheet(
                     onClick = onCheck,
                     enabled = form.canSave && !running,
                     shape = LuminaShape.Pill,
+                    colors = LegacyM3Defaults.outlinedButtonColors(),
+                    border = LegacyM3Defaults.outlinedButtonBorder(enabled = form.canSave && !running),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -248,6 +252,7 @@ internal fun CatalogEditorSheet(
                     onClick = onSave,
                     enabled = form.canSave,
                     shape = LuminaShape.Pill,
+                    colors = LegacyM3Defaults.buttonColors(),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
