@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Evening library: dark wall behind the first frame, light status bar icons. -->
+    <style name="Theme.LuminaReader" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lumina_wall_night</item>
+        <item name="android:colorBackground">@color/lumina_wall_night</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

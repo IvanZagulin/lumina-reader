@@ -20,8 +20,12 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -41,6 +45,7 @@ import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
 import com.lumina.reader.ui.theme.LuminaReaderTheme
 import com.lumina.reader.ui.update.AppUpdateDialog
+import com.lumina.reader.ui.update.AppUpdateDialogState
 import com.lumina.reader.ui.update.AppUpdateEvent
 import com.lumina.reader.ui.update.AppUpdateViewModel
 import kotlinx.coroutines.launch
@@ -104,6 +109,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val updateUiState by updateViewModel.uiState.collectAsState()
+            // The library's ⋯ dot and «Обновление» chip stay on after the dialog is
+            // dismissed, until a later check reports the app as up to date.
+            var updateAvailable by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(updateUiState.dialog) {
+                when (updateUiState.dialog) {
+                    is AppUpdateDialogState.Available -> updateAvailable = true
+                    is AppUpdateDialogState.UpToDate -> updateAvailable = false
+                    else -> Unit
+                }
+            }
             LuminaReaderTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -115,7 +130,8 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             onCheckForUpdates = { updateViewModel.checkForUpdates() },
                             isCheckingForUpdates = updateUiState.isChecking,
-                            snackbarHostState = snackbarHostState
+                            snackbarHostState = snackbarHostState,
+                            updateAvailable = updateAvailable
                         )
                         AppUpdateDialog(
                             state = updateUiState.dialog,

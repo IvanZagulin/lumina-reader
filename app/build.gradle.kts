@@ -90,6 +90,9 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
+    // Cover colours (hero background, transition endpaper)
+    implementation(libs.androidx.palette.ktx)
+
     // Media session and MediaStyle notification for read-aloud playback
     implementation(libs.androidx.media)
 
