@@ -1,8 +1,8 @@
 package com.lumina.reader.core.tts
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TtsSentenceSplitterTest {
 
@@ -139,9 +139,9 @@ class TtsSentenceSplitterTest {
         val max = 60
         val pieces = sentences(text, max)
         assertTrue(pieces.size > 1)
-        pieces.forEach { assertTrue("too long: ${it.length}", it.length <= max) }
+        pieces.forEach { assertTrue(it.length <= max, "too long: ${it.length}") }
         // Every non-final piece ends at a comma, never mid-word.
-        pieces.dropLast(1).forEach { assertTrue("bad cut: $it", it.endsWith(",")) }
+        pieces.dropLast(1).forEach { assertTrue(it.endsWith(","), "bad cut: $it") }
         assertEquals(text.filterNot { it.isWhitespace() }, pieces.joinToString("").filterNot { it.isWhitespace() })
     }
 

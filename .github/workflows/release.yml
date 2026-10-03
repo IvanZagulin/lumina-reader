@@ -4,10 +4,14 @@ name: Build and publish update
 on:
   push:
     branches: [main]
-    # Documentation-only changes do not need a new APK release.
+    # Documentation-only changes do not need a new APK release, and neither do
+    # iPhone-only changes (ios-release.yml builds those).
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - 'iosApp/**'
+      - 'altstore/**'
+      - '.github/workflows/ios-*.yml'
   workflow_dispatch:
 
 permissions:

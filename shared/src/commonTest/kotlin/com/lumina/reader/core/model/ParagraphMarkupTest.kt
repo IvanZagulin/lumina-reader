@@ -2,10 +2,10 @@ package com.lumina.reader.core.model
 
 import com.lumina.reader.core.model.ParagraphMarkup.BlockStyle
 import com.lumina.reader.core.model.ParagraphMarkup.InlineKind
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ParagraphMarkupTest {
 
