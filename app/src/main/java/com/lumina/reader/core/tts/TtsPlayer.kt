@@ -253,6 +253,8 @@ internal class TtsPlayer(
 
     /** Speaks the queue's current sentence, handling chapter end and engine start-up. */
     private fun speakCurrent() {
+        // Only ever continues playback; a pause/stop that happened meanwhile wins.
+        if (!isPlayingOrPreparing) return
         val q = queue ?: return
         val segment = q.current()
         if (segment == null) {
@@ -260,16 +262,20 @@ internal class TtsPlayer(
             return
         }
         publishPosition(segment)
+        // A state observer may have paused or stopped playback during the update.
+        if (queue !== q || !isPlayingOrPreparing) return
         if (!ensureEngine()) {
             if (status != TtsStatus.ERROR) setState { it.copy(status = TtsStatus.PREPARING) }
             return
         }
         val current = engine ?: return
         applyLocale(current)
+        if (queue !== q || engine !== current || !isPlayingOrPreparing) return
+        setState { it.copy(status = TtsStatus.PLAYING) }
+        if (queue !== q || engine !== current || status != TtsStatus.PLAYING) return
         utteranceCounter++
         val id = "lumina-tts-$utteranceCounter"
         activeUtteranceId = id
-        setState { it.copy(status = TtsStatus.PLAYING) }
         val accepted = try {
             current.speak(segment.text, id)
         } catch (e: Exception) {

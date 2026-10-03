@@ -56,6 +56,9 @@ object TtsController {
     private var serviceRequested = false
     private var serviceStartBlocked = false
 
+    /** True while a controller call runs; nested calls (from state observers) are posted instead. */
+    private var inCall = false
+
     val state: StateFlow<TtsPlaybackState>
         get() = player.state
 
@@ -68,7 +71,9 @@ object TtsController {
         runOnMain {
             val ctx = appContext ?: return@runOnMain
             if (audioFocus == null) audioFocus = TtsAudioFocus(ctx, ::onAudioFocusChange)
-            scope.launch { player.state.collect { onStateChanged(it) } }
+            // Dispatchers.Main (not immediate): react after the player finished
+            // its own update instead of re-entering it from inside setState.
+            scope.launch(Dispatchers.Main) { player.state.collect { onStateChanged(it) } }
         }
     }
 
@@ -160,7 +165,8 @@ object TtsController {
 
     /** Called by [TtsPlaybackService.onDestroy]. */
     internal fun onServiceDestroyed() {
-        runOnMain {
+        // Posted: never start a new instance from inside the old one's onDestroy().
+        mainHandler.post {
             serviceRequested = false
             val status = player.state.value.status
             if (status == TtsStatus.PLAYING || status == TtsStatus.PREPARING) {
@@ -175,7 +181,7 @@ object TtsController {
         when (state.status) {
             TtsStatus.PLAYING, TtsStatus.PREPARING -> {
                 val focus = audioFocus
-                if (focus != null && !focus.hasFocus && !focus.request()) {
+                if (focus != null && !focus.request()) {
                     // A call or another player holds focus: do not talk over it.
                     player.pause()
                     return
@@ -213,29 +219,46 @@ object TtsController {
             when (TtsFocusPolicy.decide(focusChange, status, pausedByFocusLoss)) {
                 TtsFocusAction.PAUSE_TRANSIENT -> {
                     pausedByFocusLoss = true
+                    audioFocus?.onTransientLoss()
                     player.pause()
                 }
                 TtsFocusAction.PAUSE_PERMANENT -> {
                     pausedByFocusLoss = false
-                    audioFocus?.onLost()
+                    audioFocus?.abandon()
                     player.pause()
                 }
                 TtsFocusAction.RESUME -> {
                     pausedByFocusLoss = false
+                    audioFocus?.onGain()
                     player.resume()
                 }
-                TtsFocusAction.NONE -> {
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) audioFocus?.onLost()
+                TtsFocusAction.NONE -> when (focusChange) {
+                    AudioManager.AUDIOFOCUS_GAIN -> audioFocus?.onGain()
+                    AudioManager.AUDIOFOCUS_LOSS -> audioFocus?.abandon()
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> audioFocus?.onTransientLoss()
+                    else -> Unit
                 }
             }
         }
     }
 
+    /**
+     * Runs [block] on the main thread: directly when already there and not
+     * inside another controller call, otherwise posted. Posting nested calls
+     * keeps a state observer that calls back into the controller from
+     * re-entering the player halfway through an update.
+     */
     private fun runOnMain(block: () -> Unit) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            block()
+        if (Looper.myLooper() == Looper.getMainLooper() && !inCall) {
+            inCall = true
+            try {
+                block()
+            } finally {
+                inCall = false
+            }
         } else {
-            mainHandler.post { block() }
+            mainHandler.post { runOnMain(block) }
         }
     }
 }

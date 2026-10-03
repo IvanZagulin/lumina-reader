@@ -1,14 +1,18 @@
 package com.lumina.reader.core.tts
 
 import android.content.Context
+import com.lumina.reader.core.preferences.ReaderPreferences
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** Legacy three-state view of [TtsStatus], kept for the existing reader UI. */
 enum class TtsState {
@@ -30,6 +34,20 @@ class TtsManager(context: Context) {
 
     init {
         TtsController.init(context)
+        // The reader screen never forwards the "speech rate" setting, so the
+        // adapter applies it (and later changes) itself.
+        scope.launch {
+            try {
+                ReaderPreferences(context.applicationContext).settingsFlow
+                    .map { it.ttsSpeed }
+                    .distinctUntilChanged()
+                    .collect { TtsController.setSpeechRate(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Unreadable settings: keep the current rate.
+            }
+        }
     }
 
     val state: StateFlow<TtsState> = TtsController.state

@@ -132,4 +132,32 @@ class TtsQueueTest {
         assertEquals(TtsLanguageDetector.RUSSIAN, TtsLanguageDetector.detect(listOf("", "123 456")))
         assertEquals(Locale.Builder().setLanguage("ru").setRegion("RU").build(), TtsLanguageDetector.RUSSIAN)
     }
+
+    @Test
+    fun speechTextBlanksFootnoteLabelsAndKeepsPositions() {
+        val raw = ParagraphMarkup.emphasis("Слово") + ParagraphMarkup.noteRef("12", "n12") + " и дальше."
+        val plain = ParagraphMarkup.plainText(raw)
+        val spoken = TtsQueue.speechText(raw)
+        assertEquals("Слово12 и дальше.", plain)
+        assertEquals("Слово   и дальше.", spoken)
+        assertEquals(plain.length, spoken.length)
+        assertEquals("Обычный текст.", TtsQueue.speechText("Обычный текст."))
+    }
+
+    @Test
+    fun footnoteAfterPeriodDoesNotHideTheSentenceEnd() {
+        val raw = "Первое." + ParagraphMarkup.noteRef("1", "a") + " Второе."
+        val queue = TtsQueue(listOf(raw))
+        assertEquals("Первое.", queue.seekToParagraph(0)!!.text)
+        val second = queue.advance()!!
+        assertEquals("Второе.", second.text)
+        val plain = ParagraphMarkup.plainText(raw)
+        assertEquals("Второе.", plain.substring(second.range.first, second.range.last + 1))
+    }
+
+    @Test
+    fun paragraphWithOnlyAFootnoteIsSkipped() {
+        val queue = TtsQueue(listOf(ParagraphMarkup.noteRef("3", "c"), "Текст."))
+        assertEquals(1, queue.seekToParagraph(0)!!.paragraphIndex)
+    }
 }

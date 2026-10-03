@@ -26,7 +26,13 @@ internal object TtsFocusPolicy {
     }
 }
 
-/** Holds the media audio focus request used while reading aloud. */
+/**
+ * Holds the media audio focus request used while reading aloud.
+ *
+ * [hasFocus] is true while we may speak. [registered] stays true after a
+ * transient loss, so the system still sends us AUDIOFOCUS_GAIN when the
+ * call or notification is over.
+ */
 internal class TtsAudioFocus(context: Context, onFocusChange: (Int) -> Unit) {
     private val audioManager: AudioManager? =
         context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -46,22 +52,36 @@ internal class TtsAudioFocus(context: Context, onFocusChange: (Int) -> Unit) {
     var hasFocus: Boolean = false
         private set
 
-    /** Returns true when focus is held after the call. */
+    private var registered = false
+
+    /**
+     * Asks for focus unless it is already held. Returns true when focus is held
+     * after the call. Also used after a transient loss, when the user resumes
+     * by hand: during a phone call the request is refused.
+     */
     fun request(): Boolean {
         if (hasFocus) return true
-        val manager = audioManager ?: return true
-        hasFocus = try {
+        val manager = audioManager
+        if (manager == null) {
+            hasFocus = true
+            return true
+        }
+        val granted = try {
             AudioManagerCompat.requestAudioFocus(manager, request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         } catch (e: Exception) {
             // Never block speech because the audio service misbehaves.
             true
         }
-        return hasFocus
+        hasFocus = granted
+        if (granted) registered = true
+        return granted
     }
 
+    /** Gives focus back to the system (pause by the user, stop, error, permanent loss). */
     fun abandon() {
-        if (!hasFocus) return
         hasFocus = false
+        if (!registered) return
+        registered = false
         val manager = audioManager ?: return
         try {
             AudioManagerCompat.abandonAudioFocusRequest(manager, request)
@@ -70,8 +90,13 @@ internal class TtsAudioFocus(context: Context, onFocusChange: (Int) -> Unit) {
         }
     }
 
-    /** The system took focus away permanently; there is nothing left to abandon. */
-    fun onLost() {
+    /** Focus was taken for a while; stay registered to hear about the gain. */
+    fun onTransientLoss() {
         hasFocus = false
+    }
+
+    /** The system gave focus back after a transient loss. */
+    fun onGain() {
+        if (registered) hasFocus = true
     }
 }

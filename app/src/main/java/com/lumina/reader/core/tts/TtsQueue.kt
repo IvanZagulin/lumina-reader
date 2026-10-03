@@ -7,7 +7,9 @@ import com.lumina.reader.core.model.ParagraphMarkup
  *
  * [paragraphIndex] is the index in the ORIGINAL chapter paragraph list and
  * [range] the character range inside `ParagraphMarkup.plainText(paragraph)`;
- * [text] is exactly that substring.
+ * [text] is that substring as it is sent to the engine: footnote reference
+ * labels are replaced by spaces (see [TtsQueue.speechText]), so the length
+ * and positions are unchanged.
  */
 data class TtsSegment(
     val paragraphIndex: Int,
@@ -27,7 +29,7 @@ class TtsQueue(
     private val maxSentenceLength: Int = TtsSentenceSplitter.DEFAULT_MAX_LENGTH
 ) {
     private var paragraphIndex = paragraphs.size
-    private var plainText = ""
+    private var spokenText = ""
     private var sentences: List<IntRange> = emptyList()
     private var sentenceIndex = 0
 
@@ -46,7 +48,7 @@ class TtsQueue(
             paragraphIndex = paragraphIndex,
             sentenceIndex = sentenceIndex,
             range = range,
-            text = plainText.substring(range.first, range.last + 1)
+            text = spokenText.substring(range.first, range.last + 1)
         )
     }
 
@@ -95,11 +97,11 @@ class TtsQueue(
     private fun load(index: Int): Boolean {
         val raw = paragraphs[index]
         if (!isSpeakable(raw)) return false
-        val text = ParagraphMarkup.plainText(raw)
+        val text = speechText(raw)
         val ranges = TtsSentenceSplitter.split(text, maxSentenceLength)
         if (ranges.isEmpty()) return false
         paragraphIndex = index
-        plainText = text
+        spokenText = text
         sentences = ranges
         sentenceIndex = 0
         lastParagraphIndex = index
@@ -108,7 +110,7 @@ class TtsQueue(
 
     private fun markFinished() {
         paragraphIndex = paragraphs.size
-        plainText = ""
+        spokenText = ""
         sentences = emptyList()
         sentenceIndex = 0
     }
@@ -119,6 +121,24 @@ class TtsQueue(
             if (raw.isBlank()) return false
             val trimmed = raw.trim()
             return !trimmed.startsWith("[IMG:") && !ParagraphMarkup.isImage(trimmed)
+        }
+
+        /**
+         * `ParagraphMarkup.plainText(raw)` with footnote reference labels
+         * replaced by spaces, so "конец.¹ Далее" is not read as "конец один"
+         * and does not hide the sentence boundary. Same length as plainText,
+         * so ranges into it are ranges into plainText.
+         */
+        fun speechText(raw: String): String {
+            if (!ParagraphMarkup.hasMarkup(raw)) return raw
+            val parsed = ParagraphMarkup.parse(raw)
+            val notes = parsed.spans.filter { it.kind == ParagraphMarkup.InlineKind.NOTE_REF }
+            if (notes.isEmpty()) return parsed.text
+            val chars = parsed.text.toCharArray()
+            for (span in notes) {
+                for (k in span.start.coerceAtLeast(0) until span.end.coerceAtMost(chars.size)) chars[k] = ' '
+            }
+            return String(chars)
         }
     }
 }

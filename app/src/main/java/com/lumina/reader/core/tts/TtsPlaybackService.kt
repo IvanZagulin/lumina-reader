@@ -136,6 +136,14 @@ class TtsPlaybackService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping the app away keeps an active reading going, but a paused or
+        // failed session would otherwise leave a notification nobody asked for.
+        val status = TtsController.state.value.status
+        if (status != TtsStatus.PLAYING && status != TtsStatus.PREPARING) TtsController.stop()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         scope.cancel()
         if (noisyReceiverRegistered) {

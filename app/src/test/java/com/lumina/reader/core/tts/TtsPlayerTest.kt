@@ -1,7 +1,10 @@
 package com.lumina.reader.core.tts
 
+import com.lumina.reader.core.model.ParagraphMarkup
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -392,6 +395,69 @@ class TtsPlayerTest {
         player.resume()
         assertEquals(2, engines.size)
         assertEquals(TtsStatus.PREPARING, player.state.value.status)
+    }
+
+    @Test
+    fun observerPausingDuringResumeIsNotOverridden() = runTest {
+        val player = newPlayer()
+        player.startReady()
+        player.pause()
+        val spoken = engine.spoken.size
+
+        var armed = true
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            player.state.collect {
+                // Synchronous observer, like a Main.immediate collector in the app.
+                if (armed && it.status == TtsStatus.PLAYING) {
+                    armed = false
+                    player.pause()
+                }
+            }
+        }
+
+        player.resume()
+        assertFalse(armed)
+        assertEquals(TtsStatus.PAUSED, player.state.value.status)
+        assertEquals(spoken, engine.spoken.size)
+
+        player.resume()
+        assertEquals(TtsStatus.PLAYING, player.state.value.status)
+        assertEquals(spoken + 1, engine.spoken.size)
+    }
+
+    @Test
+    fun pauseWhileChoosingTheVoiceSpeaksNothing() = runTest {
+        val player = newPlayer()
+        player.start(7L, "Книга", ch0, 0, Book(ch0))
+        var pauseOnLanguage = true
+        engine.support = {
+            if (pauseOnLanguage) {
+                pauseOnLanguage = false
+                player.pause()
+            }
+            TtsLanguageSupport.AVAILABLE
+        }
+        engine.callbacks.onInit(true)
+        assertEquals(TtsStatus.PAUSED, player.state.value.status)
+        assertTrue(engine.spoken.isEmpty())
+
+        player.resume()
+        assertEquals("Раз.", engine.lastText)
+        assertEquals(TtsStatus.PLAYING, player.state.value.status)
+    }
+
+    @Test
+    fun footnoteLabelsAreNotSpoken() = runTest {
+        val player = newPlayer()
+        val paragraph = "Конец." + ParagraphMarkup.noteRef("1", "n1") + " Новая фраза."
+        val chapter = TtsChapter(0, "Сноски", listOf(paragraph))
+        player.startReady(chapter = chapter, book = Book(chapter))
+        assertEquals("Конец.", engine.lastText)
+        engine.finishCurrent()
+        assertEquals("Новая фраза.", engine.lastText)
+        val plain = ParagraphMarkup.plainText(paragraph)
+        val range = player.state.value.sentenceRange!!
+        assertEquals("Новая фраза.", plain.substring(range.first, range.last + 1))
     }
 
     @Test
