@@ -7,7 +7,7 @@ import com.lumina.reader.core.parser.common.MarkupTokenizer
 import com.lumina.reader.core.parser.common.NoteSupport
 import com.lumina.reader.core.parser.common.ParagraphAccumulator
 import com.lumina.reader.core.parser.common.TextSupport
-import java.io.StringReader
+import com.lumina.reader.core.text.StringCharReader
 
 /** Text extracted from one XHTML document of an EPUB. */
 internal class XhtmlDocument(
@@ -103,7 +103,7 @@ internal class XhtmlExtractor(
     private var bodyStarted = false
 
     fun extract(text: String): XhtmlDocument {
-        val tokenizer = MarkupTokenizer(StringReader(text), rawTextElements = RAW_TEXT)
+        val tokenizer = MarkupTokenizer(StringCharReader(text), rawTextElements = RAW_TEXT)
         while (true) {
             when (val token = tokenizer.next() ?: break) {
                 is MarkupToken.StartTag -> onStart(token)

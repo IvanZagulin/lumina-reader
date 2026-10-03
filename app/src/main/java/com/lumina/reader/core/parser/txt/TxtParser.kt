@@ -7,9 +7,9 @@ import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.TocItem
 import com.lumina.reader.core.parser.BookParser
 import com.lumina.reader.core.parser.common.TextEncoding
+import com.lumina.reader.core.text.charset.TextCharset
 import java.io.File
 import java.io.InputStream
-import java.nio.charset.Charset
 
 /**
  * Plain-text parser.
@@ -167,11 +167,11 @@ class TxtParser : BookParser {
         internal fun decode(bytes: ByteArray): String {
             val bom = TextEncoding.detectBom(bytes)
             val text = if (bom != null) {
-                String(bytes, bom.length, bytes.size - bom.length, bom.charset)
+                bom.charset.decode(bytes, bom.length, bytes.size - bom.length)
             } else {
-                val charset: Charset =
-                    if (TextEncoding.looksLikeUtf8(bytes)) Charsets.UTF_8 else TextEncoding.WINDOWS_1251
-                String(bytes, charset)
+                val charset: TextCharset =
+                    if (TextEncoding.looksLikeUtf8(bytes)) TextCharset.UTF_8 else TextEncoding.WINDOWS_1251
+                charset.decode(bytes)
             }
             return ParagraphMarkup.stripMarkers(text.replace("﻿", ""))
         }

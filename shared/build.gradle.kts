@@ -6,6 +6,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
+    // Stability metadata for the classes that composables in :app / :sharedUi
+    // take as parameters (download and TTS states, enums); without the Compose
+    // compiler they would be treated as unstable.
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -27,10 +32,22 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
+            // On Android these resolve to androidx.compose runtime / ui-graphics /
+            // ui-text 1.11.2, the versions :app already uses.
+            implementation(libs.jb.compose.runtime)
+            implementation(libs.jb.compose.ui.graphics)
+            implementation(libs.jb.compose.ui.text)
+            implementation(libs.okio)
+            implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+        }
+        // JVM-only tests: parity of the common text code with java.nio /
+        // java.util formatters (they run with testDebugUnitTest on Linux CI).
+        androidUnitTest.dependencies {
+            implementation(libs.junit)
         }
     }
 }

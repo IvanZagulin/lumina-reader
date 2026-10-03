@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.platform.AppInfo
 
 class LuminaApp : Application() {
     @OptIn(ExperimentalFoundationApi::class)
@@ -14,6 +15,8 @@ class LuminaApp : Application() {
         // Must be set before any Compose code runs.
         ComposeFoundationFlags.isSmartSelectionEnabled = false
         super.onCreate()
+        // Common code (:shared) reads the version from here.
+        AppInfo.init(BuildConfig.VERSION_NAME)
         // Initialize Room Database
         AppDatabase.getDatabase(this)
     }

@@ -42,13 +42,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
-/** «Анимация открытия книги»: the full hinge, a quick one, or a plain fade. */
-enum class OpenAnimation(val title: String) {
-    FULL("Полная"),
-    FAST("Быстрая"),
-    OFF("Выкл")
-}
-
 /** Where the page starts when the reader closes (predictive back may have shrunk it). */
 internal data class CloseStart(val scale: Float = 1f, val translationX: Float = 0f, val cornerPx: Float = 0f)
 
