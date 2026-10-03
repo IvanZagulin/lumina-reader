@@ -51,6 +51,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
@@ -71,7 +74,6 @@ import com.lumina.reader.ui.chat.AiChatScreen
 import com.lumina.reader.ui.chat.AiChatViewModel
 import com.lumina.reader.ui.components.newlyShelvedKeys
 import com.lumina.reader.ui.downloads.DownloadIsland
-import com.lumina.reader.ui.downloads.LocalDownloadIslandCompact
 import com.lumina.reader.ui.downloads.DownloadsSheet
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
@@ -189,8 +191,13 @@ fun LuminaNavGraph(
     }
 
     // Notification taps, "Открыть с помощью" and snackbar actions open books here (plain fade).
-    LaunchedEffect(navController) {
-        AppMessages.openBookRequests.collect { bookId -> navController.openBook(bookId) }
+    // Only a visible instance takes requests; one sent while none is started
+    // waits in the channel until an instance comes back.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(navController, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            AppMessages.openBookRequests.collect { bookId -> navController.openBook(bookId) }
+        }
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -282,7 +289,13 @@ fun LuminaNavGraph(
                         }
                         ReaderTransitionHost(
                             bookId = bookId,
-                            onExit = { navController.popBackStack() }
+                            // A second back tap during the exit (or with animations off)
+                            // must not pop the library as well.
+                            onExit = {
+                                if (entry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                    navController.popBackStack()
+                                }
+                            }
                         ) { requestClose ->
                             ReaderScreen(
                                 viewModel = readerViewModel,
@@ -395,14 +408,14 @@ fun LuminaNavGraph(
                     .padding(bottom = snackbarBottom)
             )
 
-            // The island adds its own status-bar inset. In the reader it shrinks to a
-            // progress ring in the top-right corner so it never covers the text.
-            val inReader = isReader(route)
-            CompositionLocalProvider(LocalDownloadIslandCompact provides inReader) {
+            // The island adds its own status-bar inset. The reader hides it: its
+            // corners hold the bookmark and the ⋯ menu, and downloads still report
+            // through notifications and snackbars.
+            if (!isReader(route)) {
                 DownloadIsland(
                     onOpenBook = { bookId -> navController.openBook(bookId) },
                     onOpenDownloads = { showDownloads = true },
-                    modifier = Modifier.align(if (inReader) Alignment.TopEnd else Alignment.TopCenter)
+                    modifier = Modifier.align(Alignment.TopCenter)
                 )
             }
 

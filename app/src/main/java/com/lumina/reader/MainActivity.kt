@@ -40,6 +40,8 @@ import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.preferences.AppDisplayController
 import com.lumina.reader.core.reminder.ReadingReminder
+import com.lumina.reader.core.tts.TtsController
+import com.lumina.reader.core.tts.TtsStatus
 import com.lumina.reader.ui.navigation.LuminaNavGraph
 import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
@@ -167,7 +169,11 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
 
-        if (direction != null && ReaderPageNavigation.hasActiveReader()) {
+        // While a book is read aloud the volume keys control its volume.
+        val readingAloud = TtsController.state.value.status.let {
+            it == TtsStatus.PLAYING || it == TtsStatus.PREPARING
+        }
+        if (direction != null && !readingAloud && ReaderPageNavigation.hasActiveReader()) {
             // Consume DOWN and UP so Android does not also change the media
             // volume. A long press produces repeats; one physical press should
             // remain one page turn.

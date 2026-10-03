@@ -35,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,6 +105,11 @@ fun AppUpdateDialog(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        // Back must not dismiss a running download: the sheet refuses to hide,
+        // and a dismissed-but-visible sheet would leave a window blocking input.
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = state !is AppUpdateDialogState.Downloading
+        ),
         shape = LuminaShape.Sheet,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 0.dp

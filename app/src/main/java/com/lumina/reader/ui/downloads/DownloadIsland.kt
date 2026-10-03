@@ -72,6 +72,9 @@ import kotlinx.coroutines.delay
  */
 val LocalDownloadIslandCompact = staticCompositionLocalOf { false }
 
+/** Gap between the status bar and the island: clears a 56 dp header row. */
+private val IslandTopOffset = 64.dp
+
 private const val SUCCESS_VISIBLE_MS = 4_000L
 private const val SUCCESS_VISIBLE_COMPACT_MS = 3_000L
 private const val FAILURE_VISIBLE_MS = 6_000L
@@ -100,7 +103,7 @@ private val IslandContent?.kind: IslandKind?
  * books download, a «✓ На полке · Открыть» card when one finishes and an error
  * card on failure. Tapping it opens the downloads sheet ([onOpenDownloads]).
  * Reads its state from [BookImporter.downloads], so it works on every screen.
- * It applies the status-bar inset itself (+8dp); the caller only aligns it.
+ * It applies the status-bar inset itself (+64dp, below the screen header); the caller only aligns it.
  */
 @Composable
 fun DownloadIsland(
@@ -173,7 +176,9 @@ fun DownloadIsland(
         label = "downloadIsland",
         modifier = modifier
             .statusBarsPadding()
-            .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+            // Below the 56 dp screen headers, so their search, ⋯ and «+» buttons
+            // stay reachable while a download runs.
+            .padding(top = IslandTopOffset, start = 16.dp, end = 16.dp)
             .graphicsLayer {
                 translationY = dragY
                 alpha = (1f + dragY / (dismissThreshold * 3f)).coerceIn(0f, 1f)

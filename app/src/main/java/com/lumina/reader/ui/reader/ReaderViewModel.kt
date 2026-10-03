@@ -299,6 +299,12 @@ class ReaderViewModel(
                             parsed.chapters[index].paragraphs.sumOf { countWords(paragraphPlainText(it)) }
                         }
                     }
+                } catch (e: OutOfMemoryError) {
+                    // Heavily illustrated books can exceed the heap; show an error
+                    // instead of letting the Error crash the process.
+                    Log.e(TAG, "Book $bookId is too large to open", e)
+                    _book.value?.let { BookCacheRepository.remove(File(it.filePath).absolutePath) }
+                    _loadError.value = "Книга слишком большая для этого устройства: не хватает памяти, чтобы открыть её"
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to open book $bookId", e)
                     _loadError.value = "Не удалось открыть книгу: ${e.localizedMessage ?: "ошибка чтения файла"}"

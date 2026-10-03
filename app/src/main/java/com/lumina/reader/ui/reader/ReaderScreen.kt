@@ -97,6 +97,7 @@ import com.lumina.reader.ui.reader.tts.nextTtsSpeed
 import com.lumina.reader.ui.theme.LuminaHaptics
 import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.rememberReducedMotion
+import com.lumina.reader.ui.theme.Lumina
 import kotlinx.coroutines.delay
 
 @Composable
@@ -244,7 +245,8 @@ private fun ReaderScreenContent(
     // Keep the Android status bar visible in reading mode so the clock,
     // battery level and system indicators stay available. Only the navigation
     // bar remains immersive while the reader controls are hidden.
-    DisposableEffect(showControls, settings.theme) {
+    val appIsDark = Lumina.colors.isDark
+    DisposableEffect(showControls, settings.theme, appIsDark) {
         val window = context.findActivity()?.window
         if (window != null) {
             val insetsController = WindowCompat.getInsetsController(window, view)
@@ -260,8 +262,11 @@ private fun ReaderScreenContent(
         onDispose {
             val currentWindow = context.findActivity()?.window
             if (currentWindow != null) {
-                WindowCompat.getInsetsController(currentWindow, view)
-                    .show(WindowInsetsCompat.Type.systemBars())
+                val controller = WindowCompat.getInsetsController(currentWindow, view)
+                // Hand the status bar back in the app's colours, or a light reading
+                // theme would leave dark-on-dark icons in the library.
+                controller.isAppearanceLightStatusBars = !appIsDark
+                controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }
     }

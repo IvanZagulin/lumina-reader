@@ -87,6 +87,15 @@ class BookImporter private constructor(context: Context) {
     /** Number of local file imports ("Добавить книгу", "Открыть с помощью") in progress. */
     val activeImports: StateFlow<Int> = mutableActiveImports.asStateFlow()
 
+    init {
+        // Nothing runs in this process yet: progress notifications and partial
+        // files still around belong to a process that died mid-download.
+        notifier.clearStaleProgress()
+        scope.launch {
+            File(appContext.cacheDir, INCOMING_DIR).listFiles()?.forEach { it.delete() }
+        }
+    }
+
     private val booksDir: File
         get() = File(appContext.filesDir, BOOKS_DIR).apply { mkdirs() }
 

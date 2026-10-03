@@ -94,6 +94,20 @@ class DownloadNotifier(context: Context) {
         }
     }
 
+    /**
+     * Removes progress notifications left behind by a process that died in the
+     * middle of a download. Finished «Книга добавлена» notifications stay.
+     */
+    fun clearStaleProgress() {
+        val system = appContext.getSystemService(NotificationManager::class.java) ?: return
+        runCatching {
+            system.activeNotifications
+                .filter { it.notification.channelId == CHANNEL_ID }
+                .filter { it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 }
+                .forEach { system.cancel(it.tag, it.id) }
+        }
+    }
+
     private fun baseBuilder(title: String): NotificationCompat.Builder =
         NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setContentTitle(title)
