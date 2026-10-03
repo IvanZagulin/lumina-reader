@@ -787,7 +787,9 @@ class ReaderViewModel(
         if (previous == spoken) return
         lastSpokenAnchor = spoken
         val range = _visibleRange.value
-        if (range != null && range.contains(state.chapterIndex, anchor.paragraphIndex, anchor.charOffset)) return
+        if (range != null && isSpokenSentenceVisible(range, state.chapterIndex, state.paragraphIndex, state.sentenceRange)) {
+            return
+        }
         val wasFollowing = shouldFollowReadAloud(previous, range)
         if (!wasFollowing) return
         val turnsPage = range != null && state.chapterIndex == range.chapterIndex && anchor >= range.end

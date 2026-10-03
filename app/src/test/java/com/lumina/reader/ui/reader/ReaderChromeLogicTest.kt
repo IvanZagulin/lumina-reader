@@ -126,6 +126,22 @@ class ReaderChromeLogicTest {
     }
 
     @Test
+    fun aSentenceAcrossThePageBreakCountsAsVisible() {
+        // The page starts at character 120 of paragraph 10 and ends before paragraph 14.
+        val page = VisibleRange(2, TextAnchor(10, 120), TextAnchor(14, 0))
+        assertTrue(isSpokenSentenceVisible(page, 2, 11, 0..40))
+        // Begins on the previous page, ends on this one: no flip back.
+        assertTrue(isSpokenSentenceVisible(page, 2, 10, 90..150))
+        // Entirely on the previous page.
+        assertFalse(isSpokenSentenceVisible(page, 2, 10, 0..80))
+        // Next page, other chapter, and a paragraph without a sentence range.
+        assertFalse(isSpokenSentenceVisible(page, 2, 14, 0..10))
+        assertFalse(isSpokenSentenceVisible(page, 3, 11, 0..10))
+        assertTrue(isSpokenSentenceVisible(page, 2, 12, null))
+        assertFalse(isSpokenSentenceVisible(page, 2, 10, null))
+    }
+
+    @Test
     fun spokenSentenceMarksOnlyItsParagraph() {
         val mark = TtsSentenceMark(chapterIndex = 3, paragraphIndex = 7, start = 10, end = 42)
         assertEquals(OffsetRange(10, 42), mark.rangeFor(3, 7))

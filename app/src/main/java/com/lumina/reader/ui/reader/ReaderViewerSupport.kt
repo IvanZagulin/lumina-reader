@@ -95,6 +95,23 @@ internal fun shouldFollowReadAloud(
     visible.contains(previousSpoken.first, previousSpoken.second.paragraphIndex, previousSpoken.second.charOffset)
 
 /**
+ * Whether the sentence being read aloud can be seen: its first or its last
+ * character lies in [visible]. A sentence that runs over a page break is
+ * visible from both pages, so starting to read at a page whose first
+ * paragraph began on the previous page does not flip back.
+ */
+internal fun isSpokenSentenceVisible(
+    visible: VisibleRange,
+    chapterIndex: Int,
+    paragraphIndex: Int,
+    sentence: IntRange?
+): Boolean {
+    val start = sentence?.first ?: 0
+    if (visible.contains(chapterIndex, paragraphIndex, start)) return true
+    return sentence != null && !sentence.isEmpty() && visible.contains(chapterIndex, paragraphIndex, sentence.last)
+}
+
+/**
  * Decides whether a settled page counts as read. A page reached by a
  * navigation jump does not count unless the request says so (a page turn
  * into the next chapter does); any other settled page was turned by the
