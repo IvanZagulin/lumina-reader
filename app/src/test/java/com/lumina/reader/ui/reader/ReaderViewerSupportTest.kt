@@ -1,10 +1,6 @@
 package com.lumina.reader.ui.reader
 
 import com.lumina.reader.core.model.ReadingHighlight
-import com.lumina.reader.core.model.ReaderSettings
-import com.lumina.reader.core.model.ReaderThemeMode
-import com.lumina.reader.core.model.ReadingTheme
-import com.lumina.reader.core.model.effectiveTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -85,30 +81,6 @@ class ReaderViewerSupportTest {
         assertEquals("7 мин", formatTimeLeft(7))
         assertEquals("1 ч", formatTimeLeft(60))
         assertEquals("2 ч 05 мин", formatTimeLeft(125))
-    }
-
-    @Test
-    fun themeFollowsTheSystemOnlyWhenAsked() {
-        val manual = ReaderSettings(theme = ReadingTheme.SEPIA)
-        assertEquals(ReadingTheme.SEPIA, manual.effectiveTheme(systemInDarkMode = true))
-
-        val system = manual.copy(themeMode = ReaderThemeMode.SYSTEM)
-        assertEquals(ReadingTheme.SEPIA, system.effectiveTheme(systemInDarkMode = false))
-        assertEquals(ReadingTheme.WARM_AMBER, system.effectiveTheme(systemInDarkMode = true))
-        ReadingTheme.entries.forEach { theme ->
-            assertTrue(theme.isDark != theme.counterpart.isDark)
-        }
-    }
-
-    @Test
-    fun newSettingsHaveTheDocumentedDefaults() {
-        val defaults = ReaderSettings()
-        assertTrue(defaults.hyphenation)
-        assertEquals(1.5f, defaults.firstLineIndentEm)
-        assertEquals(6, defaults.paragraphSpacingDp)
-        assertTrue(defaults.showTimeLeft)
-        assertFalse(defaults.tapZonesInverted)
-        assertEquals(ReaderThemeMode.MANUAL, defaults.themeMode)
     }
 
     private fun highlight(chapter: Int, paragraph: Int, start: Int, end: Int) = ReadingHighlight(

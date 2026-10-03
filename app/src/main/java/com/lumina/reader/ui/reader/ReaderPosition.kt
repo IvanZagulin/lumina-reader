@@ -51,7 +51,12 @@ data class NavigationRequest(
     val paragraphIndex: Int,
     val charOffset: Int,
     val toChapterEnd: Boolean = false,
-    val countAsReading: Boolean = false
+    val countAsReading: Boolean = false,
+    /**
+     * Turn to the target with the page-turn animation when it is the next
+     * page (read-aloud following the text); other jumps are instant.
+     */
+    val animate: Boolean = false
 ) {
     val anchor: TextAnchor
         get() = if (toChapterEnd) TextAnchor.CHAPTER_END else TextAnchor(paragraphIndex, charOffset)

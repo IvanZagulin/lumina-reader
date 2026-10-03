@@ -18,8 +18,11 @@ import com.lumina.reader.core.model.ReadingStats
 import com.lumina.reader.core.parser.BookParserFactory
 import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.repository.BookCacheRepository
-import com.lumina.reader.core.tts.TtsManager
-import com.lumina.reader.core.tts.TtsState
+import com.lumina.reader.core.tts.TtsChapter
+import com.lumina.reader.core.tts.TtsChapterSource
+import com.lumina.reader.core.tts.TtsController
+import com.lumina.reader.core.tts.TtsPlaybackState
+import com.lumina.reader.core.tts.TtsStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -172,12 +175,28 @@ class ReaderViewModel(
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    // ---- Text to speech ---------------------------------------------------
+    /** Words of every chapter, counted once in the background (empty until then). */
+    private val _chapterWordCounts = MutableStateFlow(IntArray(0))
 
-    private var ttsManager: TtsManager? = null
-    private var ttsStateJob: Job? = null
-    private val _ttsState = MutableStateFlow(TtsState.IDLE)
-    val ttsState: StateFlow<TtsState> = _ttsState.asStateFlow()
+    /** Estimated minutes to the end of the book; null until the words are counted. */
+    val minutesLeftInBook: StateFlow<Int?> =
+        combine(_position, _parsedBook, _wordsPerMinute, _chapterWordCounts) { position, parsed, wordsPerMinute, counts ->
+            val chapter = parsed?.chapters?.getOrNull(position.chapterIndex)
+            if (chapter == null || counts.size != parsed.chapters.size) {
+                null
+            } else {
+                val words = chapterWords(position.chapterIndex, chapter)
+                var remaining = wordsRemainingInChapter(
+                    words.plainParagraphs,
+                    words.wordCounts,
+                    position.paragraphIndex,
+                    position.charOffset
+                ).toLong()
+                for (index in position.chapterIndex + 1 until counts.size) remaining += counts[index]
+                estimateMinutesLeft(remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), wordsPerMinute)
+            }
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // ---- Session statistics -------------------------------------------------
 
@@ -204,9 +223,16 @@ class ReaderViewModel(
     @Volatile
     private var reportedProgress: ReportedProgress? = null
 
+    private val _progressPercent = MutableStateFlow(0f)
+
+    /** Book percentage of the current position, for the scrubber and the contents header. */
+    val progressPercent: StateFlow<Float> = _progressPercent.asStateFlow()
+
     init {
+        TtsController.init(application)
         loadBook()
         loadReadingSpeed()
+        followReadAloud()
     }
 
     private fun loadBook() {
@@ -254,6 +280,7 @@ class ReaderViewModel(
                         localeTag = detectTextLocaleTag(bookTextSample(parsed))
                     )
                     val position = restored.position
+                    _progressPercent.value = currentBook.currentProgressPercent.coerceIn(0f, 100f)
                     _position.value = position
                     _currentChapterIndex.value = position.chapterIndex
                     _navigationRequest.value = NavigationRequest(
@@ -265,6 +292,12 @@ class ReaderViewModel(
                         countAsReading = false
                     )
                     _parsedBook.value = parsed
+                    // Off the opening path: the reader is ready before the words are counted.
+                    viewModelScope.launch(Dispatchers.Default) {
+                        _chapterWordCounts.value = IntArray(parsed.chapters.size) { index ->
+                            parsed.chapters[index].paragraphs.sumOf { countWords(paragraphPlainText(it)) }
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to open book $bookId", e)
                     _loadError.value = "Не удалось открыть книгу: ${e.localizedMessage ?: "ошибка чтения файла"}"
@@ -328,7 +361,8 @@ class ReaderViewModel(
         paragraphIndex: Int,
         charOffset: Int,
         toChapterEnd: Boolean,
-        countAsReading: Boolean
+        countAsReading: Boolean,
+        animate: Boolean = false
     ) {
         val parsed = _parsedBook.value ?: return
         val chapter = parsed.chapters.getOrNull(chapterIndex) ?: return
@@ -344,9 +378,17 @@ class ReaderViewModel(
             paragraphIndex = paragraph,
             charOffset = offset,
             toChapterEnd = toChapterEnd,
-            countAsReading = countAsReading
+            countAsReading = countAsReading,
+            animate = animate
         )
         scheduleProgressUpdate()
+    }
+
+    /** Jumps to [fraction] of the book (the scrubber of the bottom bar). */
+    fun goToBookFraction(fraction: Float) {
+        val parsed = _parsedBook.value ?: return
+        val target = locateBookFraction(parsed.chapters, chapterLengths, fraction)
+        goToPosition(target.chapterIndex, target.paragraphIndex, target.charOffset)
     }
 
     /** The viewer has shown the request with [requestId]. */
@@ -383,6 +425,7 @@ class ReaderViewModel(
         val progress = ReportedProgress(position, percent.coerceIn(0f, 100f))
         if (reportedProgress == progress) return
         reportedProgress = progress
+        _progressPercent.value = progress.percent
         scheduleProgressUpdate()
     }
 
@@ -424,12 +467,14 @@ class ReaderViewModel(
         progressUpdateJob = viewModelScope.launch(Dispatchers.IO) {
             delay(400) // debounce DB write
             val position = _position.value
+            val percent = calculateProgress(position)
+            _progressPercent.value = percent
             bookDao.updateProgress(
                 bookId = bookId,
                 chapterIndex = position.chapterIndex,
                 paragraphIndex = position.paragraphIndex,
                 charOffset = position.charOffset,
-                progress = calculateProgress(position)
+                progress = percent
             )
         }
     }
@@ -474,6 +519,25 @@ class ReaderViewModel(
         _activeSearchMatch.value = null
     }
 
+    /** Index of the emphasised match in the current results, or -1. */
+    fun activeSearchResultIndex(): Int {
+        val match = _activeSearchMatch.value ?: return -1
+        return _searchState.value.results.indexOfFirst {
+            it.chapterIndex == match.chapterIndex &&
+                it.paragraphIndex == match.paragraphIndex &&
+                it.matchStart == match.start
+        }
+    }
+
+    /** Opens the result [delta] places after the emphasised one (search navigator). */
+    fun openAdjacentSearchResult(delta: Int) {
+        val results = _searchState.value.results
+        if (results.isEmpty()) return
+        val current = activeSearchResultIndex()
+        val target = if (current < 0) 0 else (current + delta).coerceIn(0, results.lastIndex)
+        if (target != current) openSearchResult(results[target])
+    }
+
     // ---- Bookmarks ----------------------------------------------------------
 
     /** Removes the bookmarks on the visible page, or bookmarks its first character. */
@@ -513,6 +577,13 @@ class ReaderViewModel(
     fun deleteBookmark(bookmark: Bookmark) {
         viewModelScope.launch(Dispatchers.IO) {
             bookmarkDao.deleteBookmark(bookmark)
+        }
+    }
+
+    /** Puts back a bookmark removed a moment ago (undo). */
+    fun restoreBookmark(bookmark: Bookmark) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.insertBookmark(bookmark)
         }
     }
 
@@ -557,6 +628,30 @@ class ReaderViewModel(
         }
     }
 
+    /** Changes the colour of a highlight (the row is replaced in place). */
+    fun updateHighlightColor(highlight: ReadingHighlight, colorHex: String) {
+        if (highlight.colorHex.equals(colorHex, ignoreCase = true)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.insertHighlight(highlight.copy(colorHex = colorHex))
+        }
+    }
+
+    /** Saves a new colour and note of a highlight in one write (the note editor). */
+    fun updateHighlight(highlight: ReadingHighlight, colorHex: String, note: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.insertHighlight(
+                highlight.copy(colorHex = colorHex, note = note?.trim()?.takeIf { it.isNotEmpty() })
+            )
+        }
+    }
+
+    /** Puts back a highlight removed a moment ago (undo). */
+    fun restoreHighlight(highlight: ReadingHighlight) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.insertHighlight(highlight)
+        }
+    }
+
     // ---- Settings -------------------------------------------------------------
 
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
@@ -565,38 +660,144 @@ class ReaderViewModel(
         }
     }
 
-    // ---- Text to speech -------------------------------------------------------
+    private var pendingSettingsTransform: ((ReaderSettings) -> ReaderSettings)? = null
+    private var settingsDebounceJob: Job? = null
 
-    private fun ensureTtsManager(): TtsManager {
-        ttsManager?.let { return it }
-        val manager = TtsManager(getApplication<Application>())
-        ttsManager = manager
-        // One collector for the lifetime of the manager.
-        ttsStateJob = viewModelScope.launch {
-            manager.state.collect { state -> _ttsState.value = state }
+    /**
+     * For values that repaginate the book and change in quick steps (the
+     * font-size slider, A-/A+): the change is written once the steps pause
+     * for [SETTINGS_DEBOUNCE_MS], so the page reflows once instead of per step.
+     * Transforms arriving meanwhile are applied in order.
+     */
+    fun updateSettingsDebounced(transform: (ReaderSettings) -> ReaderSettings) {
+        val previous = pendingSettingsTransform
+        pendingSettingsTransform = if (previous == null) {
+            transform
+        } else {
+            { settings -> transform(previous(settings)) }
         }
-        return manager
+        settingsDebounceJob?.cancel()
+        settingsDebounceJob = viewModelScope.launch {
+            delay(SETTINGS_DEBOUNCE_MS)
+            val pending = pendingSettingsTransform ?: return@launch
+            pendingSettingsTransform = null
+            preferences.updateSettings(pending)
+        }
     }
 
+    // ---- Text to speech -------------------------------------------------------
+
+    /** Read-aloud state of the whole app; [isTtsActiveHere] tells whether it is this book. */
+    val ttsState: StateFlow<TtsPlaybackState> = TtsController.state
+
+    /** True when [state] belongs to this book and is not idle. */
+    fun isTtsActiveHere(state: TtsPlaybackState = TtsController.state.value): Boolean =
+        state.bookId == bookId && state.status != TtsStatus.IDLE
+
+    /** «Слушать»: pauses or resumes this book, or starts reading at the current page. */
     fun toggleTts() {
-        val parsed = _parsedBook.value ?: return
-        val position = _position.value
-        val chapter = parsed.chapters.getOrNull(position.chapterIndex) ?: return
-        val manager = ensureTtsManager()
-        when (manager.state.value) {
-            TtsState.IDLE -> {
-                // Plain text with illustrations as "", so list indices are the
-                // chapter's paragraph indices. The speech package's TtsManager
-                // starts at the ORIGINAL paragraph index and skips blank entries.
-                val spoken = chapter.paragraphs.map(::paragraphPlainText)
-                if (spoken.none { it.isNotBlank() }) return
-                manager.play(spoken, position.paragraphIndex.coerceIn(0, spoken.lastIndex))
-            }
-            TtsState.PLAYING -> manager.pause()
-            TtsState.PAUSED -> manager.resume()
-            // Keeps this compiling if the speech engine gains more states.
-            else -> Unit
+        if (isTtsActiveHere()) {
+            TtsController.togglePlayPause()
+        } else {
+            val position = _position.value
+            startTtsAt(position.chapterIndex, position.paragraphIndex)
         }
+    }
+
+    /**
+     * Starts reading aloud from [paragraphIndex] of [chapterIndex] and on
+     * into the following chapters. Playback lives in [TtsController] and its
+     * service, so it continues after the reader is closed.
+     */
+    fun startTtsAt(chapterIndex: Int, paragraphIndex: Int) {
+        val parsed = _parsedBook.value ?: return
+        if (_book.value?.format == BookFormat.PDF) return
+        val chapter = parsed.chapters.getOrNull(chapterIndex) ?: return
+        val current = settings.value
+        TtsController.setSpeechRate(current?.ttsSpeed ?: 1f)
+        TtsController.setPitch(current?.ttsPitch ?: 1f)
+        lastSpokenAnchor = null
+        TtsController.start(
+            bookId = bookId,
+            bookTitle = _book.value?.title.orEmpty(),
+            chapter = ttsChapterOf(chapterIndex, chapter),
+            startParagraph = paragraphIndex.coerceIn(0, chapter.paragraphs.lastIndex.coerceAtLeast(0)),
+            source = BookTtsSource(parsed.chapters)
+        )
+    }
+
+    fun ttsNextParagraph() {
+        if (isTtsActiveHere()) TtsController.nextParagraph()
+    }
+
+    fun ttsPreviousParagraph() {
+        if (isTtsActiveHere()) TtsController.previousParagraph()
+    }
+
+    fun stopTts() {
+        if (isTtsActiveHere()) TtsController.stop()
+    }
+
+    /** Speech rate, remembered for the next session. */
+    fun setTtsSpeed(rate: Float) {
+        TtsController.setSpeechRate(rate)
+        updateSettings { it.copy(ttsSpeed = rate) }
+    }
+
+    fun setTtsPitch(pitch: Float) {
+        TtsController.setPitch(pitch)
+        updateSettings { it.copy(ttsPitch = pitch) }
+    }
+
+    /** Sleep timer in minutes; null switches it off. Replaces «до конца главы». */
+    fun setTtsSleepTimer(minutes: Int?) {
+        TtsController.setSleepTimer(minutes)
+        if (minutes != null) TtsController.setStopAtChapterEnd(false)
+    }
+
+    /** «До конца главы»; replaces a running sleep timer. */
+    fun setTtsStopAtChapterEnd(enabled: Boolean) {
+        TtsController.setStopAtChapterEnd(enabled)
+        if (enabled) TtsController.setSleepTimer(null)
+    }
+
+    /** Where the previous spoken sentence started, to tell following from browsing. */
+    private var lastSpokenAnchor: Pair<Int, TextAnchor>? = null
+
+    /**
+     * Keeps the spoken sentence on screen: when reading aloud moves past the
+     * page (or into the next chapter) the reader turns with it, unless the
+     * reader has paged away from the previous sentence on purpose. The
+     * collector lives in viewModelScope and ends with the screen.
+     */
+    private fun followReadAloud() {
+        viewModelScope.launch {
+            TtsController.state.collect { state -> onReadAloudProgress(state) }
+        }
+    }
+
+    private fun onReadAloudProgress(state: TtsPlaybackState) {
+        if (state.bookId != bookId || state.status != TtsStatus.PLAYING) return
+        val parsed = _parsedBook.value ?: return
+        if (state.chapterIndex !in parsed.chapters.indices) return
+        val anchor = TextAnchor(state.paragraphIndex, state.sentenceRange?.first ?: 0)
+        val spoken = state.chapterIndex to anchor
+        val previous = lastSpokenAnchor
+        if (previous == spoken) return
+        lastSpokenAnchor = spoken
+        val range = _visibleRange.value
+        if (range != null && range.contains(state.chapterIndex, anchor.paragraphIndex, anchor.charOffset)) return
+        val wasFollowing = shouldFollowReadAloud(previous, range)
+        if (!wasFollowing) return
+        val turnsPage = range != null && state.chapterIndex == range.chapterIndex && anchor >= range.end
+        navigate(
+            chapterIndex = state.chapterIndex,
+            paragraphIndex = anchor.paragraphIndex,
+            charOffset = anchor.charOffset,
+            toChapterEnd = false,
+            countAsReading = false,
+            animate = turnsPage
+        )
     }
 
     // ---- Session ------------------------------------------------------------
@@ -666,9 +867,14 @@ class ReaderViewModel(
     override fun onCleared() {
         saveSessionData()
         searchJob?.cancel()
-        ttsStateJob?.cancel()
-        ttsManager?.release()
-        ttsManager = null
+        settingsDebounceJob?.cancel()
+        // A debounced setting is still written: the scope below outlives the view model.
+        pendingSettingsTransform?.let { pending ->
+            pendingSettingsTransform = null
+            persistenceScope.launch { preferences.updateSettings(pending) }
+        }
+        // Read-aloud keeps playing in the background on purpose; it is
+        // stopped from its notification or the mini player.
         imageCache.clear()
         val pdf = _pdfDocument.value
         _pdfDocument.value = null
@@ -678,12 +884,26 @@ class ReaderViewModel(
 
     companion object {
         private const val TAG = "ReaderViewModel"
-        private const val SEARCH_DEBOUNCE_MS = 300L
+        private const val SEARCH_DEBOUNCE_MS = 250L
+        private const val SETTINGS_DEBOUNCE_MS = 120L
 
         /** Guards statistics against one huge report (e.g. a fast fling). */
         private const val MAX_WORDS_PER_REPORT = 5_000
         const val DEFAULT_HIGHLIGHT_HEX = "#FFEB3B"
     }
+}
+
+/** Chapter [index] as read aloud: the original paragraphs, so indices match the pages. */
+private fun ttsChapterOf(index: Int, chapter: Chapter): TtsChapter =
+    TtsChapter(index = index, title = displayChapterTitle(chapter.title, index), paragraphs = chapter.paragraphs)
+
+/**
+ * Supplies the following chapters to read-aloud. Holds only the chapter list
+ * (never the view model), so playback may outlive the reader screen.
+ */
+private class BookTtsSource(private val chapters: List<Chapter>) : TtsChapterSource {
+    override suspend fun chapter(index: Int): TtsChapter? =
+        chapters.getOrNull(index)?.let { ttsChapterOf(index, it) }
 }
 
 class ReaderViewModelFactory(

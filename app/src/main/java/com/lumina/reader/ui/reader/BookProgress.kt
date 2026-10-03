@@ -169,5 +169,42 @@ internal fun paragraphProgressPercent(
         .coerceIn(0f, 100f)
 }
 
+/**
+ * The reader position at [fraction] of the book text (0 = start, 1 = end),
+ * weighted like [paragraphProgressPercent]. Used by the book scrubber.
+ */
+internal fun locateBookFraction(
+    chapters: List<Chapter>,
+    chapterLengths: IntArray,
+    fraction: Float
+): ReaderPosition {
+    if (chapters.isEmpty()) return ReaderPosition(0, 0, 0)
+    val f = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
+    val total = chapterLengths.sumOf { it.coerceAtLeast(0).toLong() }
+    if (total <= 0L) {
+        val index = (f * chapters.size).toInt().coerceIn(0, chapters.lastIndex)
+        return ReaderPosition(index, 0, 0)
+    }
+    val target = (f.toDouble() * total).toLong()
+    var before = 0L
+    for (index in chapters.indices) {
+        val length = chapterLengths.getOrElse(index) { 0 }.coerceAtLeast(0).toLong()
+        if (target < before + length || index == chapters.lastIndex) {
+            var remaining = (target - before).coerceIn(0L, length)
+            val paragraphs = chapters[index].paragraphs
+            paragraphs.forEachIndexed { paragraphIndex, raw ->
+                val paragraphLength = visibleTextLength(raw).toLong()
+                if (paragraphLength > 0 && remaining < paragraphLength) {
+                    return ReaderPosition(index, paragraphIndex, remaining.toInt())
+                }
+                remaining -= paragraphLength
+            }
+            return ReaderPosition(index, paragraphs.lastIndex.coerceAtLeast(0), 0)
+        }
+        before += length
+    }
+    return ReaderPosition(chapters.lastIndex, 0, 0)
+}
+
 internal fun formatBookPercent(percent: Float): String =
     String.format(java.util.Locale.US, "%.1f%%", percent)

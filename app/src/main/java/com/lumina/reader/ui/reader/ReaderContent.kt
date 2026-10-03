@@ -3,26 +3,16 @@ package com.lumina.reader.ui.reader
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -34,26 +24,36 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReadingHighlight
-import kotlin.math.roundToInt
+import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
+import com.lumina.reader.ui.reader.chrome.ReaderPageFooter
+import com.lumina.reader.ui.reader.footnote.FootnotePopup
+import com.lumina.reader.ui.reader.selection.MarkColors
+import com.lumina.reader.ui.reader.selection.SelectionMenu
+import com.lumina.reader.ui.reader.selection.SelectionMenuAction
+import com.lumina.reader.ui.theme.HighlightPalette
 
 /**
  * The reading surface: picks the PDF, scrolling or paged viewer and hosts
- * what all of them share (text selection, footnotes).
+ * what all of them share (text selection and its menu, the highlight menu,
+ * footnotes, the search-match flash).
  *
  * The view model drives navigation through [navigationRequest]; viewers
  * acknowledge it with [onNavigationHandled] and report what is on screen with
@@ -65,11 +65,16 @@ internal fun ReaderContent(
     parsedBook: ParsedBook,
     chapterIndex: Int,
     settings: ReaderSettings,
+    chromeColors: ReaderChromeColors,
     navigationRequest: NavigationRequest?,
     positionProvider: () -> ReaderPosition,
     textInfo: BookTextInfo,
     highlights: List<ReadingHighlight>,
     searchMatch: SearchMatch?,
+    ttsSentence: TtsSentenceMark?,
+    readAloudDriving: Boolean,
+    reducedMotion: Boolean,
+    curlSupported: Boolean,
     minutesLeftInChapter: Int?,
     pageCache: ChapterPageCache,
     imageCache: ReaderImageCache,
@@ -82,11 +87,13 @@ internal fun ReaderContent(
     onJumpToPosition: (chapterIndex: Int, paragraphIndex: Int, charOffset: Int) -> Unit,
     onToggleControls: () -> Unit,
     onToggleProgressDisplay: () -> Unit,
-    onTextSelected: (selectedText: String, location: SelectionLocation?, intent: SelectionIntent) -> Unit,
+    selectionActions: ReaderSelectionActions,
     modifier: Modifier = Modifier
 ) {
     val chapter = parsedBook.chapters.getOrNull(chapterIndex) ?: return
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val clipboardManager = LocalClipboardManager.current
     val platformTextToolbar = LocalTextToolbar.current
     val clipboard = remember(context) {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -98,19 +105,53 @@ internal fun ReaderContent(
     val chapterLengths = textInfo.chapterLengths
     val localeTag = textInfo.localeTag
     val typography = remember(settings, localeTag) { settings.toTypography(localeTag) }
-    val accent = MaterialTheme.colorScheme.primary
-    val colors = remember(settings.theme, accent) {
+    val theme = settings.theme
+    val colors = remember(theme) {
         ReaderTextColors(
-            text = settings.theme.textComposeColor,
-            noteRef = accent,
-            searchMatch = accent.copy(alpha = 0.40f)
+            text = theme.textComposeColor,
+            noteRef = theme.accentComposeColor,
+            searchMatch = theme.accentComposeColor,
+            ttsSentence = theme.accentComposeColor
         )
     }
     val decorations = remember(chapterIndex, highlights, searchMatch) {
         ChapterDecorations.build(chapterIndex, highlights, searchMatch)
     }
 
-    var openNoteId by remember { mutableStateOf<String?>(null) }
+    // §8 #41: the match the reader jumped to flashes twice, then stays tinted.
+    val searchFlash = remember { Animatable(SEARCH_MATCH_ALPHA) }
+    LaunchedEffect(searchMatch, reducedMotion) {
+        if (searchMatch == null || reducedMotion) {
+            searchFlash.snapTo(SEARCH_MATCH_ALPHA)
+        } else {
+            searchFlash.snapTo(0.4f)
+            searchFlash.animateTo(
+                targetValue = SEARCH_MATCH_ALPHA,
+                animationSpec = keyframes {
+                    durationMillis = 600
+                    0.2f at 150
+                    0.4f at 300
+                    0.2f at 450
+                }
+            )
+        }
+    }
+    val searchAlpha: () -> Float = remember { { searchFlash.value } }
+    val extras = remember(ttsSentence, readAloudDriving, theme, minutesLeftInChapter, reducedMotion, curlSupported) {
+        ReaderPageExtras(
+            ttsSentence = ttsSentence,
+            readAloudDriving = readAloudDriving,
+            markColors = MarkColors(theme.isDark, theme.accentComposeColor),
+            searchAlpha = searchAlpha,
+            minutesLeft = minutesLeftInChapter,
+            reducedMotion = reducedMotion,
+            curlSupported = curlSupported
+        )
+    }
+
+    var openNote by remember { mutableStateOf<OpenNote?>(null) }
+    var highlightMenu by remember { mutableStateOf<HighlightMenu?>(null) }
+    val lastDown = remember { OffsetHolder() }
 
     val latestToggleControls by rememberUpdatedState(onToggleControls)
     val latestNextChapter by rememberUpdatedState(onNextChapter)
@@ -120,7 +161,6 @@ internal fun ReaderContent(
     val latestPageProgress by rememberUpdatedState(onPageProgressChanged)
     val latestJump by rememberUpdatedState(onJumpToPosition)
     val latestToggleProgress by rememberUpdatedState(onToggleProgressDisplay)
-    val latestTextSelected by rememberUpdatedState(onTextSelected)
     val callbacks = remember {
         ReaderViewerCallbacks(
             onToggleControls = { latestToggleControls() },
@@ -131,16 +171,32 @@ internal fun ReaderContent(
             onPageProgressChanged = { index, percent -> latestPageProgress(index, percent) },
             onJumpToPosition = { index, paragraph, offset -> latestJump(index, paragraph, offset) },
             onToggleProgressDisplay = { latestToggleProgress() },
-            onNoteClick = { noteId -> openNoteId = noteId }
+            onNoteClick = { noteId -> openNote = OpenNote(noteId, lastDown.value) },
+            onHighlightClick = { id ->
+                if (selection.hasSelection) selection.clear()
+                highlightMenu = HighlightMenu(id, lastDown.value)
+            }
         )
     }
     val rootCoordinates = remember { CoordinatesHolder() }
 
+    // The selection and the highlight menu are overlays of this screen: Back closes them.
+    BackHandler(enabled = highlightMenu != null || selection.hasSelection) {
+        if (highlightMenu != null) highlightMenu = null else selection.clear()
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(settings.theme.bgComposeColor)
+            .background(theme.bgComposeColor)
             .onGloballyPositioned { rootCoordinates.value = it }
+            .pointerInput(Unit) {
+                // Where the last touch went down: footnote and highlight menus open there.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    lastDown.value = down.position
+                }
+            }
     ) {
         CompositionLocalProvider(LocalTextToolbar provides selection) {
             when {
@@ -165,6 +221,7 @@ internal fun ReaderContent(
                     imageCache = imageCache,
                     navigationRequest = navigationRequest,
                     positionProvider = positionProvider,
+                    extras = extras,
                     selection = selection,
                     navigationOwner = navigationOwner,
                     callbacks = callbacks
@@ -182,7 +239,7 @@ internal fun ReaderContent(
                     chapterLengths = chapterLengths,
                     navigationRequest = navigationRequest,
                     positionProvider = positionProvider,
-                    minutesLeft = minutesLeftInChapter,
+                    extras = extras,
                     selection = selection,
                     navigationOwner = navigationOwner,
                     callbacks = callbacks
@@ -192,45 +249,155 @@ internal fun ReaderContent(
 
         val menuAnchor = selection.menuAnchor
         if (menuAnchor != null) {
-            SelectionActionBar(
-                anchor = menuAnchor,
-                coordinates = rootCoordinates.value,
-                settings = settings,
-                onCopy = { selection.copySelection() },
-                onHighlight = {
-                    val captured = selection.captureSelection()
-                    if (captured != null) {
-                        latestTextSelected(captured.text, captured.location, SelectionIntent.HIGHLIGHT)
-                    } else {
-                        showSelectionError(context)
+            val local = toLocal(menuAnchor, rootCoordinates.value)
+            fun withCaptured(action: (text: String, location: SelectionLocation?) -> Unit) {
+                val captured = selection.captureSelection()
+                if (captured == null) {
+                    showSelectionError(context)
+                } else {
+                    action(captured.text, captured.location)
+                }
+            }
+            SelectionMenu(
+                anchor = local,
+                colors = chromeColors,
+                selectedColorHex = null,
+                noteLabel = "Заметка",
+                reducedMotion = reducedMotion,
+                onColor = { swatch ->
+                    withCaptured { text, location ->
+                        if (location == null) showLocateError(context)
+                        else selectionActions.onHighlight(text, location, swatch.hex)
                     }
                 },
                 onNote = {
-                    val captured = selection.captureSelection()
-                    if (captured != null) {
-                        latestTextSelected(captured.text, captured.location, SelectionIntent.NOTE)
-                    } else {
-                        showSelectionError(context)
+                    withCaptured { text, location ->
+                        if (location == null) showLocateError(context)
+                        else selectionActions.onNote(text, location, HighlightPalette.Yellow.hex)
                     }
-                }
+                },
+                actions = listOf(
+                    SelectionMenuAction("Копировать") { selection.copySelection() },
+                    SelectionMenuAction("Поделиться") {
+                        withCaptured { text, _ -> selectionActions.onShare(text) }
+                    },
+                    SelectionMenuAction("✦ Спросить ИИ") {
+                        withCaptured { text, _ -> selectionActions.onAskAi(text) }
+                    },
+                    SelectionMenuAction("Найти") {
+                        withCaptured { text, _ -> selectionActions.onFind(text) }
+                    }
+                )
+            )
+        }
+
+        val menu = highlightMenu
+        val menuHighlight = menu?.let { open -> highlights.firstOrNull { it.id == open.highlightId } }
+        if (menu != null && menuHighlight != null) {
+            val touchSlop = with(density) { 12.dp.toPx() }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) { detectTapGestures { highlightMenu = null } }
+            )
+            SelectionMenu(
+                anchor = Rect(
+                    left = menu.at.x - touchSlop,
+                    top = menu.at.y - touchSlop,
+                    right = menu.at.x + touchSlop,
+                    bottom = menu.at.y + touchSlop
+                ),
+                colors = chromeColors,
+                selectedColorHex = menuHighlight.colorHex,
+                noteLabel = if (menuHighlight.note.isNullOrBlank()) "Заметка" else "Изменить заметку",
+                reducedMotion = reducedMotion,
+                onColor = { swatch ->
+                    highlightMenu = null
+                    selectionActions.onRecolorHighlight(menuHighlight.id, swatch.hex)
+                },
+                onNote = {
+                    highlightMenu = null
+                    selectionActions.onEditHighlightNote(menuHighlight.id)
+                },
+                actions = listOf(
+                    SelectionMenuAction("Удалить", isDestructive = true) {
+                        highlightMenu = null
+                        selectionActions.onDeleteHighlight(menuHighlight.id)
+                    },
+                    SelectionMenuAction("Копировать") {
+                        highlightMenu = null
+                        clipboardManager.setText(AnnotatedString(menuHighlight.selectedText))
+                    },
+                    SelectionMenuAction("Поделиться") {
+                        highlightMenu = null
+                        selectionActions.onShare(menuHighlight.selectedText)
+                    },
+                    SelectionMenuAction("✦ Спросить ИИ") {
+                        highlightMenu = null
+                        selectionActions.onAskAi(menuHighlight.selectedText)
+                    }
+                )
+            )
+        } else if (menu != null) {
+            // The highlight was deleted meanwhile.
+            LaunchedEffect(menu) { highlightMenu = null }
+        }
+
+        val note = openNote
+        if (note != null) {
+            FootnotePopup(
+                noteId = note.noteId,
+                noteNumber = footnoteNumber(note.noteId),
+                text = parsedBook.footnotes[note.noteId],
+                anchor = note.at,
+                colors = chromeColors,
+                typography = typography,
+                reducedMotion = reducedMotion,
+                onNoteClick = { nested -> openNote = OpenNote(nested, note.at) },
+                onDismiss = { openNote = null }
             )
         }
     }
 
-    val noteId = openNoteId
-    if (noteId != null) {
-        FootnoteDialog(
-            noteId = noteId,
-            footnotes = parsedBook.footnotes,
-            typography = typography,
-            onNoteClick = { nested -> openNoteId = nested },
-            onDismiss = { openNoteId = null }
-        )
+    // A chapter change drops menus that pointed into the old chapter.
+    DisposableEffect(chapterIndex) {
+        onDispose {
+            highlightMenu = null
+            openNote = null
+        }
     }
 }
 
+/** Alpha of the search match once its flash is over. */
+private const val SEARCH_MATCH_ALPHA = 0.35f
+
+private data class OpenNote(val noteId: String, val at: Offset)
+
+private data class HighlightMenu(val highlightId: Long, val at: Offset)
+
+/** Last touch position, read on demand (not snapshot state). */
+private class OffsetHolder {
+    var value: Offset = Offset.Zero
+}
+
+/** «12» for a footnote id like "note_12"; empty when the id has no number. */
+internal fun footnoteNumber(noteId: String): String = noteId.takeLastWhile { it.isDigit() }
+
 private fun showSelectionError(context: Context) {
     Toast.makeText(context, "Не удалось прочитать выделенный текст", Toast.LENGTH_SHORT).show()
+}
+
+private fun showLocateError(context: Context) {
+    Toast.makeText(context, "Не удалось найти выделенный текст на странице", Toast.LENGTH_SHORT).show()
+}
+
+/** Converts a rectangle in root coordinates into [coordinates]' local space. */
+private fun toLocal(rect: Rect, coordinates: LayoutCoordinates?): Rect {
+    val attached = coordinates?.takeIf { it.isAttached } ?: return rect
+    val root = attached.findRootCoordinates()
+    val topLeft = attached.localPositionOf(root, rect.topLeft)
+    val bottomRight = attached.localPositionOf(root, rect.bottomRight)
+    return Rect(topLeft, bottomRight)
 }
 
 /** Layout coordinates kept outside snapshot state; they are read on demand. */
@@ -291,12 +458,15 @@ private fun PdfChapterContent(
             onPreviousPage = callbacks.onPreviousChapter,
             modifier = Modifier.fillMaxSize()
         )
-        ReaderProgressFooter(
-            chapterLabel = null,
+        val theme = settings.theme
+        ReaderPageFooter(
             position = pdfPosition,
             showPages = settings.showBookPagesInFooter,
-            settings = settings,
-            minutesLeft = null,
+            timeLeft = null,
+            showProgressLine = settings.showProgressLine,
+            mutedColor = theme.secondaryTextComposeColor,
+            textColor = theme.textComposeColor,
+            accentColor = theme.accentComposeColor,
             onToggle = callbacks.onToggleProgressDisplay,
             onLongPress = { showJumpDialog = true },
             modifier = Modifier
@@ -316,117 +486,4 @@ private fun PdfChapterContent(
             }
         )
     }
-}
-
-/**
- * Actions for selected text, shown above the selection (or below it when
- * there is no room above).
- */
-@Composable
-private fun SelectionActionBar(
-    anchor: Rect,
-    coordinates: LayoutCoordinates?,
-    settings: ReaderSettings,
-    onCopy: () -> Unit,
-    onHighlight: () -> Unit,
-    onNote: () -> Unit
-) {
-    val density = LocalDensity.current
-    val attached = coordinates?.takeIf { it.isAttached }
-    val root = attached?.findRootCoordinates()
-    val top = if (attached != null && root != null) {
-        attached.localPositionOf(root, anchor.topLeft).y
-    } else {
-        anchor.top
-    }
-    val bottom = if (attached != null && root != null) {
-        attached.localPositionOf(root, anchor.bottomLeft).y
-    } else {
-        anchor.bottom
-    }
-    val containerHeight = attached?.size?.height?.toFloat() ?: Float.MAX_VALUE
-    val barHeight = with(density) { 48.dp.toPx() }
-    val margin = with(density) { 12.dp.toPx() }
-    val topLimit = with(density) { 40.dp.toPx() }
-    val above = top - barHeight - margin
-    val y = (if (above >= topLimit) above else bottom + margin)
-        .coerceIn(0f, (containerHeight - barHeight).coerceAtLeast(0f))
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .offset { IntOffset(0, y.roundToInt()) },
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = settings.theme.surfaceComposeColor,
-            shadowElevation = 6.dp
-        ) {
-            Row(modifier = Modifier.padding(horizontal = 4.dp)) {
-                TextButton(onClick = onCopy) {
-                    Text("Копировать", color = settings.theme.textComposeColor)
-                }
-                TextButton(onClick = onHighlight) {
-                    Text("Выделить", color = settings.theme.textComposeColor)
-                }
-                TextButton(onClick = onNote) {
-                    Text("Заметка", color = settings.theme.textComposeColor)
-                }
-            }
-        }
-    }
-}
-
-/** The text of a footnote, rendered with the same markup rules as the book. */
-@Composable
-private fun FootnoteDialog(
-    noteId: String,
-    footnotes: Map<String, String>,
-    typography: ReaderTypography,
-    onNoteClick: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val text = footnotes[noteId]
-    val textColor = MaterialTheme.colorScheme.onSurface
-    val accent = MaterialTheme.colorScheme.primary
-    val noteTypography = remember(typography) {
-        typography.copy(
-            fontSizeSp = (typography.fontSizeSp - 2).coerceAtLeast(12),
-            firstLineIndentEm = 0f,
-            bionic = false
-        )
-    }
-    val colors = remember(textColor, accent) {
-        ReaderTextColors(text = textColor, noteRef = accent, searchMatch = Color.Transparent)
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Примечание") },
-        text = {
-            if (text == null) {
-                Text("Текст примечания не найден")
-            } else {
-                val paragraphs = remember(text) { text.split('\n').filter { it.isNotBlank() } }
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    paragraphs.forEachIndexed { index, raw ->
-                        val rendered = remember(raw, noteTypography, colors) {
-                            renderParagraph(raw, noteTypography, colors, onNoteClick = onNoteClick)
-                        }
-                        if (index > 0) Spacer(modifier = Modifier.height(8.dp))
-                        BasicText(text = rendered.text, style = rendered.style)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Закрыть")
-            }
-        }
-    )
 }
