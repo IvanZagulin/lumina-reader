@@ -35,7 +35,7 @@ import com.lumina.reader.core.library.AppMessageAction
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.preferences.AppDisplayController
-import com.lumina.reader.core.reminder.ReadingReminderScheduler
+import com.lumina.reader.core.reminder.ReadingReminder
 import com.lumina.reader.ui.navigation.LuminaNavGraph
 import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
@@ -49,7 +49,6 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private val updateViewModel: AppUpdateViewModel by viewModels()
-    private var pendingUpdateApk: File? = null
 
     /** App-wide snackbar (see [AppMessages]); shown above every screen by the nav graph. */
     private val snackbarHostState = SnackbarHostState()
@@ -58,18 +57,11 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { }
 
+    // The result is handled in onResume through the ViewModel, which survives
+    // the Activity being recreated while the user is in system settings.
     private val unknownSourcesLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-        val apk = pendingUpdateApk ?: return@registerForActivityResult
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-            pendingUpdateApk = null
-            openApkInstaller(apk)
-        } else {
-            pendingUpdateApk = null
-            updateViewModel.onInstallPermissionDenied()
-        }
-    }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -78,7 +70,7 @@ class MainActivity : ComponentActivity() {
         AppDisplayController.applyPreferredRefreshRate(this)
         AppDisplayController.applySavedBrightness(this)
 
-        ReadingReminderScheduler.schedule(this)
+        ReadingReminder.reschedule(this)
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -143,6 +135,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         AppDisplayController.applyPreferredRefreshRate(this)
         AppDisplayController.applySavedBrightness(this)
+        updateViewModel.onAppResumed()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -219,15 +212,13 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !packageManager.canRequestPackageInstalls()
         ) {
-            pendingUpdateApk = apk
-            updateViewModel.onInstallPermissionRequested()
+            updateViewModel.onInstallPermissionRequested(apk)
             val settingsIntent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:$packageName")
             )
             runCatching { unknownSourcesLauncher.launch(settingsIntent) }
                 .onFailure {
-                    pendingUpdateApk = null
                     updateViewModel.onInstallLaunchError(
                         "Не удалось открыть настройки установки из неизвестных источников."
                     )
