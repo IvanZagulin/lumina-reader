@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.SnackbarHostState
@@ -44,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -71,6 +71,7 @@ import com.lumina.reader.ui.chat.AiChatScreen
 import com.lumina.reader.ui.chat.AiChatViewModel
 import com.lumina.reader.ui.components.newlyShelvedKeys
 import com.lumina.reader.ui.downloads.DownloadIsland
+import com.lumina.reader.ui.downloads.LocalDownloadIslandCompact
 import com.lumina.reader.ui.downloads.DownloadsSheet
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
@@ -94,8 +95,6 @@ import com.lumina.reader.ui.transition.BookTransitionState
 import com.lumina.reader.ui.transition.LocalBookTransition
 import com.lumina.reader.ui.transition.ReaderTransitionHost
 import com.lumina.reader.ui.transition.rememberBookTransitionState
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
 
 /** MIME types offered by «Добавить книгу из файла» (unchanged from the old library FAB). */
 private val BookMimeTypes = arrayOf(
@@ -109,7 +108,6 @@ private val BookMimeTypes = arrayOf(
 )
 
 /** Space the floating dock takes above the navigation bar (64 dp capsule + 12 dp margin + 12 dp gap). */
-private val DockReserveHeight = LuminaDimens.DockHeight + 24.dp
 
 /**
  * Opens [bookId] in the reader unless exactly that book is already on top.
@@ -295,7 +293,7 @@ fun LuminaNavGraph(
 
                     composable(Screen.Stats.route) {
                         val statsViewModel: StatsViewModel = viewModel()
-                        DockReserve {
+                        DockScrollArea {
                             StatsScreenWithAchievements(
                                 viewModel = statsViewModel,
                                 onBack = { navController.popBackStack() }
@@ -305,7 +303,7 @@ fun LuminaNavGraph(
 
                     composable(Screen.Catalog.route) {
                         val catalogViewModel: CatalogViewModel = viewModel()
-                        DockReserve {
+                        DockScrollArea {
                             CatalogScreen(
                                 viewModel = catalogViewModel,
                                 onBack = { navController.popBackStack() },
@@ -327,21 +325,13 @@ fun LuminaNavGraph(
                     ) { entry ->
                         val query = entry.arguments?.getString(Screen.CatalogSearch.ARG_QUERY).orEmpty()
                         val searchViewModel: CatalogViewModel = viewModel()
-                        var started by rememberSaveable { mutableStateOf(false) }
-                        LaunchedEffect(searchViewModel, query) {
-                            if (!started && query.isNotBlank()) {
-                                started = true
-                                searchViewModel.onQueryChange(query)
-                                // The enabled catalogues are read from storage right after start.
-                                withTimeoutOrNull(2_000) { searchViewModel.uiState.first { it.catalogs.isNotEmpty() } }
-                                searchViewModel.search()
-                            }
-                        }
+                        // CatalogScreen waits for the enabled catalogues and searches once.
                         CatalogScreen(
                             viewModel = searchViewModel,
                             onBack = { navController.popBackStack() },
                             onOpenBook = { bookId -> navController.openBook(bookId) },
-                            onManageCatalogs = { navController.navigate(Screen.CatalogSources.route) }
+                            onManageCatalogs = { navController.navigate(Screen.CatalogSources.route) },
+                            initialQuery = query.ifBlank { null }
                         )
                     }
 
@@ -357,7 +347,7 @@ fun LuminaNavGraph(
                         // The chat runs its commands (search, download, series) itself in the
                         // app scope, so leaving the chat does not cancel them.
                         val aiChatViewModel: AiChatViewModel = viewModel()
-                        DockReserve {
+                        DockScrollArea {
                             AiChatScreen(
                                 viewModel = aiChatViewModel,
                                 onBack = { navController.popBackStack() },
@@ -405,13 +395,16 @@ fun LuminaNavGraph(
                     .padding(bottom = snackbarBottom)
             )
 
-            DownloadIsland(
-                onOpenBook = { bookId -> navController.openBook(bookId) },
-                onOpenDownloads = { showDownloads = true },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-            )
+            // The island adds its own status-bar inset. In the reader it shrinks to a
+            // progress ring in the top-right corner so it never covers the text.
+            val inReader = isReader(route)
+            CompositionLocalProvider(LocalDownloadIslandCompact provides inReader) {
+                DownloadIsland(
+                    onOpenBook = { bookId -> navController.openBook(bookId) },
+                    onOpenDownloads = { showDownloads = true },
+                    modifier = Modifier.align(if (inReader) Alignment.TopEnd else Alignment.TopCenter)
+                )
+            }
 
             BookTransitionOverlay(state = transition)
         }
@@ -441,15 +434,13 @@ fun LuminaNavGraph(
  * dock then stays under the keyboard). Computed from insets in layout only.
  */
 @Composable
-private fun DockReserve(content: @Composable () -> Unit) {
+private fun DockScrollArea(content: @Composable () -> Unit) {
+    // These screens keep LuminaDimens.DockClearance at the bottom of their lists
+    // and draw their own insets; scrolling them collapses the dock.
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(
-                WindowInsets.navigationBars
-                    .add(WindowInsets(bottom = DockReserveHeight))
-                    .union(WindowInsets.ime)
-            )
+            .nestedScroll(LocalDockScroll.current)
     ) {
         content()
     }
