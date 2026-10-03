@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,13 +25,23 @@ import androidx.compose.ui.unit.sp
 import java.time.DayOfWeek
 import java.time.YearMonth
 
-private enum class BadgeRarity(val title: String, val xp: Int, val color: Color) {
-    COMMON("Обычная", 50, Color(0xFF78909C)),
-    UNCOMMON("Необычная", 100, Color(0xFF10B981)),
-    RARE("Редкая", 200, Color(0xFF2563EB)),
-    EPIC("Эпическая", 400, Color(0xFF8B5CF6)),
-    LEGENDARY("Легендарная", 800, Color(0xFFF59E0B))
+private enum class BadgeRarity(val title: String, val xp: Int) {
+    COMMON("Обычная", 50),
+    UNCOMMON("Необычная", 100),
+    RARE("Редкая", 200),
+    EPIC("Эпическая", 400),
+    LEGENDARY("Легендарная", 800)
 }
+
+/** Rarity colours from the chart palette (spec §1.1) instead of the old hard-coded ones. */
+private val BadgeRarity.color: Color
+    @Composable @ReadOnlyComposable get() = when (this) {
+        BadgeRarity.COMMON -> MaterialTheme.colorScheme.outline
+        BadgeRarity.UNCOMMON -> statsPalette().emerald
+        BadgeRarity.RARE -> statsPalette().indigo
+        BadgeRarity.EPIC -> statsPalette().plum
+        BadgeRarity.LEGENDARY -> statsPalette().brass
+    }
 
 private enum class BadgeTier(val title: String, val multiplier: Float) {
     BRONZE("Бронза", 1f),
@@ -69,21 +80,22 @@ fun AchievementsPanelV2(base: ReadingStatsUiState, advanced: AdvancedStatsUiStat
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            shape = StatsBigCardShape,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = statsCardBorder()
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(contentAlignment = Alignment.Center) {
                         AchievementRing(unlocked.toFloat() / badges.size.coerceAtLeast(1), Modifier.size(82.dp))
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(unlocked.toString(), fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(unlocked.toString(), style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"))
                             Text("из ${badges.size}", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Коллекция достижений", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                        Text("Коллекция достижений", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text("Обычные, редкие и секретные медали", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -97,7 +109,7 @@ fun AchievementsPanelV2(base: ReadingStatsUiState, advanced: AdvancedStatsUiStat
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Star, null, tint = BadgeRarity.LEGENDARY.color)
                             Spacer(Modifier.width(8.dp))
-                            Text("Уровень читателя $level", fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                            Text("Уровень читателя $level", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             Text("$xp XP", fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -117,15 +129,16 @@ fun AchievementsPanelV2(base: ReadingStatsUiState, advanced: AdvancedStatsUiStat
         next?.let { badge ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = badge.rarity.color.copy(alpha = 0.10f))
+                shape = StatsCardShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = statsCardBorder()
             ) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     BadgeIcon(badge, 50)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Ближайшая медаль", style = MaterialTheme.typography.labelSmall, color = badge.rarity.color)
-                        Text(badge.visibleTitle, fontWeight = FontWeight.ExtraBold)
+                        Text(badge.visibleTitle, fontWeight = FontWeight.SemiBold)
                         Text(badge.visibleDetail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(7.dp))
                         LinearProgressIndicator(
@@ -142,7 +155,7 @@ fun AchievementsPanelV2(base: ReadingStatsUiState, advanced: AdvancedStatsUiStat
         RarityLegend()
 
         badges.groupBy(AchievementV2::category).forEach { (category, group) ->
-            Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+            Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             group.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { badge -> AchievementTile(badge, Modifier.weight(1f)) }
@@ -157,18 +170,19 @@ fun AchievementsPanelV2(base: ReadingStatsUiState, advanced: AdvancedStatsUiStat
 private fun AchievementTile(badge: AchievementV2, modifier: Modifier) {
     Card(
         modifier = modifier.padding(bottom = 10.dp),
-        shape = RoundedCornerShape(18.dp),
+        shape = StatsCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = if (badge.unlocked) badge.rarity.color.copy(alpha = 0.11f)
+            containerColor = if (badge.unlocked) MaterialTheme.colorScheme.surface
             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
+        ),
+        border = statsCardBorder()
     ) {
         Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             BadgeIcon(badge, 48)
             Spacer(Modifier.height(8.dp))
             Text(
                 badge.visibleTitle,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -204,31 +218,24 @@ private fun AchievementTile(badge: AchievementV2, modifier: Modifier) {
     }
 }
 
+/** Unlocked medals are brass medallions; locked ones are muted (spec §7.11). */
 @Composable
 private fun BadgeIcon(badge: AchievementV2, size: Int) {
-    Surface(
-        modifier = Modifier.size(size.dp),
-        shape = CircleShape,
-        color = if (badge.unlocked) badge.rarity.color.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                if (badge.secret && !badge.unlocked) Icons.Default.Lock else badge.icon,
-                null,
-                tint = if (badge.unlocked) badge.rarity.color else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size((size * 0.48f).dp)
-            )
-        }
-    }
+    BrassMedallion(
+        icon = if (badge.secret && !badge.unlocked) Icons.Default.Lock else badge.icon,
+        size = size.dp,
+        locked = !badge.unlocked
+    )
 }
 
 @Composable
 private fun AchievementRing(progress: Float, modifier: Modifier) {
     val track = MaterialTheme.colorScheme.surfaceVariant
+    val arc = BadgeRarity.LEGENDARY.color
     Canvas(modifier) {
         val stroke = size.minDimension * 0.095f
         drawArc(track, -90f, 360f, false, style = Stroke(stroke, cap = StrokeCap.Round))
-        drawArc(BadgeRarity.LEGENDARY.color, -90f, 360f * progress.coerceIn(0f, 1f), false, style = Stroke(stroke, cap = StrokeCap.Round))
+        drawArc(arc, -90f, 360f * progress.coerceIn(0f, 1f), false, style = Stroke(stroke, cap = StrokeCap.Round))
     }
 }
 
