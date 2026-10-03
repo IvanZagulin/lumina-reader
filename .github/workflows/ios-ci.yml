@@ -225,26 +225,47 @@ jobs:
 
       - name: Launch on the simulator and take screenshots
         shell: bash
+        timeout-minutes: 20
         run: |
           set -euo pipefail
+          # simctl calls can hang on a cold runner; fail fast with a clear message instead.
+          run_with_timeout() {
+            local secs="$1"; shift
+            echo "▶ $* (timeout ${secs}s)" >&2
+            "$@" &
+            local pid=$! waited=0
+            while kill -0 "$pid" 2>/dev/null; do
+              if [ "$waited" -ge "$secs" ]; then
+                echo "::error::Timed out after ${secs}s: $*"
+                kill "$pid" 2>/dev/null || true
+                xcrun simctl list devices booted || true
+                return 124
+              fi
+              sleep 5
+              waited=$((waited + 5))
+            done
+            wait "$pid"
+          }
           APP=build/sim/Build/Products/Debug-iphonesimulator/LuminaReader.app
           plutil -p "$APP/Info.plist"
           mkdir -p shots
-          xcrun simctl boot "$SIM_UDID" || true
-          xcrun simctl bootstatus "$SIM_UDID" -b
-          xcrun simctl install "$SIM_UDID" "$APP"
+          xcrun simctl list devices available | grep -F "$SIM_UDID" || true
+          run_with_timeout 300 xcrun simctl boot "$SIM_UDID" || echo "boot returned non-zero (may already be booted)"
+          run_with_timeout 600 xcrun simctl bootstatus "$SIM_UDID" -b
+          run_with_timeout 180 xcrun simctl install "$SIM_UDID" "$APP"
           # Routes grow as screens move to Compose Multiplatform (stage 8+).
           for route in home; do
             for appearance in light dark; do
-              xcrun simctl ui "$SIM_UDID" appearance "$appearance"
-              LAUNCH="$(xcrun simctl launch --terminate-running-process "$SIM_UDID" com.lumina.reader -startRoute "$route")"
+              run_with_timeout 60 xcrun simctl ui "$SIM_UDID" appearance "$appearance"
+              run_with_timeout 120 xcrun simctl launch --terminate-running-process "$SIM_UDID" com.lumina.reader -startRoute "$route" > launch.txt
+              LAUNCH="$(cat launch.txt)"
               echo "$LAUNCH"
               PID="${LAUNCH##*: }"
               case "$PID" in
                 ''|*[!0-9]*) echo "::error::Could not launch LuminaReader: $LAUNCH"; exit 1 ;;
               esac
               sleep 12
-              xcrun simctl io "$SIM_UDID" screenshot "shots/$route-$appearance.png"
+              run_with_timeout 60 xcrun simctl io "$SIM_UDID" screenshot "shots/$route-$appearance.png"
               if ! kill -0 "$PID" 2>/dev/null; then
                 echo "::error::LuminaReader exited within 12 s (route $route, $appearance)"
                 exit 1
