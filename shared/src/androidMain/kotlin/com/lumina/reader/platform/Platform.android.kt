@@ -32,8 +32,18 @@ actual object AppInfo {
     actual val platform: PlatformKind = PlatformKind.ANDROID
 }
 
-/** The java.util.Locale for this tag (what TextToSpeech and formatters take). */
-fun LanguageTag.toLocale(): Locale = Locale.forLanguageTag(bcp47)
+/**
+ * The java.util.Locale for this tag (what TextToSpeech and formatters take).
+ * The tag of the system default gives back Locale.getDefault() itself, so the
+ * TTS fallback hands the engine exactly the Locale it got before LanguageTag
+ * (a locale whose variant is not valid BCP 47 would not survive
+ * toLanguageTag/forLanguageTag unchanged).
+ */
+fun LanguageTag.toLocale(): Locale {
+    val default = Locale.getDefault()
+    if (bcp47 == default.toLanguageTag()) return default
+    return Locale.forLanguageTag(bcp47)
+}
 
 actual fun systemLanguageTag(): LanguageTag = LanguageTag(Locale.getDefault().toLanguageTag())
 

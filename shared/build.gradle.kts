@@ -36,8 +36,11 @@ kotlin {
             // ui-text 1.11.2, the versions :app already uses.
             implementation(libs.jb.compose.runtime)
             implementation(libs.jb.compose.ui.graphics)
-            implementation(libs.jb.compose.ui.text)
-            implementation(libs.okio)
+            // api: public signatures of :shared use these types (AnnotatedString
+            // in BionicReadingHelper; okio Source / BufferedSource in TextEncoding
+            // and DecodingCharReader). Same artifacts at runtime as implementation.
+            api(libs.jb.compose.ui.text)
+            api(libs.okio)
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {

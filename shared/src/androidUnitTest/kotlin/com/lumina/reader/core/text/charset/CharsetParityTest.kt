@@ -1,6 +1,7 @@
 package com.lumina.reader.core.text.charset
 
 import org.junit.Assert.assertEquals
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -17,6 +18,16 @@ import kotlin.random.Random
 class CharsetParityTest {
 
     private val random = Random(20261003)
+
+    /**
+     * The registry mirrors the JDK 21 that CI runs (alias lists; U+FFFE inside
+     * UTF-16 text, which older JDKs replaced with U+FFFD). On an older local
+     * JDK those comparisons are skipped instead of failing.
+     */
+    private fun assumeJdk21() {
+        val feature = System.getProperty("java.specification.version")?.toIntOrNull() ?: 0
+        assumeTrue("needs JDK 21+, running $feature", feature >= 21)
+    }
 
     private fun javaCharset(entry: CharsetRegistry.Entry): Charset = Charset.forName(entry.canonicalName)
 
@@ -89,6 +100,7 @@ class CharsetParityTest {
 
     @Test
     fun namesAndAliasesMatchCharsetForName() {
+        assumeJdk21()
         for (entry in CharsetRegistry.entries) {
             val charset = javaCharset(entry)
             assertEquals(charset.name(), entry.canonicalName)
@@ -149,6 +161,7 @@ class CharsetParityTest {
 
     @Test
     fun utf16AllVariants() {
+        assumeJdk21()
         val units = intArrayOf(0x0041, 0x0430, 0xFEFF, 0xFFFE, 0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0x0000, 0xFFFF)
         for (name in listOf("UTF-16", "UTF-16BE", "UTF-16LE")) {
             val entry = CharsetRegistry.find(name)!!
