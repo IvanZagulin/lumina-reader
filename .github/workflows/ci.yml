@@ -35,6 +35,30 @@ jobs:
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon --continue
 
+      - name: Android dependency baseline
+        if: always()
+        run: |
+          mkdir -p build
+          ./gradlew -q :app:dependencies --configuration releaseRuntimeClasspath --no-daemon \
+            | grep -oE '[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[^ ]+( -> [^ ]+)?' \
+            | sed -E 's/^([^:]+:[^:]+):[^ ]+ -> (.+)$/\1:\2/' | sort -u > build/release-deps.txt || true
+
+      - name: Upload dependency baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-deps
+          path: build/release-deps.txt
+          if-no-files-found: ignore
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: ignore
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
