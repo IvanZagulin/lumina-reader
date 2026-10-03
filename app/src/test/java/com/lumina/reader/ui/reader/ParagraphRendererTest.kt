@@ -17,6 +17,7 @@ import com.lumina.reader.core.model.ParagraphMarkup
 import com.lumina.reader.core.model.ParagraphMarkup.BlockStyle
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReaderTextAlign
+import com.lumina.reader.ui.theme.HighlightPalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -196,10 +197,33 @@ class ParagraphRendererTest {
     }
 
     @Test
-    fun highlightColorsAreParsed() {
-        assertEquals(Color(0xFFFFEB3B), parseHighlightColor("#FFEB3B"))
-        assertEquals(Color(0x80112233), parseHighlightColor("#80112233"))
-        assertEquals(DEFAULT_HIGHLIGHT_COLOR, parseHighlightColor("жёлтый"))
+    fun highlightColorsComeFromThePalette() {
+        // The legacy default and unknown values are drawn as «Жёлтый».
+        assertEquals(HighlightPalette.Yellow, HighlightPalette.fromHex("#FFEB3B"))
+        assertEquals(HighlightPalette.Yellow, HighlightPalette.fromHex("жёлтый"))
+        assertEquals(HighlightPalette.Blue, HighlightPalette.fromHex("#9ad0f5"))
+        val decorations = ChapterDecorations.build(
+            chapterIndex = 0,
+            highlights = listOf(
+                com.lumina.reader.core.model.ReadingHighlight(
+                    id = 9,
+                    bookId = 1,
+                    chapterIndex = 0,
+                    selectedText = "x",
+                    note = "мысль",
+                    colorHex = "#FFEB3B",
+                    paragraphIndex = 2,
+                    startOffset = 1,
+                    endOffset = 4
+                )
+            ),
+            searchMatch = null
+        )
+        val span = decorations.highlightsFor(2).single()
+        assertEquals(HighlightPalette.Yellow.color, span.color)
+        assertEquals(9L, span.id)
+        assertTrue(span.hasNote)
+        assertEquals(HighlightPalette.Yellow.hex, ReaderViewModel.DEFAULT_HIGHLIGHT_HEX)
     }
 
     @Test

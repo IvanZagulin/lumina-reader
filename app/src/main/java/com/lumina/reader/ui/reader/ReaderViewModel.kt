@@ -23,6 +23,7 @@ import com.lumina.reader.core.tts.TtsChapterSource
 import com.lumina.reader.core.tts.TtsController
 import com.lumina.reader.core.tts.TtsPlaybackState
 import com.lumina.reader.core.tts.TtsStatus
+import com.lumina.reader.ui.theme.HighlightPalette
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -889,7 +890,8 @@ class ReaderViewModel(
 
         /** Guards statistics against one huge report (e.g. a fast fling). */
         private const val MAX_WORDS_PER_REPORT = 5_000
-        const val DEFAULT_HIGHLIGHT_HEX = "#FFEB3B"
+        /** «Жёлтый» of the highlight palette; the legacy #FFEB3B is drawn the same. */
+        val DEFAULT_HIGHLIGHT_HEX: String = HighlightPalette.Yellow.hex
     }
 }
 

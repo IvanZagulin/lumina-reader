@@ -99,7 +99,6 @@ internal data class RenderedParagraph(
 
 internal const val NOTE_LINK_TAG_PREFIX = "note:"
 internal const val HIGHLIGHT_LINK_TAG_PREFIX = "highlight:"
-internal val DEFAULT_HIGHLIGHT_COLOR = Color(0xFFFFEB3B)
 
 /**
  * The one function that turns a raw paragraph into styled text. Pagination
@@ -269,17 +268,6 @@ internal fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): 
     lineBreak = LineBreak.Paragraph,
     hyphens = Hyphens.None
 )
-
-/** Parses "#RRGGBB" or "#AARRGGBB"; anything else becomes [fallback]. */
-internal fun parseHighlightColor(hex: String, fallback: Color = DEFAULT_HIGHLIGHT_COLOR): Color {
-    val digits = hex.trim().removePrefix("#")
-    val value = digits.toLongOrNull(16) ?: return fallback
-    return when (digits.length) {
-        6 -> Color(0xFF000000L or value)
-        8 -> Color(value)
-        else -> fallback
-    }
-}
 
 /**
  * Language tag for hyphenation: "ru" when the sample is mostly Cyrillic,

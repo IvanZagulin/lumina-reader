@@ -25,12 +25,6 @@ data class SelectionLocation(
     val endOffset: Int
 )
 
-/** What the reader wants to do with selected text. */
-enum class SelectionIntent {
-    HIGHLIGHT,
-    NOTE
-}
-
 /**
  * What the selection menu and the highlight menu do, implemented by the
  * reader screen. Colours are palette hex values (HighlightPalette).
