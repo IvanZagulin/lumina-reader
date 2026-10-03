@@ -2,7 +2,6 @@ package com.lumina.reader.core.update
 
 import android.content.Context
 import com.google.gson.Gson
-import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -10,6 +9,7 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
 data class AppRelease(
@@ -18,7 +18,11 @@ data class AppRelease(
     val notes: String,
     val pageUrl: String,
     val apkDownloadUrl: String,
-    val apkSizeBytes: Long
+    val apkSizeBytes: Long,
+    /** File name of the APK asset; used to find its line in the checksum file. */
+    val apkFileName: String = "",
+    /** URL of the `<apk>.sha256` asset, or null when the release does not publish one. */
+    val checksumDownloadUrl: String? = null
 ) {
     val displayVersion: String
         get() = tagName.trim().removePrefix("v").removePrefix("V")
@@ -26,45 +30,63 @@ data class AppRelease(
 
 class GitHubUpdateRepository(private val context: Context) {
 
+    /**
+     * Returns the newest stable release: the highest semantic version among
+     * published (non-draft, non-prerelease) releases that ship an APK.
+     */
     suspend fun fetchLatestRelease(): AppRelease = withContext(Dispatchers.IO) {
         val connection = openConnection(RELEASES_URL)
         try {
             val responseCode = connection.responseCode
+            if (responseCode == 403 || responseCode == 429) {
+                throw IOException("GitHub временно ограничил число запросов. Попробуйте проверить обновления позже.")
+            }
             if (responseCode !in 200..299) {
-                throw IOException("GitHub API returned HTTP $responseCode")
+                throw IOException("GitHub вернул ошибку HTTP $responseCode. Попробуйте ещё раз позже.")
             }
-            val releases = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                Gson().fromJson(reader, Array<GitHubReleaseDto>::class.java).toList()
-            }
-            val latest = releases
-                .asSequence()
-                .filterNot(GitHubReleaseDto::draft)
-                .maxByOrNull { it.publishedAt.orEmpty() }
-                ?: throw IOException("В репозитории пока нет опубликованных релизов")
-            val apkAsset = latest.assets
-                .asSequence()
-                .filter { it.name.endsWith(".apk", ignoreCase = true) }
-                .minByOrNull(::apkPreference)
-                ?: throw IOException("В последнем релизе нет APK-файла")
+            val releases: List<GitHubReleaseDto> =
+                connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                    val parsed: Array<GitHubReleaseDto>? =
+                        Gson().fromJson(reader, Array<GitHubReleaseDto>::class.java)
+                    parsed?.toList().orEmpty()
+                }
+            val selected = ReleaseSelector.select(releases)
+                ?: throw IOException("В репозитории пока нет опубликованных релизов с APK")
+            val release = selected.release
 
             AppRelease(
-                tagName = latest.tagName,
-                title = latest.name?.takeIf(String::isNotBlank) ?: "Lumina Reader ${latest.tagName}",
-                notes = latest.body.orEmpty().trim(),
-                pageUrl = latest.htmlUrl.orEmpty(),
-                apkDownloadUrl = apkAsset.downloadUrl,
-                apkSizeBytes = apkAsset.size.coerceAtLeast(0L)
+                tagName = selected.tagName,
+                title = release.name?.takeIf(String::isNotBlank) ?: "Lumina Reader ${selected.tagName}",
+                notes = release.body.orEmpty().trim(),
+                pageUrl = release.htmlUrl.orEmpty(),
+                apkDownloadUrl = selected.apkDownloadUrl,
+                apkSizeBytes = selected.apkAsset.size.coerceAtLeast(0L),
+                apkFileName = selected.apkName,
+                checksumDownloadUrl = selected.checksumDownloadUrl
             )
         } finally {
             connection.disconnect()
         }
     }
 
+    /**
+     * Downloads the release APK and returns it only after it has been verified:
+     * its SHA-256 must match the release's `.sha256` asset and it must be
+     * signed with the same certificate as the installed app.
+     *
+     * @throws UpdateVerificationException when the APK cannot be proven authentic.
+     */
     suspend fun downloadApk(
         release: AppRelease,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
     ): File = withContext(Dispatchers.IO) {
-        val updatesDirectory = File(context.cacheDir, "updates")
+        val checksumUrl = release.checksumDownloadUrl?.takeIf(String::isNotBlank)
+            ?: throw UpdateVerificationException(
+                "В релизе нет файла контрольной суммы (.sha256), поэтому подлинность обновления " +
+                    "нельзя проверить. Установка отменена."
+            )
+
+        val updatesDirectory = File(context.cacheDir, UPDATES_DIRECTORY)
         if (!updatesDirectory.exists() && !updatesDirectory.mkdirs()) {
             throw IOException("Не удалось подготовить папку для обновления")
         }
@@ -72,8 +94,12 @@ class GitHubUpdateRepository(private val context: Context) {
         val safeVersion = release.displayVersion.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val target = File(updatesDirectory, "lumina-reader-$safeVersion.apk")
         val partial = File(updatesDirectory, "${target.name}.part")
-        partial.delete()
+        // Older update packages are never needed again; keep the cache small.
+        updatesDirectory.listFiles()?.forEach { stale -> stale.delete() }
 
+        val expectedSha256 = downloadExpectedChecksum(checksumUrl, release.apkFileName)
+
+        var verified = false
         val connection = openConnection(release.apkDownloadUrl, accept = APK_ACCEPT)
         try {
             val responseCode = connection.responseCode
@@ -84,6 +110,7 @@ class GitHubUpdateRepository(private val context: Context) {
             val totalBytes = connection.contentLengthLong
                 .takeIf { it > 0L }
                 ?: release.apkSizeBytes
+            val digest = MessageDigest.getInstance("SHA-256")
             var downloadedBytes = 0L
             onProgress(downloadedBytes, totalBytes)
             connection.inputStream.buffered().use { input ->
@@ -94,6 +121,7 @@ class GitHubUpdateRepository(private val context: Context) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
+                        digest.update(buffer, 0, count)
                         downloadedBytes += count
                         onProgress(downloadedBytes, totalBytes)
                     }
@@ -101,17 +129,58 @@ class GitHubUpdateRepository(private val context: Context) {
             }
 
             if (!partial.isApkArchive()) {
-                throw IOException("Загруженный файл не является корректным APK")
+                throw UpdateVerificationException("Загруженный файл не является корректным APK")
             }
+            val actualSha256 = digest.digest().joinToString(separator = "") { byte ->
+                "%02x".format(byte.toInt() and 0xFF)
+            }
+            if (!UpdateIntegrity.checksumsMatch(expectedSha256, actualSha256)) {
+                throw UpdateVerificationException(
+                    "Контрольная сумма загруженного APK не совпадает с опубликованной в релизе. " +
+                        "Файл повреждён или подменён — установка отменена."
+                )
+            }
+
             target.delete()
             if (!partial.renameTo(target)) {
                 partial.copyTo(target, overwrite = true)
                 partial.delete()
             }
+            coroutineContext.ensureActive()
+            UpdateSignatureVerifier(context).verify(target)
+            verified = true
             target
         } catch (throwable: Throwable) {
             partial.delete()
+            if (!verified) target.delete()
             throw throwable
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private suspend fun downloadExpectedChecksum(url: String, apkFileName: String): String {
+        val connection = openConnection(url, accept = CHECKSUM_ACCEPT)
+        try {
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                throw IOException("Не удалось загрузить контрольную сумму обновления (HTTP $responseCode)")
+            }
+            val content = connection.inputStream.use { input ->
+                val bytes = ByteArray(MAX_CHECKSUM_FILE_BYTES)
+                var length = 0
+                while (length < bytes.size) {
+                    coroutineContext.ensureActive()
+                    val count = input.read(bytes, length, bytes.size - length)
+                    if (count < 0) break
+                    length += count
+                }
+                String(bytes, 0, length, Charsets.UTF_8)
+            }
+            return UpdateIntegrity.parseChecksumFile(content, apkFileName)
+                ?: throw UpdateVerificationException(
+                    "Файл контрольной суммы обновления повреждён. Установка отменена."
+                )
         } finally {
             connection.disconnect()
         }
@@ -128,15 +197,6 @@ class GitHubUpdateRepository(private val context: Context) {
             setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
         }
 
-    private fun apkPreference(asset: GitHubAssetDto): Int {
-        val lowerName = asset.name.lowercase()
-        return when {
-            "universal" in lowerName -> 0
-            "release" in lowerName -> 1
-            else -> 2
-        }
-    }
-
     private fun File.isApkArchive(): Boolean {
         if (length() < 4L) return false
         return inputStream().use { input ->
@@ -144,29 +204,18 @@ class GitHubUpdateRepository(private val context: Context) {
         }
     }
 
-    private data class GitHubReleaseDto(
-        @SerializedName("tag_name") val tagName: String,
-        val name: String?,
-        val body: String?,
-        @SerializedName("html_url") val htmlUrl: String?,
-        val draft: Boolean,
-        @SerializedName("published_at") val publishedAt: String?,
-        val assets: List<GitHubAssetDto> = emptyList()
-    )
-
-    private data class GitHubAssetDto(
-        val name: String,
-        @SerializedName("browser_download_url") val downloadUrl: String,
-        val size: Long = 0L
-    )
-
     private companion object {
         const val RELEASES_URL =
-            "https://api.github.com/repos/IvanZagulin/lumina-reader/releases?per_page=20"
+            "https://api.github.com/repos/IvanZagulin/lumina-reader/releases?per_page=30"
         const val GITHUB_ACCEPT = "application/vnd.github+json"
         const val APK_ACCEPT = "application/vnd.android.package-archive, application/octet-stream"
+        const val CHECKSUM_ACCEPT = "application/octet-stream, text/plain"
         const val USER_AGENT = "Lumina-Reader-Android-Updater"
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 30_000
+        const val MAX_CHECKSUM_FILE_BYTES = 16 * 1024
+
+        /** Must match the cache-path entry in res/xml/file_paths.xml. */
+        const val UPDATES_DIRECTORY = "updates"
     }
 }

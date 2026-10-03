@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="external_files" path="." />
-    <files-path name="internal_files" path="." />
-    <cache-path name="cache_files" path="." />
+<!--
+    Directories that FileProvider (${applicationId}.fileprovider) may expose to
+    other apps. Keep this list minimal: never expose filesDir (library, database
+    side files) or external storage roots.
+      - cache/updates/ : downloaded update APKs handed to the system installer
+                         (GitHubUpdateRepository.UPDATES_DIRECTORY).
+      - cache/shared/  : the only place for files shared through ACTION_SEND
+                         (e.g. exported notes). Copy a file here before calling
+                         FileProvider.getUriForFile.
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+    <cache-path name="shared" path="shared/" />
 </paths>

@@ -4,6 +4,10 @@ name: Build and publish update
 on:
   push:
     branches: [main]
+    # Documentation-only changes do not need a new APK release.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -21,7 +25,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          # Keep the write token out of .git/config while Gradle and build
+          # plugins run; the status steps below pass it explicitly to git push.
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -97,6 +103,8 @@ jobs:
       - name: Record successful deployment
         if: success()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           printf 'status=success\nversion=%s\nsource_sha=%s\n' \
             "$VERSION_NAME" "$GITHUB_SHA" > /tmp/latest-release-status.txt
@@ -108,7 +116,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Record successful release deployment"
-          git push origin HEAD:refs/heads/automation/latest-release-status --force
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/automation/latest-release-status --force
 
       - name: Record failed deployment
         if: failure()
@@ -118,6 +127,7 @@ jobs:
           BUILD_OUTCOME: ${{ steps.build.outcome }}
           CERT_OUTCOME: ${{ steps.certificate.outcome }}
           PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo 'status=failure'
@@ -126,10 +136,9 @@ jobs:
             echo "build=$BUILD_OUTCOME"
             echo "certificate=$CERT_OUTCOME"
             echo "publish=$PUBLISH_OUTCOME"
-            echo
-            if [ -f /tmp/lumina-release-build.log ]; then
-              tail -n 400 /tmp/lumina-release-build.log
-            fi
+            # The build log stays in the (access-controlled) run logs instead
+            # of being committed to a public branch.
+            echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } > /tmp/latest-release-status.txt
           git reset --hard HEAD
           git clean -fd
@@ -139,4 +148,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Record failed release deployment"
-          git push origin HEAD:refs/heads/automation/latest-release-status --force
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/automation/latest-release-status --force

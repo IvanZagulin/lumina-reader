@@ -63,6 +63,14 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     private var downloadedApkPath: String? = null
     private var lastRelease: AppRelease? = null
 
+    /**
+     * APK waiting for the "install unknown apps" permission. Held here rather
+     * than in the Activity because this ViewModel survives configuration
+     * changes, while the Activity may be recreated when the user is in system
+     * settings (which loses the activity-result callback).
+     */
+    private var pendingInstallApk: File? = null
+
     init {
         checkForUpdates(manual = false)
     }
@@ -116,6 +124,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     fun downloadAndInstall(release: AppRelease) {
         if (downloadJob?.isActive == true) return
         lastRelease = release
+        pendingInstallApk = null
         downloadJob = viewModelScope.launch {
             mutableUiState.update {
                 it.copy(
@@ -166,11 +175,17 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissDialog() {
         if (mutableUiState.value.dialog !is AppUpdateDialogState.Downloading) {
+            pendingInstallApk = null
             mutableUiState.update { it.copy(dialog = null) }
         }
     }
 
+    /**
+     * Called by the Activity right before it opens the "install unknown apps"
+     * settings screen for the APK announced by the last [AppUpdateEvent.InstallApk].
+     */
     fun onInstallPermissionRequested() {
+        pendingInstallApk = downloadedApkPath?.let { path -> File(path) }
         lastRelease?.let { release ->
             mutableUiState.update {
                 it.copy(dialog = AppUpdateDialogState.AwaitingInstallPermission(release))
@@ -178,7 +193,44 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Same as [onInstallPermissionRequested], for an explicitly given APK. */
+    fun onInstallPermissionRequested(apk: File) {
+        downloadedApkPath = apk.absolutePath
+        onInstallPermissionRequested()
+    }
+
+    /** True while a downloaded APK is waiting for the user to allow installs from this app. */
+    val isAwaitingInstallPermission: Boolean
+        get() = pendingInstallApk != null
+
+    /**
+     * Must be called from the Activity's ON_RESUME. When the user comes back
+     * from system settings after allowing installs, the pending APK is sent to
+     * the installer again through [AppUpdateEvent.InstallApk]. If the
+     * permission is still missing, the dialog stays open with its
+     * "Открыть настройки" / "Отмена" buttons.
+     */
+    fun onAppResumed() {
+        val apk = pendingInstallApk ?: return
+        if (!canInstallPackages()) return
+        pendingInstallApk = null
+        if (!apk.isFile) {
+            onInstallLaunchError("Скачанный APK больше недоступен. Загрузите обновление заново.")
+            return
+        }
+        lastRelease?.let { release ->
+            mutableUiState.update { it.copy(dialog = AppUpdateDialogState.Installing(release)) }
+        }
+        eventChannel.trySend(AppUpdateEvent.InstallApk(apk.absolutePath))
+    }
+
+    /** "Открыть настройки" in the permission dialog: restarts the install flow for the downloaded APK. */
+    fun openInstallPermissionSettings() {
+        retryInstall()
+    }
+
     fun onInstallPermissionDenied() {
+        pendingInstallApk = null
         mutableUiState.update {
             it.copy(
                 dialog = AppUpdateDialogState.Error(
@@ -190,6 +242,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun onInstallerOpened() {
+        pendingInstallApk = null
         mutableUiState.update { it.copy(dialog = null) }
     }
 
@@ -215,6 +268,11 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         }
         eventChannel.trySend(AppUpdateEvent.InstallApk(path))
     }
+
+    private fun canInstallPackages(): Boolean =
+        runCatching {
+            getApplication<Application>().packageManager.canRequestPackageInstalls()
+        }.getOrDefault(false)
 
     private fun Throwable.toRussianMessage(): String = when (this) {
         is UnknownHostException -> "Нет подключения к интернету. Проверьте сеть и попробуйте ещё раз."
