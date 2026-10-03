@@ -11,7 +11,10 @@ import com.lumina.reader.core.library.LibraryRepository
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReadingStatus
+import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
+import com.lumina.reader.core.preferences.LibrarySort
+import com.lumina.reader.core.preferences.LibraryViewMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -144,6 +148,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val importer = BookImporter.get(application)
     private val repository = LibraryRepository(application)
     private val libraryPreferences = LibraryPreferences(application)
+    private val uiPreferences = AppUiPreferences.get(application)
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
@@ -151,7 +156,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedFormat = MutableStateFlow<BookFormat?>(null)
     val selectedFormat = _selectedFormat.asStateFlow()
 
-    private val _selectedStatus = MutableStateFlow(ReadingStatus.UNREAD)
+    // «Полки» is the default view (spec §5.2): shelves of unread books, series,
+    // and the collapsed «Прочитано» shelf.
+    private val _selectedStatus = MutableStateFlow(ReadingStatus.COLLECTIONS)
     val selectedStatus = _selectedStatus.asStateFlow()
 
     private val _selectedCollection = MutableStateFlow<String?>(null)
@@ -165,8 +172,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    private val mutableLibraryLoaded = MutableStateFlow(false)
+
+    /** False until the database delivered the books once (no empty-state flash on start). */
+    val libraryLoaded: StateFlow<Boolean> = mutableLibraryLoaded.asStateFlow()
+
     /** Every book, unfiltered (newest reading first). */
     val allBooks: StateFlow<List<Book>> = bookDao.getAllBooks()
+        .onEach { mutableLibraryLoaded.value = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Shelves the user created; they are listed even when empty. */
@@ -219,6 +232,53 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val recentBooks: StateFlow<List<Book>> = allBooks.map { list ->
         list.filter { it.currentProgressPercent > 0f }.take(3)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ---- UI state of the redesigned library (spec §5) -------------------------
+
+    /** «Вид»: Полки / Шкаф / Список (persisted in [AppUiPreferences]). */
+    val viewMode: StateFlow<LibraryViewMode> = uiPreferences.libraryView
+
+    /** «Сортировка» of the flat views. */
+    val sort: StateFlow<LibrarySort> = uiPreferences.librarySort
+
+    /** «Подписи под книгами» on shelf rows. */
+    val shelfCaptions: StateFlow<Boolean> = uiPreferences.shelfCaptions
+
+    /** The «Продолжить чтение» book (or the newest unread one). */
+    val heroPick: StateFlow<HeroPick?> = allBooks
+        .map(::pickHeroBook)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Shelves of the «Полки» view (spec §5.2), grouped off the main thread. */
+    val shelves: StateFlow<List<ShelfSection>> = combine(allBooks, customShelves) { all, custom ->
+        val hero = pickHeroBook(all)?.takeIf(HeroPick::resume)?.book?.id
+        groupIntoShelves(all, hero, custom)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** [books] in the order chosen in «Сортировка» (flat bookcase and list views). */
+    val displayBooks: StateFlow<List<Book>> = combine(books, sort) { list, order -> list.sortedForView(order) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Counts for the header subtitle. */
+    val summary: StateFlow<LibrarySummary> = allBooks
+        .map(::summarizeLibrary)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibrarySummary(0, 0, 0))
+
+    fun onViewModeSelected(mode: LibraryViewMode) {
+        uiPreferences.setLibraryView(mode)
+    }
+
+    fun onSortSelected(order: LibrarySort) {
+        uiPreferences.setLibrarySort(order)
+    }
+
+    fun onShelfCaptionsChanged(enabled: Boolean) {
+        uiPreferences.setShelfCaptions(enabled)
+    }
 
     init {
         importer.seedWelcomeBookIfNeeded()
@@ -319,7 +379,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     // ---- Shelves -------------------------------------------------------------
 
-    /** Creates a shelf that persists even while it has no books, and opens it. */
+    /** Creates a shelf that persists even while it has no books; it shows on «Полки». */
     fun createShelf(name: String) {
         val normalized = normalizeShelfName(name)
         if (normalized.isEmpty()) return
@@ -327,8 +387,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             if (repository.createShelf(normalized, collections.value)) {
                 AppMessages.post("Полка «$normalized» создана")
             }
+            // The new (empty) shelf is shown on the «Полки» view.
             _selectedStatus.value = ReadingStatus.COLLECTIONS
-            onCollectionSelected(collections.value.firstOrNull { it.equals(normalized, ignoreCase = true) } ?: normalized)
+            onAllShelvesSelected()
         }
     }
 

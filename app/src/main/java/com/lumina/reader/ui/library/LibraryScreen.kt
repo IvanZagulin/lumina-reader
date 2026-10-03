@@ -1,480 +1,322 @@
 package com.lumina.reader.ui.library
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.max
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStatus
+import com.lumina.reader.core.preferences.AppUiPreferences
+import com.lumina.reader.core.preferences.LibraryPreferences
+import com.lumina.reader.core.preferences.LibraryViewMode
+import com.lumina.reader.ui.components.BookcaseRow
+import com.lumina.reader.ui.components.GhostBooksRow
+import com.lumina.reader.ui.components.ShelfBookSize
+import com.lumina.reader.ui.components.ShelfHeader
+import com.lumina.reader.ui.components.ShelfHeaderStyle
+import com.lumina.reader.ui.components.ShelfRow
+import com.lumina.reader.ui.components.bookcaseLayout
+import com.lumina.reader.ui.components.rememberShelfBookSize
+import com.lumina.reader.ui.components.toCoverModel
+import com.lumina.reader.ui.components.toShelfBookUi
+import com.lumina.reader.ui.shell.LocalDockScroll
+import com.lumina.reader.ui.theme.Lumina
+import com.lumina.reader.ui.theme.LuminaDimens
+import com.lumina.reader.ui.transition.BookTransitionState
+import com.lumina.reader.ui.transition.LocalBookTransition
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The library (spec §5): one LazyColumn over the warm wall with a lamp glow —
+ * header, «Продолжить чтение», sticky filters, then shelves (default «Полки»),
+ * the bookcase grid or the list. Books open through the root book transition.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
-    onBookClick: (Long) -> Unit,
-    onStatsClick: () -> Unit,
-    onCatalogClick: () -> Unit,
-    onAiChatClick: () -> Unit,
+    onOpenBook: (Long) -> Unit,
+    onImportBook: () -> Unit,
+    onOpenCatalogs: () -> Unit,
+    onSearchCatalogs: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     onCheckForUpdates: () -> Unit = {},
-    isCheckingForUpdates: Boolean = false
+    isCheckingForUpdates: Boolean = false,
+    updateAvailable: Boolean = false
 ) {
-    val books by viewModel.books.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedStatus by viewModel.selectedStatus.collectAsState()
-    val selectedCollection by viewModel.selectedCollection.collectAsState()
-    val selectedSeries by viewModel.selectedSeries.collectAsState()
+    val context = LocalContext.current
+    val allBooks by viewModel.allBooks.collectAsState()
+    val libraryLoaded by viewModel.libraryLoaded.collectAsState()
+    val books by viewModel.displayBooks.collectAsState()
+    val shelves by viewModel.shelves.collectAsState()
+    val heroPick by viewModel.heroPick.collectAsState()
+    val summary by viewModel.summary.collectAsState()
+    val query by viewModel.searchQuery.collectAsState()
+    val status by viewModel.selectedStatus.collectAsState()
+    val format by viewModel.selectedFormat.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val sort by viewModel.sort.collectAsState()
+    val captions by viewModel.shelfCaptions.collectAsState()
     val collections by viewModel.collections.collectAsState()
     val seriesNames by viewModel.seriesNames.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val hasAnyBooks by viewModel.hasAnyBooks.collectAsState()
 
-    // Results (imports, shelves, downloads) appear in the app-wide snackbar host.
+    val transition = LocalBookTransition.current
+    val uiPreferences = remember(context) { AppUiPreferences.get(context) }
+    val openAnimation by uiPreferences.openAnimation.collectAsState()
+    val scope = rememberCoroutineScope()
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            viewModel.importBookFromUri(uri)
+    var searchActive by rememberSaveable { mutableStateOf(query.isNotEmpty()) }
+    var finishedExpanded by rememberSaveable { mutableStateOf(false) }
+    var actionsBookId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var actionsPage by rememberSaveable { mutableStateOf(BookSheetPage.MAIN) }
+    var showViewSheet by rememberSaveable { mutableStateOf(false) }
+    var showShelfManager by rememberSaveable { mutableStateOf(false) }
+    var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var renameShelf by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteShelf by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val closeSearch = {
+        searchActive = false
+        viewModel.onSearchQueryChanged("")
+    }
+    BackHandler(enabled = searchActive) { closeSearch() }
+
+    val booksById = remember(allBooks) { allBooks.associateBy(Book::id) }
+    val bookSize = rememberShelfBookSize()
+    val screenWidth = LocalConfiguration.current.screenWidthDp.toFloat()
+    val caseLayout = remember(screenWidth, bookSize) { bookcaseLayout(screenWidth, bookSize.width.value) }
+    val caseColumns = caseLayout.first
+    val caseSize = remember(caseLayout) { ShelfBookSize(caseLayout.second.dp, (caseLayout.second * 1.5f).dp) }
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomPadding = max(LuminaDimens.DockClearance, navBottom + LuminaDimens.DockHeight + 36.dp)
+
+    fun openBook(book: Book, slotKey: String?) {
+        val id = book.id
+        if (transition == null) {
+            onOpenBook(id)
+        } else {
+            transition.open(book.toCoverModel(), slotKey ?: transition.findSlotKey(id), openAnimation) {
+                onOpenBook(id)
+            }
         }
     }
 
-    var bookToDelete by remember { mutableStateOf<Book?>(null) }
-    var bookToEditOrganization by remember { mutableStateOf<Book?>(null) }
-    var bookToMoveToCollection by remember { mutableStateOf<Book?>(null) }
-    val expandedShelves = remember { mutableStateMapOf<String, Boolean>() }
-    var newCollectionName by remember { mutableStateOf("") }
-    var showCreateCollectionDialog by remember { mutableStateOf(false) }
-    var shelfToEdit by remember { mutableStateOf<String?>(null) }
+    fun showActions(bookId: Long, page: BookSheetPage = BookSheetPage.MAIN) {
+        actionsPage = page
+        actionsBookId = bookId
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Lumina",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Reader",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Light
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = onCheckForUpdates,
-                        enabled = !isCheckingForUpdates
-                    ) {
-                        if (isCheckingForUpdates) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.5.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "Проверить обновления",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                    IconButton(onClick = onCatalogClick) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Каталог OPDS",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = onAiChatClick) {
-                        Icon(
-                            imageVector = Icons.Default.SmartToy,
-                            contentDescription = "ИИ Чат",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = onStatsClick) {
-                        Icon(
-                            imageVector = Icons.Default.BarChart,
-                            contentDescription = "Статистика чтения",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+    val callbacks = ShelfCallbacks(
+        onOpen = { id, slot -> booksById[id]?.let { openBook(it, slot) } },
+        onActions = { id, page -> showActions(id, page) },
+        onShowAll = { key -> detailKey = key },
+        onRename = { name -> renameShelf = name },
+        onDelete = { name -> deleteShelf = name }
+    )
+
+    val shelvesView = status == ReadingStatus.COLLECTIONS && query.isBlank()
+    val listState = rememberLazyListState()
+    val colors = Lumina.colors
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                // While the reader closes onto the library it grows from 0.94 to 1.
+                val closing = transition?.phase == BookTransitionState.Phase.Closing
+                val p = if (closing) transition?.libraryBackdrop?.value ?: 0f else 0f
+                scaleX = 1f - 0.06f * p
+                scaleY = scaleX
+            }
+            .drawWithCache {
+                val glow = Brush.radialGradient(
+                    colors = listOf(colors.lampGlow, Color.Transparent),
+                    center = Offset(size.width * 0.72f, -40.dp.toPx()),
+                    radius = 420.dp.toPx()
                 )
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    filePickerLauncher.launch(
-                        arrayOf(
-                            "application/pdf",
-                            "application/epub+zip",
-                            "application/x-fictionbook+xml",
-                            "application/x-fictionbook",
-                            "text/plain",
-                            "application/zip",
-                            "*/*"
-                        )
+                val vignette = if (colors.isDark) {
+                    Brush.radialGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f)),
+                        center = Offset(size.width / 2f, size.height * 0.4f),
+                        radius = size.maxDimension * 0.75f
                     )
-                },
-                icon = { Icon(Icons.Default.Add, contentDescription = "Добавить") },
-                text = { Text("Добавить книгу", fontWeight = FontWeight.SemiBold) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(16.dp)
-            )
-        }
-    ) { paddingValues ->
-        Column(
+                } else {
+                    null
+                }
+                onDrawBehind {
+                    drawRect(colors.wall)
+                    drawRect(glow)
+                    if (vignette != null) drawRect(vignette)
+                }
+            }
+    ) {
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .statusBarsPadding()
+                .nestedScroll(LocalDockScroll.current),
+            contentPadding = PaddingValues(bottom = bottomPadding)
         ) {
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                placeholder = { Text("Поиск книг, авторов, полок...") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Поиск",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Очистить")
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary
+            item(key = "header", contentType = "header") {
+                LibraryHeader(
+                    subtitle = summary.subtitle(),
+                    searchActive = searchActive,
+                    query = query,
+                    onQueryChange = viewModel::onSearchQueryChanged,
+                    onOpenSearch = { searchActive = true },
+                    onCloseSearch = closeSearch,
+                    onOpenViewSheet = { showViewSheet = true },
+                    onManageShelves = { showShelfManager = true },
+                    onOpenSettings = onOpenSettings,
+                    onCheckForUpdates = onCheckForUpdates,
+                    isCheckingForUpdates = isCheckingForUpdates,
+                    updateAvailable = updateAvailable
                 )
-            )
-
-            // Compact status pills leave more vertical space for the actual library.
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(horizontal = 1.dp)
-            ) {
-                items(ReadingStatus.values().toList(), key = { it.name }) { status ->
-                    FilterChip(
-                        selected = selectedStatus == status,
-                        onClick = { viewModel.onStatusSelected(status) },
-                        label = {
-                            Text(
-                                text = status.title,
-                                style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1,
-                                fontWeight = if (selectedStatus == status) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        leadingIcon = if (selectedStatus == status) {
-                            {
-                                Icon(
-                                    imageVector = when (status) {
-                                        ReadingStatus.UNREAD -> Icons.Default.BookmarkBorder
-                                        ReadingStatus.ALL -> Icons.Default.AutoStories
-                                        ReadingStatus.READING -> Icons.Default.MenuBook
-                                        ReadingStatus.FAVORITES -> Icons.Default.Favorite
-                                        ReadingStatus.COMPLETED -> Icons.Default.CheckCircle
-                                        ReadingStatus.COLLECTIONS -> Icons.Default.Folder
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        } else {
-                            null
-                        }
-                    )
-                }
             }
-
-            // If "По полкам" is selected -> show collections sub-row
-            if (selectedStatus == ReadingStatus.COLLECTIONS) {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    item {
-                        FilterChip(
-                            selected = selectedCollection == null && selectedSeries == null,
-                            onClick = viewModel::onAllShelvesSelected,
-                            label = { Text("Все полки") }
-                        )
-                    }
-                    items(collections) { coll ->
-                        FilterChip(
-                            selected = selectedCollection == coll,
-                            onClick = { viewModel.onCollectionSelected(coll) },
-                            label = { Text(coll) }
-                        )
-                    }
-                    items(seriesNames) { seriesName ->
-                        FilterChip(
-                            selected = selectedSeries.equals(seriesName, ignoreCase = true),
-                            onClick = { viewModel.onSeriesSelected(seriesName) },
-                            label = { Text(seriesName) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Bookmarks,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        )
-                    }
-                    val editableShelf = selectedCollection?.takeIf { viewModel.isEditableShelf(it) }
-                    if (editableShelf != null) {
-                        item(key = "edit_shelf") {
-                            AssistChip(
-                                onClick = { shelfToEdit = editableShelf },
-                                label = { Text("Изменить полку") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            )
-                        }
-                    }
-                    item {
-                        AssistChip(
-                            onClick = { showCreateCollectionDialog = true },
-                            label = { Text("+ Новая полка") },
-                            leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                        )
-                    }
-                }
-            }
-
             if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                item(key = "loading", contentType = "loading") {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(2.dp)
+                    )
                 }
             }
-
-            // Book List or Empty State
-            if (books.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 64.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(80.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        val everythingRead = searchQuery.isEmpty() &&
-                            selectedStatus == ReadingStatus.UNREAD &&
-                            hasAnyBooks
-                        Text(
-                            text = when {
-                                searchQuery.isNotEmpty() -> "Ничего не найдено"
-                                everythingRead -> "Все книги прочитаны"
-                                else -> "Здесь пока пусто"
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold
+            val hero = heroPick
+            if (hero != null && query.isBlank() && !searchActive) {
+                item(key = "hero", contentType = "hero") {
+                    Column(modifier = Modifier.animateItem()) {
+                        ContinueReadingHero(
+                            pick = hero,
+                            onOpen = { slot -> openBook(hero.book, slot) },
+                            onLongPress = { showActions(hero.book.id) }
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = when {
-                                searchQuery.isNotEmpty() -> "Попробуйте изменить поисковый запрос"
-                                everythingRead -> "Добавьте новую книгу через «+» или откройте вкладку «Все»"
-                                else -> "Нажмите «+» чтобы добавить книгу (EPUB, FB2, PDF, TXT)"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(Modifier.height(12.dp))
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 128.dp)
-                ) {
-                    if (
-                        selectedStatus == ReadingStatus.COLLECTIONS &&
-                        selectedCollection == null &&
-                        selectedSeries == null
-                    ) {
-                        // A series is its own shelf. Its books must not also appear on
-                        // a regular shelf, otherwise the library looks duplicated.
-                        val seriesShelves = books
-                            .filter { it.seriesName.isNotBlank() }
-                            .groupBy { normalizeShelfName(it.seriesName).lowercase() }
-                            .values
-                            .sortedBy { normalizeShelfName(it.first().seriesName).lowercase() }
+            }
+            stickyHeader(key = "filters", contentType = "filters") {
+                LibraryFilterRow(
+                    selected = status,
+                    onSelect = { selected ->
+                        viewModel.onStatusSelected(selected)
+                        if (selected == ReadingStatus.COLLECTIONS) viewModel.onAllShelvesSelected()
+                    }
+                )
+            }
 
-                        val regularShelves = books
-                            .filter { it.seriesName.isBlank() }
-                            .groupBy {
-                                normalizeShelfName(it.collection).ifBlank { "Основная" }.lowercase()
-                            }
-                            .values
-                            .sortedBy {
-                                normalizeShelfName(it.first().collection).ifBlank { "Основная" }.lowercase()
-                            }
-
-                        seriesShelves.forEach { seriesBooks ->
-                            val seriesName = normalizeShelfName(seriesBooks.first().seriesName)
-                            val shelfKey = "series:$seriesName"
-                            val expanded = expandedShelves[shelfKey] == true
-                            item(key = "series_header_$seriesName") {
-                                LibraryShelfHeader(
-                                    title = seriesName,
-                                    bookCount = seriesBooks.size,
-                                    isSeries = true,
-                                    expanded = expanded,
-                                    onToggle = { expandedShelves[shelfKey] = !expanded }
-                                )
-                            }
-                            if (expanded) {
-                                items(
-                                    items = seriesBooks.sortedForSeries(),
-                                    key = { "series_${seriesName}_${it.id}" }
-                                ) { book ->
-                                    BookItemCard(
-                                        book = book,
-                                        onClick = { onBookClick(book.id) },
-                                        onDelete = { bookToDelete = book },
-                                        onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                        onToggleCompleted = { viewModel.toggleCompleted(book) },
-                                        onMoveToCollection = { bookToMoveToCollection = book },
-                                        onEditOrganization = { bookToEditOrganization = book }
-                                    )
-                                }
-                            }
+            when {
+                libraryLoaded && allBooks.isEmpty() && !isLoading -> item(key = "empty", contentType = "empty") {
+                    EmptyShelf(
+                        variant = EmptyShelfVariant.NO_BOOKS,
+                        onAddFile = onImportBook,
+                        onOpenCatalogs = onOpenCatalogs,
+                        modifier = Modifier.animateItem()
+                    )
+                }
+                shelvesView -> {
+                    if (allBooks.isNotEmpty() && allBooks.all(Book::isDone)) {
+                        item(key = "all-read", contentType = "empty") {
+                            EmptyShelf(
+                                variant = EmptyShelfVariant.ALL_READ,
+                                onAddFile = onImportBook,
+                                onOpenCatalogs = onOpenCatalogs,
+                                modifier = Modifier.animateItem()
+                            )
                         }
-
-                        regularShelves.forEach { collectionBooks ->
-                            val collectionName = normalizeShelfName(collectionBooks.first().collection)
-                                .ifBlank { "Основная" }
-                            val shelfKey = "collection:$collectionName"
-                            val expanded = expandedShelves[shelfKey] == true
-                            item(key = "collection_header_$collectionName") {
-                                LibraryShelfHeader(
-                                    title = collectionName,
-                                    bookCount = collectionBooks.size,
-                                    isSeries = false,
-                                    expanded = expanded,
-                                    onToggle = { expandedShelves[shelfKey] = !expanded }
-                                )
-                            }
-                            if (expanded) {
-                                items(
-                                    items = collectionBooks.sortedByDescending { it.lastReadTimestamp },
-                                    key = { "collection_${collectionName}_${it.id}" }
-                                ) { book ->
-                                    BookItemCard(
-                                        book = book,
-                                        onClick = { onBookClick(book.id) },
-                                        onDelete = { bookToDelete = book },
-                                        onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                        onToggleCompleted = { viewModel.toggleCompleted(book) },
-                                        onMoveToCollection = { bookToMoveToCollection = book },
-                                        onEditOrganization = { bookToEditOrganization = book }
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        if (selectedStatus == ReadingStatus.COLLECTIONS && selectedSeries != null) {
-                            item(key = "selected_series_header") {
-                                LibraryShelfHeader(
-                                    title = selectedSeries.orEmpty(),
-                                    bookCount = books.size,
-                                    isSeries = true
-                                )
-                            }
-                        } else if (
-                            selectedStatus == ReadingStatus.COLLECTIONS &&
-                            selectedCollection != null
-                        ) {
-                            item(key = "selected_collection_header") {
-                                LibraryShelfHeader(
-                                    title = selectedCollection.orEmpty(),
-                                    bookCount = books.size,
-                                    isSeries = false
-                                )
-                            }
-                        }
-                        items(books, key = { it.id }) { book ->
-                            BookItemCard(
-                                book = book,
-                                onClick = { onBookClick(book.id) },
-                                onDelete = { bookToDelete = book },
-                                onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                onToggleCompleted = { viewModel.toggleCompleted(book) },
-                                onMoveToCollection = { bookToMoveToCollection = book },
-                                onEditOrganization = { bookToEditOrganization = book }
+                    }
+                    shelfSections(
+                        shelves = shelves,
+                        viewMode = viewMode,
+                        bookSize = bookSize,
+                        caseSize = caseSize,
+                        caseColumns = caseColumns,
+                        captions = captions,
+                        finishedExpanded = finishedExpanded,
+                        onToggleFinished = { finishedExpanded = !finishedExpanded },
+                        callbacks = callbacks
+                    )
+                }
+                libraryLoaded && books.isEmpty() -> item(key = "empty-filter", contentType = "empty") {
+                    EmptyShelf(
+                        variant = if (query.isNotBlank()) EmptyShelfVariant.NO_RESULTS else EmptyShelfVariant.EMPTY_FILTER,
+                        query = query,
+                        onSearchCatalogs = onSearchCatalogs,
+                        onResetFilter = {
+                            viewModel.onStatusSelected(ReadingStatus.COLLECTIONS)
+                            viewModel.onAllShelvesSelected()
+                            if (format != null) viewModel.onFormatSelected(format)
+                        },
+                        modifier = Modifier.animateItem()
+                    )
+                }
+                viewMode == LibraryViewMode.LIST -> items(
+                    items = books,
+                    key = { "list:${it.id}" },
+                    contentType = { "list" }
+                ) { book ->
+                    BookListRow(
+                        book = book,
+                        slotKey = "list:${book.id}",
+                        onOpen = { openBook(book, "list:${book.id}") },
+                        onMore = { showActions(book.id) },
+                        onMoveToShelf = { showActions(book.id, BookSheetPage.MOVE_TO_SHELF) },
+                        onDelete = { showActions(book.id, BookSheetPage.CONFIRM_DELETE) },
+                        modifier = Modifier.animateItem()
+                    )
+                }
+                else -> {
+                    val rows = books.chunked(caseColumns)
+                    rows.forEachIndexed { index, row ->
+                        item(key = "case:$index", contentType = "case") {
+                            val shelfBooks = remember(row) { row.map { it.toShelfBookUi() } }
+                            BookcaseRow(
+                                rowSeed = "case:$index",
+                                books = shelfBooks,
+                                size = caseSize,
+                                slotPrefix = "grid",
+                                onOpen = { book, slot -> callbacks.onOpen(book.id, slot) },
+                                onLongPress = { book -> showActions(book.id) },
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
@@ -483,457 +325,214 @@ fun LibraryScreen(
         }
     }
 
-    // Delete Confirmation Dialog
-    bookToDelete?.let { book ->
-        AlertDialog(
-            onDismissRequest = { bookToDelete = null },
-            title = { Text("Удалить книгу?") },
-            text = { Text("Книга «${book.title}» будет удалена из библиотеки.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteBook(book)
-                        bookToDelete = null
-                    }
-                ) {
-                    Text("Удалить", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { bookToDelete = null }) {
-                    Text("Отмена")
-                }
-            }
-        )
-    }
+    // ---- Sheets and dialogs ----------------------------------------------------
 
-    // Right-swipe shortcut: choose a shelf and, when needed, the series and
-    // exact position inside it.
-    bookToMoveToCollection?.let { book ->
-        var selectedCollectionName by remember(book.id) { mutableStateOf(book.collection) }
-        var selectedSeriesName by remember(book.id) { mutableStateOf(book.seriesName) }
-        var seriesOrderText by remember(book.id) {
-            mutableStateOf(book.seriesOrder.takeIf { it > 0 }?.toString().orEmpty())
-        }
-        AlertDialog(
-            onDismissRequest = { bookToMoveToCollection = null },
-            icon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
-            title = { Text("Перенести книгу") },
-            text = {
-                Column(
-                    modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        "Книга будет показана только на выбранной полке.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = selectedCollectionName,
-                        onValueChange = { selectedCollectionName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Полка") },
-                        singleLine = true
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(collections, key = { it.lowercase() }) { collection ->
-                            SuggestionChip(
-                                onClick = { selectedCollectionName = collection },
-                                label = { Text(collection, maxLines = 1) }
-                            )
-                        }
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text(
-                        "Группа / серия (необязательно)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    OutlinedTextField(
-                        value = selectedSeriesName,
-                        onValueChange = {
-                            selectedSeriesName = it
-                            if (it.isBlank()) seriesOrderText = ""
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Название группы") },
-                        placeholder = { Text("Например, Дом странных детей") },
-                        singleLine = true
-                    )
-                    if (seriesNames.isNotEmpty()) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(seriesNames, key = { it.lowercase() }) { series ->
-                                SuggestionChip(
-                                    onClick = { selectedSeriesName = series },
-                                    label = { Text(series, maxLines = 1) }
-                                )
-                            }
-                        }
-                    }
-                    if (selectedSeriesName.isNotBlank()) {
-                        OutlinedTextField(
-                            value = seriesOrderText,
-                            onValueChange = { seriesOrderText = it.filter(Char::isDigit).take(6) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Номер книги в группе") },
-                            placeholder = { Text("1, 2, 3…") },
-                            supportingText = { Text("Нужен для правильного порядка серии") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = selectedCollectionName.isNotBlank(),
-                    onClick = {
-                        viewModel.updateBookOrganization(
-                            book = book,
-                            collection = selectedCollectionName,
-                            seriesName = selectedSeriesName,
-                            seriesOrder = seriesOrderText.toIntOrNull() ?: 0
-                        )
-                        bookToMoveToCollection = null
-                    }
-                ) { Text("Перенести") }
-            },
-            dismissButton = {
-                TextButton(onClick = { bookToMoveToCollection = null }) { Text("Отмена") }
-            }
-        )
-    }
-
-    // Edit the regular shelf and the optional automatic series shelf together.
-    bookToEditOrganization?.let { book ->
-        var selectedCollectionName by remember(book.id) { mutableStateOf(book.collection) }
-        var selectedSeriesName by remember(book.id) { mutableStateOf(book.seriesName) }
-        var seriesOrderText by remember(book.id) {
-            mutableStateOf(book.seriesOrder.takeIf { it > 0 }?.toString().orEmpty())
-        }
-        AlertDialog(
-            onDismissRequest = { bookToEditOrganization = null },
-            icon = { Icon(Icons.Default.Bookmarks, contentDescription = null) },
-            title = { Text("Полка и серия") },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        "Обычная полка",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = selectedCollectionName,
-                        onValueChange = { selectedCollectionName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Название полки") },
-                        placeholder = { Text("Например, Фантастика") },
-                        singleLine = true
-                    )
-                    if (collections.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.padding(top = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(collections, key = { it.lowercase() }) { collection ->
-                                SuggestionChip(
-                                    onClick = { selectedCollectionName = collection },
-                                    label = { Text(collection, maxLines = 1) }
-                                )
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-
-                    Text(
-                        "Серия книг",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "После сохранения серия появится в библиотеке как отдельная полка.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = selectedSeriesName,
-                        onValueChange = { selectedSeriesName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Название серии") },
-                        placeholder = { Text("Например, Дюна") },
-                        trailingIcon = {
-                            if (selectedSeriesName.isNotEmpty()) {
-                                IconButton(
-                                    onClick = {
-                                        selectedSeriesName = ""
-                                        seriesOrderText = ""
-                                    }
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Убрать серию")
-                                }
-                            }
-                        },
-                        singleLine = true
-                    )
-                    if (seriesNames.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.padding(top = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(seriesNames, key = { it.lowercase() }) { series ->
-                                SuggestionChip(
-                                    onClick = { selectedSeriesName = series },
-                                    label = { Text(series, maxLines = 1) },
-                                    icon = {
-                                        Icon(
-                                            Icons.Default.Bookmarks,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = seriesOrderText,
-                        onValueChange = { value ->
-                            seriesOrderText = value.filter(Char::isDigit).take(6)
-                        },
-                        label = { Text("Номер книги в серии") },
-                        placeholder = { Text("1, 2, 3…") },
-                        supportingText = { Text("Без номера книга будет показана в конце серии") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = selectedSeriesName.isNotBlank(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateBookOrganization(
-                            book = book,
-                            collection = selectedCollectionName,
-                            seriesName = selectedSeriesName,
-                            seriesOrder = seriesOrderText.toIntOrNull() ?: 0
-                        )
-                        bookToEditOrganization = null
-                    },
-                    enabled = selectedCollectionName.isNotBlank()
-                ) { Text("Сохранить") }
-            },
-            dismissButton = {
-                TextButton(onClick = { bookToEditOrganization = null }) { Text("Отмена") }
-            }
-        )
-    }
-
-    // Create New Collection Dialog
-    if (showCreateCollectionDialog) {
-        AlertDialog(
-            onDismissRequest = { showCreateCollectionDialog = false },
-            title = { Text("Новая полка") },
-            text = {
-                OutlinedTextField(
-                    value = newCollectionName,
-                    onValueChange = { newCollectionName = it },
-                    placeholder = { Text("Название (напр. Фантастика)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+    val actionsBook = actionsBookId?.let { booksById[it] }
+    if (actionsBook != null) {
+        BookActionsSheet(
+            book = actionsBook,
+            collections = collections,
+            seriesNames = seriesNames,
+            initialPage = actionsPage,
+            onDismiss = { actionsBookId = null },
+            onRead = { openBook(actionsBook, null) },
+            onToggleFavorite = { viewModel.toggleFavorite(actionsBook) },
+            onToggleCompleted = { viewModel.toggleCompleted(actionsBook) },
+            onSaveOrganization = { organization ->
+                viewModel.updateBookOrganization(
+                    book = actionsBook,
+                    collection = organization.collection,
+                    seriesName = organization.seriesName,
+                    seriesOrder = organization.seriesOrder
                 )
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (newCollectionName.isNotBlank()) {
-                            viewModel.createShelf(newCollectionName)
-                            newCollectionName = ""
-                            showCreateCollectionDialog = false
-                        }
-                    }
-                ) {
-                    Text("Создать")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateCollectionDialog = false }) {
-                    Text("Отмена")
-                }
-            }
+            onDelete = { viewModel.deleteBook(actionsBook) },
+            onShare = { scope.launch { shareBook(context, actionsBook) } }
         )
     }
 
-    shelfToEdit?.let { shelf ->
-        EditShelfDialog(
-            shelfName = shelf,
-            onRename = { newName ->
-                viewModel.renameShelf(shelf, newName)
-                shelfToEdit = null
-            },
-            onDelete = {
-                viewModel.deleteShelf(shelf)
-                shelfToEdit = null
-            },
-            onDismiss = { shelfToEdit = null }
+    if (showViewSheet) {
+        LibraryViewSheet(
+            sort = sort,
+            format = format,
+            viewMode = viewMode,
+            captions = captions,
+            onSortSelected = viewModel::onSortSelected,
+            onFormatSelected = viewModel::onFormatSelected,
+            onViewModeSelected = viewModel::onViewModeSelected,
+            onCaptionsChanged = viewModel::onShelfCaptionsChanged,
+            onDismiss = { showViewSheet = false }
         )
     }
-}
 
-/** Rename or delete a user shelf; its books move to the main shelf on delete. */
-@Composable
-private fun EditShelfDialog(
-    shelfName: String,
-    onRename: (String) -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember(shelfName) { mutableStateOf(shelfName) }
-    var confirmDelete by remember(shelfName) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-        title = { Text(if (confirmDelete) "Удалить полку?" else "Полка «$shelfName»") },
-        text = {
-            if (confirmDelete) {
-                Text("Книги с этой полки останутся в библиотеке и переместятся на полку «Основная».")
-            } else {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Название полки") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            if (confirmDelete) {
-                TextButton(onClick = onDelete) {
-                    Text("Удалить", color = MaterialTheme.colorScheme.error)
-                }
-            } else {
-                TextButton(
-                    onClick = { onRename(name) },
-                    enabled = name.isNotBlank() && name.trim() != shelfName
-                ) { Text("Переименовать") }
-            }
-        },
-        dismissButton = {
-            Row {
-                if (!confirmDelete) {
-                    TextButton(onClick = { confirmDelete = true }) {
-                        Text("Удалить", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                TextButton(onClick = onDismiss) { Text("Отмена") }
-            }
+    if (showShelfManager) {
+        val entries = remember(collections, allBooks) {
+            collections
+                .filterNot { it.equals(LibraryPreferences.MAIN_SHELF, ignoreCase = true) }
+                .map { name -> ShelfEntry(name, allBooks.count { it.shelfName().equals(name, ignoreCase = true) }) }
         }
-    )
-}
+        ShelfManagerSheet(
+            shelves = entries,
+            onCreate = viewModel::createShelf,
+            onRename = viewModel::renameShelf,
+            onDelete = viewModel::deleteShelf,
+            onDismiss = { showShelfManager = false }
+        )
+    }
 
-@Composable
-private fun LibraryShelfHeader(
-    title: String,
-    bookCount: Int,
-    isSeries: Boolean,
-    expanded: Boolean = true,
-    onToggle: (() -> Unit)? = null
-) {
-    val accent = if (isSeries) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 2.dp)
-            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier),
-        shape = RoundedCornerShape(16.dp),
-        color = accent.copy(alpha = 0.10f),
-        tonalElevation = 2.dp
-    ) {
-        Box {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(5.dp)
-                    .align(Alignment.CenterStart)
-                    .background(accent)
+    detailKey?.let { key ->
+        val section = shelves.firstOrNull { it.key == key }
+        if (section != null) {
+            ShelfDetailSheet(
+                title = section.title,
+                books = section.books,
+                onOpen = { book -> openBook(book, null) },
+                onLongPress = { book -> showActions(book.id) },
+                onDismiss = { detailKey = null }
             )
-            Row(
-                modifier = Modifier.padding(start = 18.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = accent.copy(alpha = 0.16f),
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isSeries) Icons.Default.Bookmarks else Icons.Default.Folder,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(11.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = if (isSeries) "Серия · книги по порядку" else "Полка",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                ) {
-                    Text(
-                        text = "$bookCount ${bookCount.bookWord()}",
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accent
-                    )
-                }
-                if (onToggle != null) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Свернуть" else "Развернуть",
-                        tint = accent
-                    )
-                }
-            }
         }
+    }
+
+    renameShelf?.let { name ->
+        RenameShelfDialog(
+            shelfName = name,
+            onRename = { target ->
+                viewModel.renameShelf(name, target)
+                renameShelf = null
+            },
+            onDismiss = { renameShelf = null }
+        )
+    }
+    deleteShelf?.let { name ->
+        DeleteShelfDialog(
+            shelfName = name,
+            onDelete = {
+                viewModel.deleteShelf(name)
+                deleteShelf = null
+            },
+            onDismiss = { deleteShelf = null }
+        )
     }
 }
 
-private fun Int.bookWord(): String {
-    val mod100 = this % 100
-    val mod10 = this % 10
-    return when {
-        mod100 in 11..14 -> "книг"
-        mod10 == 1 -> "книга"
-        mod10 in 2..4 -> "книги"
-        else -> "книг"
+/** Callbacks of the shelf sections, kept together so the LazyColumn builder stays small. */
+private class ShelfCallbacks(
+    val onOpen: (bookId: Long, slotKey: String?) -> Unit,
+    val onActions: (bookId: Long, page: BookSheetPage) -> Unit,
+    val onShowAll: (sectionKey: String) -> Unit,
+    val onRename: (shelf: String) -> Unit,
+    val onDelete: (shelf: String) -> Unit
+)
+
+/** The «Полки» view: a header and a row (or grid rows / list rows) per [ShelfSection]. */
+private fun LazyListScope.shelfSections(
+    shelves: List<ShelfSection>,
+    viewMode: LibraryViewMode,
+    bookSize: ShelfBookSize,
+    caseSize: ShelfBookSize,
+    caseColumns: Int,
+    captions: Boolean,
+    finishedExpanded: Boolean,
+    onToggleFinished: () -> Unit,
+    callbacks: ShelfCallbacks
+) {
+    shelves.forEach { section ->
+        val style = when (section.kind) {
+            ShelfKind.SERIES -> ShelfHeaderStyle.SERIES
+            ShelfKind.CUSTOM -> ShelfHeaderStyle.CUSTOM
+            ShelfKind.FINISHED -> ShelfHeaderStyle.COLLAPSIBLE
+            else -> ShelfHeaderStyle.PLAIN
+        }
+        item(key = "header:${section.key}", contentType = "shelf-header") {
+            ShelfHeader(
+                title = section.title,
+                count = section.books.size,
+                style = style,
+                readCount = section.readCount,
+                totalCount = section.totalCount,
+                expanded = finishedExpanded,
+                onShowAll = if (section.books.isNotEmpty() && section.kind != ShelfKind.FINISHED) {
+                    { callbacks.onShowAll(section.key) }
+                } else {
+                    null
+                },
+                onToggle = onToggleFinished,
+                onRename = if (section.kind == ShelfKind.CUSTOM) {
+                    { callbacks.onRename(section.title) }
+                } else {
+                    null
+                },
+                onDelete = if (section.kind == ShelfKind.CUSTOM) {
+                    { callbacks.onDelete(section.title) }
+                } else {
+                    null
+                },
+                modifier = Modifier.animateItem()
+            )
+        }
+        if (section.kind == ShelfKind.FINISHED && !finishedExpanded) return@forEach
+        if (section.books.isEmpty()) {
+            item(key = "ghost:${section.key}", contentType = "ghost") {
+                Column(modifier = Modifier.animateItem()) {
+                    GhostBooksRow(size = bookSize, seed = section.key)
+                    Text(
+                        text = "Пусто — добавьте книги через карточку книги",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
+                    )
+                }
+            }
+            return@forEach
+        }
+        when (viewMode) {
+            LibraryViewMode.SHELVES -> item(key = "row:${section.key}", contentType = "shelf-row") {
+                val shelfBooks = remember(section.books) { section.books.map { it.toShelfBookUi() } }
+                ShelfRow(
+                    sectionKey = section.key,
+                    books = shelfBooks,
+                    size = bookSize,
+                    captions = captions,
+                    plateText = section.plateText(),
+                    showNewDot = section.kind == ShelfKind.NEW,
+                    dimFinished = section.kind == ShelfKind.SERIES,
+                    onOpen = { book, slot -> callbacks.onOpen(book.id, slot) },
+                    onLongPress = { book -> callbacks.onActions(book.id, BookSheetPage.MAIN) },
+                    onShowAll = { callbacks.onShowAll(section.key) },
+                    modifier = Modifier.animateItem()
+                )
+            }
+            LibraryViewMode.BOOKCASE -> section.books.chunked(caseColumns).forEachIndexed { index, row ->
+                item(key = "case:${section.key}:$index", contentType = "case") {
+                    val shelfBooks = remember(row) { row.map { it.toShelfBookUi() } }
+                    BookcaseRow(
+                        rowSeed = "${section.key}:$index",
+                        books = shelfBooks,
+                        size = caseSize,
+                        slotPrefix = "grid:${section.key}",
+                        showNewDot = section.kind == ShelfKind.NEW,
+                        onOpen = { book, slot -> callbacks.onOpen(book.id, slot) },
+                        onLongPress = { book -> callbacks.onActions(book.id, BookSheetPage.MAIN) },
+                        modifier = Modifier.animateItem()
+                    )
+                }
+            }
+            LibraryViewMode.LIST -> items(
+                items = section.books,
+                key = { "list:${section.key}:${it.id}" },
+                contentType = { "list" }
+            ) { book ->
+                val slot = "list:${section.key}:${book.id}"
+                BookListRow(
+                    book = book,
+                    slotKey = slot,
+                    onOpen = { callbacks.onOpen(book.id, slot) },
+                    onMore = { callbacks.onActions(book.id, BookSheetPage.MAIN) },
+                    onMoveToShelf = { callbacks.onActions(book.id, BookSheetPage.MOVE_TO_SHELF) },
+                    onDelete = { callbacks.onActions(book.id, BookSheetPage.CONFIRM_DELETE) },
+                    modifier = Modifier.animateItem()
+                )
+            }
+        }
     }
 }

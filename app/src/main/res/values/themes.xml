@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.LuminaReader" parent="android:Theme.Material.NoActionBar">
+    <!--
+        The window background is the library "wall" colour, so the first frame
+        (before Compose draws) matches the app instead of flashing white.
+        values-night/themes.xml holds the evening variant.
+    -->
+    <style name="Theme.LuminaReader" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/lumina_wall</item>
+        <item name="android:colorBackground">@color/lumina_wall</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>

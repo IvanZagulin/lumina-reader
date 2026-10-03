@@ -41,6 +41,7 @@ import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
 import com.lumina.reader.ui.theme.LuminaReaderTheme
 import com.lumina.reader.ui.update.AppUpdateDialog
+import com.lumina.reader.ui.update.AppUpdateDialogState
 import com.lumina.reader.ui.update.AppUpdateEvent
 import com.lumina.reader.ui.update.AppUpdateViewModel
 import kotlinx.coroutines.launch
@@ -115,7 +116,8 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             onCheckForUpdates = { updateViewModel.checkForUpdates() },
                             isCheckingForUpdates = updateUiState.isChecking,
-                            snackbarHostState = snackbarHostState
+                            snackbarHostState = snackbarHostState,
+                            updateAvailable = updateUiState.dialog is AppUpdateDialogState.Available
                         )
                         AppUpdateDialog(
                             state = updateUiState.dialog,
