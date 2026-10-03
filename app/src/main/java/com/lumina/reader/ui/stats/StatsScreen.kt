@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.lumina.reader.core.text.formatGrouped
 import com.lumina.reader.ui.theme.LuminaDimens
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -43,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import java.io.File
-import java.text.NumberFormat
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -1018,7 +1018,7 @@ private fun ClockActivityCard(
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        peak?.let { "%02d:00".format(it.hour) } ?: "—",
+                        peak?.let { "${it.hour.toString().padStart(2, '0')}:00" } ?: "—",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -2018,8 +2018,7 @@ private fun formatDurationShort(seconds: Long): String {
     return if (hours > 0) "${hours}ч ${minutes}м" else "${minutes.coerceAtLeast(1)}м"
 }
 
-private fun formatNumber(value: Long): String =
-    NumberFormat.getIntegerInstance(RussianLocale).format(value)
+private fun formatNumber(value: Long): String = formatGrouped(value)
 
 private fun formatDate(date: LocalDate): String =
     date.format(DateTimeFormatter.ofPattern("d MMMM yyyy", RussianLocale))

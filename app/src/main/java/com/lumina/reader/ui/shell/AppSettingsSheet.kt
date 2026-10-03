@@ -54,11 +54,10 @@ import com.lumina.reader.ui.transition.OpenAnimation
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /** «20:00» */
 internal fun formatReminderTime(hour: Int, minute: Int): String =
-    String.format(Locale.ROOT, "%02d:%02d", hour.coerceIn(0, 23), minute.coerceIn(0, 59))
+    "${hour.coerceIn(0, 23).toString().padStart(2, '0')}:${minute.coerceIn(0, 59).toString().padStart(2, '0')}"
 
 /**
  * App settings (spec §3, §4.1 `AppSettingsSheet`): the book-open animation,

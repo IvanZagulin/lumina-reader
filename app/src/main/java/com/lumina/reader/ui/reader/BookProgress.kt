@@ -2,6 +2,7 @@ package com.lumina.reader.ui.reader
 
 import com.lumina.reader.core.model.Chapter
 import com.lumina.reader.core.model.ParagraphMarkup
+import com.lumina.reader.core.text.formatDecimal
 
 /**
  * Pages of every chapter measured with the reader's current typography.
@@ -207,4 +208,4 @@ internal fun locateBookFraction(
 }
 
 internal fun formatBookPercent(percent: Float): String =
-    String.format(java.util.Locale.US, "%.1f%%", percent)
+    formatDecimal(percent.toDouble(), 1) + "%"

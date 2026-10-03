@@ -43,13 +43,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumina.reader.core.text.formatDecimal
 import com.lumina.reader.core.tts.TtsPlaybackState
 import com.lumina.reader.core.tts.TtsStatus
 import com.lumina.reader.ui.reader.chrome.ReaderChromeCapsule
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -68,7 +68,7 @@ internal fun nextTtsSpeed(current: Float): Float {
 
 /** «1,25×». */
 internal fun formatSpeed(speed: Float): String {
-    val text = String.format(Locale.US, "%.2f", speed).trimEnd('0').trimEnd('.')
+    val text = formatDecimal(speed.toDouble(), 2).trimEnd('0').trimEnd('.')
     return text.replace('.', ',') + "×"
 }
 

@@ -24,9 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumina.reader.core.text.formatDecimal
 import com.lumina.reader.ui.reader.BookPosition
 import com.lumina.reader.ui.reader.formatTimeLeft
-import java.util.Locale
 
 /** «214 / 530», or «≈ 214 / 530» while the book is still being paginated. */
 internal fun formatPageLabel(position: BookPosition): String {
@@ -36,7 +36,7 @@ internal fun formatPageLabel(position: BookPosition): String {
 
 /** «42,3 %». */
 internal fun formatPercentLabel(percent: Float): String =
-    String.format(Locale.US, "%.1f", percent.coerceIn(0f, 100f)).replace('.', ',') + " %"
+    formatDecimal(percent.coerceIn(0f, 100f).toDouble(), 1, decimalSeparator = ',') + " %"
 
 /** «≈ 12 мин до конца главы»; null when unknown. */
 internal fun timeLeftLabel(minutesLeft: Int?): String? =

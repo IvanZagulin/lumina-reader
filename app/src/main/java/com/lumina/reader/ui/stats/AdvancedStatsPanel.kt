@@ -26,7 +26,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.BookFormat
-import java.text.NumberFormat
+import com.lumina.reader.core.text.formatDecimal
+import com.lumina.reader.core.text.formatGrouped
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -242,7 +243,7 @@ private fun RegularityCard(score: RegularityScore) {
             Column(Modifier.weight(1f)) {
                 Text(score.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "≈ ${String.format(RuLocale, "%.1f", score.activeDaysPerWeek)} дня чтения в неделю",
+                    "≈ ${formatDecimal(score.activeDaysPerWeek, 1, ',')} дня чтения в неделю",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
@@ -441,7 +442,7 @@ private fun CompletionCard(data: CompletionAnalytics) {
             listOf(
                 "С историей" to data.completedWithHistory.toString(),
                 "Среднее чтение" to formatDuration(data.averageReadingSeconds),
-                "Календарно" to if (data.averageCalendarDays > 0) "${String.format(RuLocale, "%.1f", data.averageCalendarDays)} дн." else "—"
+                "Календарно" to if (data.averageCalendarDays > 0) "${formatDecimal(data.averageCalendarDays, 1, ',')} дн." else "—"
             )
         )
         Spacer(Modifier.height(12.dp))
@@ -492,7 +493,7 @@ private fun BacklogCard(data: BacklogStats) {
             color = AdvIndigo
         )
         Text(
-            "Темп завершения: ${String.format(RuLocale, "%.1f", data.completedPerMonth)} книг/мес.",
+            "Темп завершения: ${formatDecimal(data.completedPerMonth, 1, ',')} книг/мес.",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -654,7 +655,7 @@ private fun monthWithValue(month: YearMonth?, value: String): String = month?.le
 private fun formatMonth(month: YearMonth): String = month.atDay(1).format(DateTimeFormatter.ofPattern("LLL yy", RuLocale)).replace(".", "")
 private fun formatMonthLong(month: YearMonth): String = month.atDay(1).format(DateTimeFormatter.ofPattern("LLLL yyyy", RuLocale)).replaceFirstChar { it.uppercase() }
 private fun formatDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMM", RuLocale))
-private fun formatNumber(value: Long): String = NumberFormat.getIntegerInstance(RuLocale).format(value)
+private fun formatNumber(value: Long): String = formatGrouped(value)
 private fun formatDuration(seconds: Long): String {
     if (seconds <= 0) return "0 мин"
     val h = seconds / 3600
