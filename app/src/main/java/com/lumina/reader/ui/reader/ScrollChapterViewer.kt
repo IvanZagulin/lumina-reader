@@ -299,7 +299,12 @@ private fun ScrollParagraph(
             cache = imageCache,
             modifier = Modifier.padding(vertical = 8.dp)
         )
-        raw.isBlank() -> Spacer(modifier = Modifier.height(paragraphSpacing))
+        raw.isBlank() -> {
+            // A stanza break or blank line: the same gap as in the paged reader.
+            val density = LocalDensity.current
+            val gap = with(density) { blankParagraphGapPx(typography, density).toDp() }
+            Spacer(modifier = Modifier.height(gap))
+        }
         else -> {
             val density = LocalDensity.current
             val highlights = decorations.highlightsFor(paragraphIndex)

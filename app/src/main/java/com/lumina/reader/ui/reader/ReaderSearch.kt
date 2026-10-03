@@ -113,8 +113,10 @@ internal fun searchChapters(
     val needle = normalizeForSearch(query.trim())
     if (needle.length < MIN_SEARCH_QUERY_LENGTH) return SearchOutcome(emptyList(), truncated = false)
     val results = ArrayList<SearchResult>()
-    for (chapter in chapters) {
-        val title = displayChapterTitle(chapter.title, chapter.index)
+    // The chapter index is the position in the list, as everywhere in the
+    // reader; Chapter.index is whatever the parser numbered.
+    chapters.forEachIndexed { chapterIndex, chapter ->
+        val title = displayChapterTitle(chapter.title, chapterIndex)
         chapter.paragraphs.forEachIndexed { paragraphIndex, raw ->
             checkCancelled()
             val text = paragraphPlainText(raw)
@@ -127,7 +129,7 @@ internal fun searchChapters(
                 if (results.size >= maxResults) return SearchOutcome(results, truncated = true)
                 val snippet = buildSnippet(text, index, index + needle.length)
                 results += SearchResult(
-                    chapterIndex = chapter.index,
+                    chapterIndex = chapterIndex,
                     chapterTitle = title,
                     paragraphIndex = paragraphIndex,
                     matchStart = index,

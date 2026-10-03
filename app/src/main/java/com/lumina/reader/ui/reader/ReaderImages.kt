@@ -116,9 +116,10 @@ internal fun BookImageFill(
     BoxWithConstraints(modifier = modifier) {
         val targetWidth = constraints.maxWidth.coerceIn(1, MAX_IMAGE_DECODE_WIDTH)
         val bitmap by produceState(cache.peek(imageId, targetWidth), imageId, bytes, targetWidth) {
-            if (value == null && bytes != null) {
-                value = withContext(Dispatchers.IO) { cache.load(imageId, bytes, targetWidth) }
-            }
+            // produceState keeps its value when the keys change, so always
+            // resolve the bitmap for the current keys.
+            value = cache.peek(imageId, targetWidth)
+                ?: bytes?.let { data -> withContext(Dispatchers.IO) { cache.load(imageId, data, targetWidth) } }
         }
         val image = bitmap
         if (image != null) {
@@ -153,9 +154,8 @@ internal fun BookImageInline(
     val size = remember(imageId, bytes) { cache.imageSize(imageId, bytes) } ?: return
     val ratio = (size.first.toFloat() / size.second.toFloat()).coerceIn(0.2f, 5f)
     val bitmap by produceState(cache.peek(imageId, targetWidth), imageId, bytes, targetWidth) {
-        if (value == null) {
-            value = withContext(Dispatchers.IO) { cache.load(imageId, bytes, targetWidth) }
-        }
+        value = cache.peek(imageId, targetWidth)
+            ?: withContext(Dispatchers.IO) { cache.load(imageId, bytes, targetWidth) }
     }
     Box(
         modifier = modifier

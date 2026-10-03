@@ -375,17 +375,15 @@ fun ReaderSettingsSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            // Title above the chips so they fit on narrow screens.
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "Отступ абзаца",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0f to "Нет", 1f to "1", 1.5f to "1.5", 2f to "2").forEach { (indent, label) ->
                         FilterChip(
@@ -399,17 +397,15 @@ fun ReaderSettingsSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            // Title above the chips so they fit on narrow screens.
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "Между абзацами",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0 to "Нет", 6 to "Мало", 12 to "Много").forEach { (spacing, label) ->
                         FilterChip(

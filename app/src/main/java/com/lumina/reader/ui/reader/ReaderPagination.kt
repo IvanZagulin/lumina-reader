@@ -47,6 +47,15 @@ internal sealed interface MeasuredParagraph {
         override val paragraphIndex: Int,
         val imageId: String
     ) : MeasuredParagraph
+
+    /**
+     * An empty paragraph: parsers use it for a stanza break or a blank line.
+     * It becomes vertical space between blocks, never at the top of a page.
+     */
+    data class Gap(
+        override val paragraphIndex: Int,
+        val heightPx: Int
+    ) : MeasuredParagraph
 }
 
 /** Something drawn on a page. */
@@ -78,6 +87,14 @@ internal sealed interface PageBlock {
     ) : PageBlock {
         override val startOffset: Int get() = 0
     }
+
+    /** Blank space for an empty paragraph; never the first block of a page. */
+    data class Gap(
+        override val paragraphIndex: Int,
+        val heightPx: Int
+    ) : PageBlock {
+        override val startOffset: Int get() = 0
+    }
 }
 
 /** One page of a chapter. The first page of a chapter shows its title. */
@@ -105,7 +122,9 @@ internal const val IMAGE_SHARES_PAGE_BELOW = 0.55f
  *   the next page (orphan), and a lone last line is not left for the next
  *   page when at least three lines fit (widow);
  * - an illustration shares a page with text only while that text fills at
- *   most [IMAGE_SHARES_PAGE_BELOW] of it; it then fills the rest of the page.
+ *   most [IMAGE_SHARES_PAGE_BELOW] of it; it then fills the rest of the page;
+ * - a gap (empty paragraph) is dropped at the top of a page and when it does
+ *   not fit, so a page never starts with blank space.
  *
  * [titleHeightPx] is reserved at the top of the first page (0 for no title).
  */
@@ -139,6 +158,17 @@ internal fun paginateParagraphs(
                 if (blocks.isNotEmpty() && used > pageHeight * IMAGE_SHARES_PAGE_BELOW) flush()
                 blocks += image
                 flush()
+            }
+
+            is MeasuredParagraph.Gap -> {
+                if (blocks.isNotEmpty() && paragraph.heightPx > 0) {
+                    if (used + paragraph.heightPx <= pageHeight) {
+                        blocks += PageBlock.Gap(paragraph.paragraphIndex, paragraph.heightPx)
+                        used += paragraph.heightPx
+                    } else {
+                        flush()
+                    }
+                }
             }
 
             is MeasuredParagraph.Text -> {

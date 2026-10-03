@@ -79,6 +79,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReaderSettings
+import com.lumina.reader.core.model.TocItem
 import com.lumina.reader.core.model.effectiveTheme
 import com.lumina.reader.core.tts.TtsState
 
@@ -491,8 +492,23 @@ private fun ReaderScreenContent(
     }
 
     if (showTocSheet) {
+        // Books without a table of contents still list their chapters.
+        val tocList = remember(parsedBook) {
+            val currentBook = parsedBook
+            when {
+                currentBook == null -> emptyList()
+                currentBook.tableOfContents.isNotEmpty() -> currentBook.tableOfContents
+                else -> currentBook.chapters.mapIndexed { index, chapter ->
+                    TocItem(
+                        id = "chapter_$index",
+                        title = displayChapterTitle(chapter.title, index),
+                        chapterIndex = index
+                    )
+                }
+            }
+        }
         TableOfContentsSheet(
-            tocList = parsedBook?.tableOfContents ?: emptyList(),
+            tocList = tocList,
             bookmarks = bookmarks,
             highlights = highlights,
             currentChapterIndex = currentChapterIndex,

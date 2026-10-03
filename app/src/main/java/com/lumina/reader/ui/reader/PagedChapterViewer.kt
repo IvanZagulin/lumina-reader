@@ -615,6 +615,9 @@ private fun PageBody(
                             )
                         }
                     }
+                    is PageBlock.Gap -> Spacer(
+                        modifier = Modifier.height(with(density) { block.heightPx.toDp() })
+                    )
                     is PageBlock.Image -> BookImageFill(
                         imageId = block.imageId,
                         bytes = parsedBook.images[block.imageId],

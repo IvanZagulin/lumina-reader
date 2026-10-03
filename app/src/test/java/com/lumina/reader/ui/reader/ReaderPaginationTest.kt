@@ -196,4 +196,27 @@ class ReaderPaginationTest {
         assertEquals(0, fittingLines(paragraph, 0, 20))
         assertEquals(21, paragraph.heightPx(1, 2))
     }
+
+    @Test
+    fun gapSeparatesBlocksButNeverOpensAPage() {
+        val pages = paginateParagraphs(
+            listOf(
+                MeasuredParagraph.Gap(0, 10),
+                text(1, 2),
+                MeasuredParagraph.Gap(2, 10),
+                text(3, 2),
+                MeasuredParagraph.Gap(4, 30),
+                text(5, 2)
+            ),
+            contentHeightPx = 100,
+            titleHeightPx = 0,
+            paragraphSpacingPx = 0
+        )
+        // 40 + 10 + 40 = 90 px; the 30 px gap does not fit and is dropped.
+        assertEquals(listOf(1, 2, 3), pages[0].blocks.map { it.paragraphIndex })
+        assertTrue(pages[0].blocks[1] is PageBlock.Gap)
+        assertEquals(listOf(5), pages[1].blocks.map { it.paragraphIndex })
+        assertTrue(pages.none { it.blocks.firstOrNull() is PageBlock.Gap })
+        assertEquals(TextAnchor(5, 0), pages[1].start)
+    }
 }

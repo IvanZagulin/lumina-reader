@@ -51,6 +51,14 @@ internal fun blockMarginsPx(
     )
 }
 
+/**
+ * Height of the blank space an empty paragraph (stanza break, blank line)
+ * stands for: about half a line. Both viewers use it.
+ */
+internal fun blankParagraphGapPx(typography: ReaderTypography, density: Density): Int = with(density) {
+    (typography.fontSizeSp * typography.lineSpacing.coerceAtLeast(1f) * 0.5f).sp.toPx().roundToInt()
+}
+
 internal fun TextLayoutResult.toParagraphLines(): ParagraphLines {
     val count = lineCount
     return ParagraphLines(
@@ -92,6 +100,7 @@ internal class ChapterPaginator(
             constraints = Constraints(maxWidth = spec.contentWidthPx.coerceAtLeast(1))
         ).size.height + spec.titleSpacingPx
 
+        val gapPx = blankParagraphGapPx(typography, density)
         val measured = ArrayList<MeasuredParagraph>(chapter.paragraphs.size)
         chapter.paragraphs.forEachIndexed { index, raw ->
             checkCancelled()
@@ -99,7 +108,10 @@ internal class ChapterPaginator(
                 ParagraphMarkup.imageId(raw)?.let { measured += MeasuredParagraph.Image(index, it) }
                 return@forEachIndexed
             }
-            if (raw.isBlank()) return@forEachIndexed
+            if (raw.isBlank()) {
+                measured += MeasuredParagraph.Gap(index, gapPx)
+                return@forEachIndexed
+            }
             val rendered = renderParagraph(raw, typography, MEASURE_COLORS)
             if (rendered.text.text.isBlank()) return@forEachIndexed
             val margins = blockMarginsPx(rendered, typography, density)

@@ -119,4 +119,13 @@ class ReaderSearchTest {
         assertEquals("Глава 1", displayChapterTitle(" ", 0))
         assertEquals("Пролог", displayChapterTitle("Пролог", 0))
     }
+
+    @Test
+    fun resultsUseThePositionOfTheChapterInTheBook() {
+        // Parsers may number chapters differently from their list position.
+        val chapters = listOf(chapter(5, "ничего"), chapter(9, "искомое слово"))
+        val result = searchChapters(chapters, "искомое").results.single()
+        assertEquals(1, result.chapterIndex)
+        assertEquals("Глава 10", result.chapterTitle)
+    }
 }

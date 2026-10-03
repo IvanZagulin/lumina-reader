@@ -585,12 +585,12 @@ class ReaderViewModel(
         val manager = ensureTtsManager()
         when (manager.state.value) {
             TtsState.IDLE -> {
+                // Plain text with illustrations as "", so list indices are the
+                // chapter's paragraph indices. The speech package's TtsManager
+                // starts at the ORIGINAL paragraph index and skips blank entries.
                 val spoken = chapter.paragraphs.map(::paragraphPlainText)
-                // The manager skips blank paragraphs, so count only spoken ones.
-                val startIndex = spoken
-                    .take(position.paragraphIndex.coerceIn(0, spoken.size))
-                    .count { it.isNotBlank() }
-                manager.play(spoken, startIndex)
+                if (spoken.none { it.isNotBlank() }) return
+                manager.play(spoken, position.paragraphIndex.coerceIn(0, spoken.lastIndex))
             }
             TtsState.PLAYING -> manager.pause()
             TtsState.PAUSED -> manager.resume()

@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -234,107 +235,136 @@ internal fun PdfPageViewer(
     val latestToggle by rememberUpdatedState(onToggleControls)
     val latestNext by rememberUpdatedState(onNextPage)
     val latestPrevious by rememberUpdatedState(onPreviousPage)
-    val invertColors = settings.theme.isDark
-    val tapZonesInverted = settings.tapZonesInverted
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(settings.theme.bgComposeColor)
     ) {
+        // produceState and the zoom state belong to one page: a new page starts
+        // from its cached bitmap (or a spinner) and an unzoomed view.
         val viewportWidthPx = constraints.maxWidth.coerceAtLeast(1)
-        val cachedBitmap = document?.cached(pageIndex, viewportWidthPx)
-        val initialState: PdfPageState =
-            if (cachedBitmap != null) PdfPageState.Ready(cachedBitmap) else PdfPageState.Loading
-        val state by produceState(initialState, document, pageIndex, viewportWidthPx) {
-            val pdf = document
-            if (pdf == null) {
-                value = PdfPageState.Failed
-                return@produceState
-            }
-            if (value !is PdfPageState.Ready) {
-                val bitmap = withContext(Dispatchers.IO) { pdf.render(pageIndex, viewportWidthPx) }
-                value = if (bitmap != null) PdfPageState.Ready(bitmap) else PdfPageState.Failed
-            }
-            // Prefetch the neighbours so the next page turn is instant.
-            withContext(Dispatchers.IO) {
-                pdf.render(pageIndex + 1, viewportWidthPx)
-                pdf.render(pageIndex - 1, viewportWidthPx)
-            }
+        key(pageIndex, viewportWidthPx) {
+            PdfPageContent(
+                document = document,
+                pageIndex = pageIndex,
+                viewportWidthPx = viewportWidthPx,
+                settings = settings,
+                onToggleControls = { latestToggle() },
+                onNextPage = { latestNext() },
+                onPreviousPage = { latestPrevious() }
+            )
         }
+    }
+}
 
-        var scale by remember(pageIndex) { mutableFloatStateOf(1f) }
-        var pan by remember(pageIndex) { mutableStateOf(Offset.Zero) }
+@Composable
+private fun PdfPageContent(
+    document: PdfDocumentRenderer?,
+    pageIndex: Int,
+    viewportWidthPx: Int,
+    settings: ReaderSettings,
+    onToggleControls: () -> Unit,
+    onNextPage: () -> Unit,
+    onPreviousPage: () -> Unit
+) {
+    val latestToggle by rememberUpdatedState(onToggleControls)
+    val latestNext by rememberUpdatedState(onNextPage)
+    val latestPrevious by rememberUpdatedState(onPreviousPage)
+    val invertColors = settings.theme.isDark
+    val tapZonesInverted = settings.tapZonesInverted
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 50.dp)
-                .pointerInput(pageIndex) {
-                    detectTransformGestures { _, panChange, zoomChange, _ ->
-                        val newScale = (scale * zoomChange).coerceIn(1f, PDF_MAX_ZOOM)
-                        pan = if (newScale <= 1f) {
-                            Offset.Zero
-                        } else {
-                            clampPan(pan + panChange, newScale, size)
-                        }
-                        scale = newScale
+    val cachedBitmap = document?.cached(pageIndex, viewportWidthPx)
+    val initialState: PdfPageState =
+        if (cachedBitmap != null) PdfPageState.Ready(cachedBitmap) else PdfPageState.Loading
+    val state by produceState(initialState, document, pageIndex, viewportWidthPx) {
+        val pdf = document
+        if (pdf == null) {
+            value = PdfPageState.Failed
+            return@produceState
+        }
+        if (value !is PdfPageState.Ready) {
+            val bitmap = withContext(Dispatchers.IO) { pdf.render(pageIndex, viewportWidthPx) }
+            value = if (bitmap != null) PdfPageState.Ready(bitmap) else PdfPageState.Failed
+        }
+        // Prefetch the neighbours so the next page turn is instant.
+        withContext(Dispatchers.IO) {
+            pdf.render(pageIndex + 1, viewportWidthPx)
+            pdf.render(pageIndex - 1, viewportWidthPx)
+        }
+    }
+
+    var scale by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 8.dp, vertical = 50.dp)
+            .pointerInput(pageIndex) {
+                detectTransformGestures { _, panChange, zoomChange, _ ->
+                    val newScale = (scale * zoomChange).coerceIn(1f, PDF_MAX_ZOOM)
+                    pan = if (newScale <= 1f) {
+                        Offset.Zero
+                    } else {
+                        clampPan(pan + panChange, newScale, size)
                     }
+                    scale = newScale
                 }
-                .pointerInput(pageIndex, tapZonesInverted) {
-                    detectTapGestures(
-                        onDoubleTap = { tap ->
-                            if (scale > 1.01f) {
-                                scale = 1f
-                                pan = Offset.Zero
-                            } else {
-                                val center = Offset(size.width / 2f, size.height / 2f)
-                                val target = (tap - center) * (1f - PDF_DOUBLE_TAP_ZOOM)
-                                scale = PDF_DOUBLE_TAP_ZOOM
-                                pan = clampPan(target, PDF_DOUBLE_TAP_ZOOM, size)
-                            }
-                        },
-                        onTap = { tap ->
-                            if (scale > 1.01f) {
-                                latestToggle()
-                            } else {
-                                val backZone = tap.x < size.width * 0.30f
-                                val forwardZone = tap.x > size.width * 0.70f
-                                when {
-                                    backZone -> if (tapZonesInverted) latestNext() else latestPrevious()
-                                    forwardZone -> if (tapZonesInverted) latestPrevious() else latestNext()
-                                    else -> latestToggle()
-                                }
+            }
+            .pointerInput(pageIndex, tapZonesInverted) {
+                detectTapGestures(
+                    onDoubleTap = { tap ->
+                        if (scale > 1.01f) {
+                            scale = 1f
+                            pan = Offset.Zero
+                        } else {
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val target = (tap - center) * (1f - PDF_DOUBLE_TAP_ZOOM)
+                            scale = PDF_DOUBLE_TAP_ZOOM
+                            pan = clampPan(target, PDF_DOUBLE_TAP_ZOOM, size)
+                        }
+                    },
+                    onTap = { tap ->
+                        if (scale > 1.01f) {
+                            latestToggle()
+                        } else {
+                            val backZone = tap.x < size.width * 0.30f
+                            val forwardZone = tap.x > size.width * 0.70f
+                            when {
+                                backZone -> if (tapZonesInverted) latestNext() else latestPrevious()
+                                forwardZone -> if (tapZonesInverted) latestPrevious() else latestNext()
+                                else -> latestToggle()
                             }
                         }
-                    )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            when (val current = state) {
-                PdfPageState.Loading -> CircularProgressIndicator(color = settings.theme.textComposeColor)
-                PdfPageState.Failed -> Text(
-                    text = "Не удалось отобразить страницу PDF",
-                    color = settings.theme.textComposeColor
+                    }
                 )
-                is PdfPageState.Ready -> {
-                    val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
-                    Image(
-                        bitmap = image,
-                        contentDescription = "Страница PDF ${pageIndex + 1}",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = pan.x
-                                translationY = pan.y
-                            }
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Fit,
-                        colorFilter = if (invertColors) InvertColorsFilter else null
-                    )
-                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        when (val current = state) {
+            PdfPageState.Loading -> CircularProgressIndicator(color = settings.theme.textComposeColor)
+            PdfPageState.Failed -> Text(
+                text = "Не удалось отобразить страницу PDF",
+                color = settings.theme.textComposeColor
+            )
+            is PdfPageState.Ready -> {
+                val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
+                Image(
+                    bitmap = image,
+                    contentDescription = "Страница PDF ${pageIndex + 1}",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = pan.x
+                            translationY = pan.y
+                        }
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Fit,
+                    colorFilter = if (invertColors) InvertColorsFilter else null
+                )
             }
         }
     }
