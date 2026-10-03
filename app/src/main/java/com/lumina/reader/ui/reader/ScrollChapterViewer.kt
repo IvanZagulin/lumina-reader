@@ -301,18 +301,20 @@ private fun ScrollChapterList(
                             onDisposed = { paragraph -> layouts.remove(paragraph) }
                         )
                     }
-                    item(key = "chapter_divider") {
-                        ChapterDivider(color = settings.theme.secondaryTextComposeColor)
-                    }
+                    // The «❦» divider belongs to the end item: ScrollItems
+                    // counts exactly one item after the paragraphs.
                     item(key = "chapter_end") {
-                        ChapterEndItem(
-                            hasNext = scrollItems.hasNext,
-                            nextTitle = parsedBook.chapters.getOrNull(chapterIndex + 1)
-                                ?.let { displayChapterTitle(it.title, chapterIndex + 1) }
-                                .orEmpty(),
-                            settings = settings,
-                            onNextChapter = callbacks.onNextChapter
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ChapterDivider(color = settings.theme.secondaryTextComposeColor)
+                            ChapterEndItem(
+                                hasNext = scrollItems.hasNext,
+                                nextTitle = parsedBook.chapters.getOrNull(chapterIndex + 1)
+                                    ?.let { displayChapterTitle(it.title, chapterIndex + 1) }
+                                    .orEmpty(),
+                                settings = settings,
+                                onNextChapter = callbacks.onNextChapter
+                            )
+                        }
                     }
                 }
             }

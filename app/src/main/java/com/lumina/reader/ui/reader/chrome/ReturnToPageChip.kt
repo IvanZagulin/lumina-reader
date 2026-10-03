@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +32,8 @@ internal fun ReturnToPageChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ReaderInverseCapsule(colors = colors, modifier = modifier) {
+    // A 36dp pill (§4.2) inside a 48dp touch target (§11).
+    ReaderInverseCapsule(colors = colors, modifier = modifier.minimumInteractiveComponentSize()) {
         Row(
             modifier = Modifier
                 .clip(LuminaShape.Pill)

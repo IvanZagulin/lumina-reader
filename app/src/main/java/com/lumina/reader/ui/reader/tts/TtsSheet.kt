@@ -140,7 +140,7 @@ internal fun TtsSheet(
             LabeledSlider(
                 title = "Скорость",
                 value = state.speechRate,
-                valueLabel = formatSpeed(state.speechRate),
+                valueLabel = ::formatSpeed,
                 range = 0.5f..3f,
                 step = 0.25f,
                 colors = colors,
@@ -149,7 +149,7 @@ internal fun TtsSheet(
             LabeledSlider(
                 title = "Тон голоса",
                 value = state.pitch,
-                valueLabel = formatSpeed(state.pitch).removeSuffix("×"),
+                valueLabel = { formatSpeed(it).removeSuffix("×") },
                 range = 0.5f..2f,
                 step = 0.1f,
                 colors = colors,
@@ -234,7 +234,7 @@ internal fun TtsSheet(
 private fun LabeledSlider(
     title: String,
     value: Float,
-    valueLabel: String,
+    valueLabel: (Float) -> String,
     range: ClosedFloatingPointRange<Float>,
     step: Float,
     colors: ReaderChromeColors,
@@ -242,6 +242,8 @@ private fun LabeledSlider(
 ) {
     // The slider keeps its own value while dragging; the engine gets the final value.
     var local by remember(value) { mutableFloatStateOf(value.coerceIn(range)) }
+    // The label follows the thumb while dragging.
+    val label = valueLabel(local)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -255,7 +257,7 @@ private fun LabeledSlider(
             color = colors.muted,
             modifier = Modifier.weight(1f)
         )
-        Text(text = valueLabel, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.content)
+        Text(text = label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.content)
     }
     val steps = (((range.endInclusive - range.start) / step).roundToInt() - 1).coerceAtLeast(0)
     Slider(
@@ -271,6 +273,6 @@ private fun LabeledSlider(
             activeTickColor = colors.onAccent.copy(alpha = 0.5f),
             inactiveTickColor = colors.content.copy(alpha = 0.24f)
         ),
-        modifier = Modifier.semantics { stateDescription = "$title $valueLabel" }
+        modifier = Modifier.semantics { stateDescription = "$title $label" }
     )
 }

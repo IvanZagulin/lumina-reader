@@ -22,6 +22,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -276,6 +277,7 @@ private fun PillTabs(
             val isSelected = index == selected
             Box(
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .heightIn(min = 40.dp)
                     .clip(LuminaShape.Pill)
                     .background(if (isSelected) colors.content else colors.content.copy(alpha = 0.06f))

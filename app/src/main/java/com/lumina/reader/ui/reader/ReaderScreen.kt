@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.view.WindowManager
@@ -90,6 +89,7 @@ import com.lumina.reader.ui.reader.search.InBookSearchPanel
 import com.lumina.reader.ui.reader.search.SearchNavigatorCapsule
 import com.lumina.reader.ui.reader.selection.AskAiSheet
 import com.lumina.reader.ui.reader.selection.NoteEditorSheet
+import com.lumina.reader.ui.reader.settings.findActivity
 import com.lumina.reader.ui.reader.tts.TtsMiniPlayer
 import com.lumina.reader.ui.reader.tts.TtsSheet
 import com.lumina.reader.ui.reader.tts.isSpeaking
@@ -230,7 +230,7 @@ private fun ReaderScreenContent(
 
     // Keep screen on management
     DisposableEffect(settings.keepScreenOn) {
-        val window = (context as? Activity)?.window
+        val window = context.findActivity()?.window
         if (settings.keepScreenOn) {
             window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
@@ -245,7 +245,7 @@ private fun ReaderScreenContent(
     // battery level and system indicators stay available. Only the navigation
     // bar remains immersive while the reader controls are hidden.
     DisposableEffect(showControls, settings.theme) {
-        val window = (context as? Activity)?.window
+        val window = context.findActivity()?.window
         if (window != null) {
             val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -258,7 +258,7 @@ private fun ReaderScreenContent(
             }
         }
         onDispose {
-            val currentWindow = (context as? Activity)?.window
+            val currentWindow = context.findActivity()?.window
             if (currentWindow != null) {
                 WindowCompat.getInsetsController(currentWindow, view)
                     .show(WindowInsetsCompat.Type.systemBars())

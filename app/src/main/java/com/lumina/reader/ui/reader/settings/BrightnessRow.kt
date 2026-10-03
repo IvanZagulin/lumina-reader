@@ -1,6 +1,8 @@
 package com.lumina.reader.ui.reader.settings
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +43,9 @@ internal fun BrightnessRow(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    // Inside a ModalBottomSheet LocalContext is the sheet dialog's themed
+    // wrapper, not the activity whose window brightness has to change.
+    val activity = remember(context) { context.findActivity() }
     var useSystem by remember { mutableStateOf(AppDisplayController.useSystemBrightness(context)) }
     var brightness by remember { mutableFloatStateOf(AppDisplayController.savedBrightness(context)) }
 
@@ -107,4 +111,14 @@ internal fun BrightnessRow(
             )
         )
     }
+}
+
+/** The activity behind [this] context, unwrapping ContextWrappers (dialogs, themed contexts). */
+internal fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current != null) {
+        if (current is Activity) return current
+        current = (current as? ContextWrapper)?.baseContext
+    }
+    return null
 }
