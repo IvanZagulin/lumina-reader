@@ -3,7 +3,7 @@ package com.lumina.reader.core.parser.epub
 import com.lumina.reader.core.parser.common.MarkupToken
 import com.lumina.reader.core.parser.common.MarkupTokenizer
 import com.lumina.reader.core.parser.common.TextSupport
-import java.io.StringReader
+import com.lumina.reader.core.text.StringCharReader
 
 internal class ManifestItem(
     val id: String,
@@ -41,7 +41,7 @@ internal class RawTocEntry(val label: String, val path: String, val fragment: St
 internal object EpubPackageParser {
 
     private fun tokens(text: String): Sequence<MarkupToken> {
-        val tokenizer = MarkupTokenizer(StringReader(text))
+        val tokenizer = MarkupTokenizer(StringCharReader(text))
         return generateSequence { tokenizer.next() }
     }
 

@@ -6,7 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import java.util.Locale
+import com.lumina.reader.platform.LanguageTag
+import com.lumina.reader.platform.toLocale
 
 /**
  * [SpeechEngine] over the platform [TextToSpeech]. Every callback is re-posted
@@ -74,8 +75,8 @@ internal class AndroidSpeechEngine(
         tts.setPitch(pitch)
     }
 
-    override fun setLanguage(locale: Locale): TtsLanguageSupport {
-        val result = tts.setLanguage(locale)
+    override fun setLanguage(language: LanguageTag): TtsLanguageSupport {
+        val result = tts.setLanguage(language.toLocale())
         return when {
             result == TextToSpeech.LANG_MISSING_DATA -> TtsLanguageSupport.MISSING_DATA
             result == TextToSpeech.LANG_NOT_SUPPORTED -> TtsLanguageSupport.NOT_SUPPORTED

@@ -1,7 +1,6 @@
 package com.lumina.reader.core.update
 
 import android.content.Context
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -46,9 +45,7 @@ class GitHubUpdateRepository(private val context: Context) {
             }
             val releases: List<GitHubReleaseDto> =
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                    val parsed: Array<GitHubReleaseDto>? =
-                        Gson().fromJson(reader, Array<GitHubReleaseDto>::class.java)
-                    parsed?.toList().orEmpty()
+                    GitHubReleaseJson.decodeReleases(reader.readText())
                 }
             val selected = ReleaseSelector.select(releases)
                 ?: throw IOException("В репозитории пока нет опубликованных релизов с APK")

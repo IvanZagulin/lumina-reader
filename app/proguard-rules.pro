@@ -17,7 +17,8 @@
 -if class * { @com.google.gson.annotations.SerializedName <fields>; }
 -keep class <1>
 
-# GitHub Releases API models used by the in-app updater.
+# GitHub Releases API models used by the in-app updater (kotlinx.serialization
+# models in :shared since the iOS port; kept as before, the library ships its own rules).
 -keep class com.lumina.reader.core.update.GitHubReleaseDto { *; }
 -keep class com.lumina.reader.core.update.GitHubAssetDto { *; }
 

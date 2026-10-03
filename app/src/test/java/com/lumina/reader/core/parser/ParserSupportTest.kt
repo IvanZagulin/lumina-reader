@@ -1,16 +1,12 @@
 package com.lumina.reader.core.parser
 
 import com.lumina.reader.core.model.ParagraphMarkup
-import com.lumina.reader.core.parser.common.Base64StreamDecoder
-import com.lumina.reader.core.parser.common.HtmlEntities
-import com.lumina.reader.core.parser.common.MarkupToken
 import com.lumina.reader.core.parser.common.MarkupTokenizer
 import com.lumina.reader.core.parser.common.NaturalOrderComparator
 import com.lumina.reader.core.parser.common.NoteSupport
 import com.lumina.reader.core.parser.common.ParagraphAccumulator
-import com.lumina.reader.core.parser.common.TextEncoding
 import com.lumina.reader.core.parser.epub.EpubPaths
-import org.junit.Assert.assertArrayEquals
+import com.lumina.reader.core.text.StringCharReader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,63 +15,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.StringReader
-import java.nio.charset.Charset
-import java.util.Base64
 
+// Tokenizer, entity, encoding and Base64 tests moved to :shared commonTest (stage 4).
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ParserSupportTest {
-
-    private fun tokens(text: String, raw: Set<String> = emptySet()): List<MarkupToken> {
-        val tokenizer = MarkupTokenizer(StringReader(text), raw)
-        return generateSequence { tokenizer.next() }.toList()
-    }
-
-    @Test
-    fun entities() {
-        assertTrue(HtmlEntities.namedCount >= 200)
-        val expected = mapOf(
-            "hellip" to "…", "shy" to "­", "rsquo" to "’", "lsquo" to "‘", "ldquo" to "“", "rdquo" to "”",
-            "laquo" to "«", "raquo" to "»", "mdash" to "—", "ndash" to "–", "nbsp" to " ", "copy" to "©",
-            "times" to "×", "minus" to "−", "bdquo" to "„", "euro" to "€", "Agrave" to "À", "agrave" to "à",
-            "#x1F600" to "😀", "#128512" to "😀", "#151" to "—", "#1093" to "х"
-        )
-        for ((name, value) in expected) assertEquals(name, value, HtmlEntities.decode(name))
-        assertNull(HtmlEntities.decode("unknownentity"))
-        assertEquals("�", HtmlEntities.decode("#xD800"))
-        assertEquals("a &lt; b — c", HtmlEntities.decodeAll("a &amp;lt; b &mdash; c"))
-    }
-
-    @Test
-    fun tokenizerIsForgiving() {
-        val result = tokens("<!DOCTYPE html [<!ENTITY x 'y'>]><!-- c --><?pi x?><p class=a id='b' data-x=\"&quot;q&quot;\">1 &lt; 2 &bogus; <3<br/><![CDATA[<raw>]]></P><script>if (a < b) {}</script>end")
-        val start = result[0] as MarkupToken.StartTag
-        assertEquals("p", start.name)
-        assertEquals("a", start.attr("class"))
-        assertEquals("b", start.attr("id"))
-        assertEquals("\"q\"", start.attr("data-x"))
-        val texts = result.filterIsInstance<MarkupToken.Text>().joinToString("") { it.text }
-        assertTrue(texts, texts.startsWith("1 < 2 &bogus; <3<raw>"))
-        assertTrue(texts.endsWith("if (a < b) {}end") || texts.endsWith("end"))
-        assertTrue(result.any { it is MarkupToken.StartTag && it.name == "br" && it.selfClosing })
-        assertTrue(result.any { it is MarkupToken.EndTag && it.name == "p" })
-
-        val skipped = tokens("<style>p{}</style><p>x</p>", setOf("style"))
-        assertEquals(listOf("x"), skipped.filterIsInstance<MarkupToken.Text>().map { it.text })
-
-        val namespaced = tokens("<image xlink:href=\"#a\"/><a l:href=\"#n\" type=\"note\">1</a>")
-        assertEquals("#a", (namespaced[0] as MarkupToken.StartTag).hrefAttr())
-        assertEquals("#n", (namespaced[1] as MarkupToken.StartTag).hrefAttr())
-        assertEquals("#n", (namespaced[1] as MarkupToken.StartTag).attrByLocal("href"))
-    }
-
-    @Test
-    fun truncatedInputIsReported() {
-        val tokenizer = MarkupTokenizer(StringReader("<p>text<b class=\"x"))
-        while (tokenizer.next() != null) Unit
-        assertTrue(tokenizer.truncated)
-    }
 
     @Test
     fun paragraphAccumulatorCollapsesSpacesAndKeepsSpansTight() {
@@ -90,41 +34,6 @@ class ParserSupportTest {
         assertEquals("Hello world again!", parsed.text)
         assertEquals("world", parsed.text.substring(parsed.spans[0].start, parsed.spans[0].end))
         assertNull(acc.take())
-    }
-
-    @Test
-    fun encodingDetection() {
-        assertTrue(TextEncoding.isValidUtf8("😀 Привет".toByteArray(Charsets.UTF_8)))
-        assertFalse(TextEncoding.isValidUtf8("Привет".toByteArray(Charset.forName("windows-1251"))))
-        assertFalse(TextEncoding.isValidUtf8(byteArrayOf(0xC0.toByte(), 0x80.toByte()))) // overlong
-        assertEquals(
-            Charset.forName("windows-1251"),
-            TextEncoding.declaredCharset("<?xml version=\"1.0\" encoding=\"windows-1251\"?><a/>".toByteArray())
-        )
-        assertEquals("Тест", TextEncoding.decode("Тест".toByteArray(Charset.forName("windows-1251"))))
-        assertEquals("Тест", TextEncoding.decode(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "Тест".toByteArray()))
-
-        // A stray byte inside a UTF-8 text does not turn the whole document into windows-1251.
-        val mostly = "Привет, мир! ".repeat(50).toByteArray(Charsets.UTF_8) + byteArrayOf(0xFF.toByte()) +
-            "Ещё".toByteArray(Charsets.UTF_8)
-        assertFalse(TextEncoding.isValidUtf8(mostly))
-        assertTrue(TextEncoding.looksLikeUtf8(mostly))
-        assertTrue(TextEncoding.decode(mostly).startsWith("Привет, мир!"))
-        assertFalse(TextEncoding.looksLikeUtf8("Привет, мир! ".repeat(50).toByteArray(Charset.forName("windows-1251"))))
-    }
-
-    @Test
-    fun base64StreamDecoding() {
-        val data = ByteArray(10_000) { (it % 256).toByte() }
-        val encoded = Base64.getMimeEncoder().encodeToString(data)
-        val decoder = Base64StreamDecoder(1_000_000)
-        encoded.chunked(333).forEach { decoder.feed(it) }
-        assertArrayEquals(data, decoder.result())
-
-        val capped = Base64StreamDecoder(100)
-        capped.feed(encoded)
-        assertTrue(capped.overflow)
-        assertNull(capped.result())
     }
 
     @Test
@@ -155,7 +64,7 @@ class ParserSupportTest {
             com.lumina.reader.core.parser.epub.XhtmlExtractor("a/b.xhtml", com.lumina.reader.core.parser.epub.EpubNotes()) { it }
                 .extract(text)
             val builder = com.lumina.reader.core.parser.fb2.Fb2BookBuilder("x.fb2", false)
-            val tokenizer = MarkupTokenizer(StringReader("<FictionBook><body><section>$text"))
+            val tokenizer = MarkupTokenizer(StringCharReader("<FictionBook><body><section>$text"))
             while (true) builder.accept(tokenizer.next() ?: break)
             builder.build(damaged = tokenizer.truncated)
             com.lumina.reader.core.parser.txt.TxtLayout.split(text)

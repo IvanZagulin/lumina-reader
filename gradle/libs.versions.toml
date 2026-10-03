@@ -20,6 +20,13 @@ androidxNavigation = "2.9.7"
 composeMultiplatform = "1.11.1"
 cmpMaterial3 = "1.9.0"
 room = "2.8.4"
+# Kotlin Multiplatform libraries of :shared. atomicfu and kotlinx-datetime are
+# declared for the stages that first use them (locks, dates); nothing depends
+# on them yet, so they are not on any classpath.
+okio = "3.18.2"
+serialization = "1.11.0"
+atomicfu = "0.33.0"
+datetime = "0.8.0"
 datastore = "1.1.1"
 coroutines = "1.11.0"
 coil = "2.7.0"
@@ -57,6 +64,16 @@ jb-compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime"
 jb-compose-foundation = { group = "org.jetbrains.compose.foundation", name = "foundation", version.ref = "composeMultiplatform" }
 jb-compose-ui = { group = "org.jetbrains.compose.ui", name = "ui", version.ref = "composeMultiplatform" }
 jb-compose-material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "cmpMaterial3" }
+# :shared (AnnotatedString, Color): on Android these resolve to the same
+# androidx.compose 1.11.2 artifacts that :app already uses.
+jb-compose-ui-graphics = { group = "org.jetbrains.compose.ui", name = "ui-graphics", version.ref = "composeMultiplatform" }
+jb-compose-ui-text = { group = "org.jetbrains.compose.ui", name = "ui-text", version.ref = "composeMultiplatform" }
+
+# Multiplatform I/O, JSON, locks and dates (:shared)
+okio = { group = "com.squareup.okio", name = "okio", version.ref = "okio" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+atomicfu = { group = "org.jetbrains.kotlinx", name = "atomicfu", version.ref = "atomicfu" }
+kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "datetime" }
 
 # Cover colours for generated backgrounds (hero, transition)
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
@@ -105,5 +122,6 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

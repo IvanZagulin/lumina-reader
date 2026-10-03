@@ -16,6 +16,9 @@ import com.lumina.reader.core.parser.common.ParagraphAccumulator
 import com.lumina.reader.core.parser.common.ParserLimits
 import com.lumina.reader.core.parser.common.TextEncoding
 import com.lumina.reader.core.parser.common.TextSupport
+import com.lumina.reader.core.parser.common.detectStream
+import com.lumina.reader.core.text.asCharReader
+import com.lumina.reader.core.text.charset.toJavaCharset
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -100,11 +103,11 @@ class Fb2Parser : BookParser {
     }
 
     private fun parseSource(open: () -> InputStream, fileName: String, isZip: Boolean): ParsedBook {
-        val charset = TextEncoding.detect(open)
+        val charset = TextEncoding.detectStream(open).toJavaCharset()
         val builder = Fb2BookBuilder(fileName, isZip)
         return open().use { raw ->
             val reader = InputStreamReader(BufferedInputStream(raw, 64 * 1024), charset)
-            val tokenizer = MarkupTokenizer(reader)
+            val tokenizer = MarkupTokenizer(reader.asCharReader())
             var failed = false
             try {
                 while (true) {
