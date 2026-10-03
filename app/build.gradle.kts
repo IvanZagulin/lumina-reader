@@ -90,6 +90,9 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
+    // Media session and MediaStyle notification for read-aloud playback
+    implementation(libs.androidx.media)
+
     // Room DB
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
