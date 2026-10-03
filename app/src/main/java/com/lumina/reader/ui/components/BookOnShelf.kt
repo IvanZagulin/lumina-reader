@@ -223,16 +223,10 @@ fun BookOnShelf(
             .graphicsLayer {
                 cameraDistance = 16f * density
                 var rotation = baseRotationY
-                if (tilt != null && !reducedMotion) {
-                    val info = tilt.rowState.layoutInfo
-                    val item = info.visibleItemsInfo.firstOrNull { it.key == tilt.itemKey }
-                    val f = if (item == null) {
-                        0f
-                    } else {
-                        coverflowFraction(item.offset, item.size, info.viewportStartOffset, info.viewportEndOffset)
-                    }
-                    rotation += (LuminaMotion.HingeSign * 8f * f).coerceIn(-8f, 8f) + tilt.sway()
-                }
+                // Books stand straight on the shelf. A position-based coverflow
+                // tilt made the books at the row edges look crooked at rest; only
+                // the short sway after a fling remains.
+                if (tilt != null && !reducedMotion) rotation += tilt.sway()
                 rotationY = rotation
                 val p = press.value
                 val l = longLift.value

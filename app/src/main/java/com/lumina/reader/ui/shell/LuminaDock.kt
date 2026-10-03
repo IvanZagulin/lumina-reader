@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,12 +42,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,7 +72,19 @@ enum class DockDestination(val route: String, val label: String, val icon: Image
     }
 }
 
-private val ItemWidth = 64.dp
+private val MinItemWidth = 64.dp
+private val MaxItemWidth = 76.dp
+/** Screen margins (2 × 12 dp), the gap and the «+» circle next to the pill. */
+private val DockFixedWidth = 24.dp + 8.dp + 56.dp
+
+/** Item width that fills a phone's width so the labels never touch each other. */
+@Composable
+private fun rememberDockItemWidth(): Dp {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    return remember(screenWidth) {
+        ((screenWidth - DockFixedWidth) / DockDestination.entries.size).coerceIn(MinItemWidth, MaxItemWidth)
+    }
+}
 private val ExpandedHeight = 64.dp
 private val CollapsedHeight = 52.dp
 private val DockShadow = Color(0x4D2A1608)
@@ -97,13 +115,14 @@ fun LuminaDock(
     )
     val indicatorColor = scheme.primaryContainer
     val showIndicator = selected != null
+    val itemWidth = rememberDockItemWidth()
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
                 .layout { measurable, _ ->
                     val height = lerp(ExpandedHeight.toPx(), CollapsedHeight.toPx(), collapse()).roundToInt()
-                    val width = (ItemWidth * DockDestination.entries.size).roundToPx()
+                    val width = (itemWidth * DockDestination.entries.size).roundToPx()
                     val placeable = measurable.measure(Constraints.fixed(width, height))
                     layout(width, height) { placeable.place(0, 0) }
                 }
@@ -113,7 +132,7 @@ fun LuminaDock(
                 .clip(LuminaShape.Pill)
                 .drawBehind {
                     if (!showIndicator) return@drawBehind
-                    val item = ItemWidth.toPx()
+                    val item = itemWidth.toPx()
                     val pillWidth = 56.dp.toPx()
                     val pillHeight = 32.dp.toPx()
                     val iconCenter = lerp(23.dp.toPx(), size.height / 2f, collapse())
@@ -130,6 +149,7 @@ fun LuminaDock(
                 DockDestination.entries.forEach { destination ->
                     DockItem(
                         destination = destination,
+                        width = itemWidth,
                         selected = destination == selected,
                         badge = if (destination == DockDestination.LIBRARY) libraryBadge else 0,
                         collapse = collapse,
@@ -157,6 +177,7 @@ fun LuminaDock(
 @Composable
 private fun DockItem(
     destination: DockDestination,
+    width: Dp,
     selected: Boolean,
     badge: Int,
     collapse: () -> Float,
@@ -172,7 +193,7 @@ private fun DockItem(
     )
     Box(
         modifier = Modifier
-            .width(ItemWidth)
+            .width(width)
             .fillMaxHeight()
             .selectable(
                 selected = selected,
@@ -199,12 +220,17 @@ private fun DockItem(
         )
         Text(
             text = destination.label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.sp),
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = labelColor,
             maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
             modifier = Modifier
                 .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 2.dp)
                 .offset { IntOffset(0, 38.dp.roundToPx()) }
                 .graphicsLayer { alpha = 1f - collapse() }
                 .clearAndSetSemantics { }

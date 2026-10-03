@@ -55,7 +55,6 @@ import com.lumina.reader.ui.components.rememberCoverColors
 import com.lumina.reader.ui.components.rememberPaperGrain
 import com.lumina.reader.ui.components.toShelfBookUi
 import com.lumina.reader.ui.theme.LoraFamily
-import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.LuminaType
 import com.lumina.reader.ui.transition.TransitionGeometry
 import java.io.File
@@ -111,7 +110,7 @@ fun ContinueReadingHero(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp)
             .height(188.dp)
     ) {
         Box(
@@ -227,9 +226,9 @@ fun ContinueReadingHero(
             book = shelfBook,
             width = 104.dp,
             height = 156.dp,
-            modifier = Modifier.offset(x = 20.dp, y = (-20).dp),
+            // Straight and fully inside the card, vertically centred (188 − 156 = 32 dp).
+            modifier = Modifier.offset(x = 20.dp, y = 16.dp),
             slotKey = TransitionGeometry.HERO_SLOT_KEY,
-            baseRotationY = -LuminaMotion.HingeSign * 12f,
             onClick = { onOpen(TransitionGeometry.HERO_SLOT_KEY) },
             onLongClick = onLongPress
         )
