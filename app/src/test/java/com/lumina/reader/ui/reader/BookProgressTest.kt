@@ -1,6 +1,7 @@
 package com.lumina.reader.ui.reader
 
 import com.lumina.reader.core.model.Chapter
+import com.lumina.reader.core.model.ParagraphMarkup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -114,10 +115,48 @@ class BookProgressTest {
         assertEquals("100.0%", formatBookPercent(100f))
     }
 
+    @Test
+    fun characterOffsetAdvancesProgressInsideAParagraph() {
+        val chapters = listOf(chapter(0, "a".repeat(100), "b".repeat(100)))
+        val lengths = chapterTextLengths(chapters)
+        assertEquals(25f, paragraphProgressPercent(chapters, lengths, 0, 0, charOffset = 50), 0.001f)
+        assertEquals(75f, paragraphProgressPercent(chapters, lengths, 0, 1, charOffset = 50), 0.001f)
+        // Offsets past the paragraph end are clamped.
+        assertEquals(100f, paragraphProgressPercent(chapters, lengths, 0, 1, charOffset = 900), 0.001f)
+    }
+
+    @Test
+    fun markupDoesNotCountAsText() {
+        val chapters = listOf(
+            chapter(0, ParagraphMarkup.block(ParagraphMarkup.BlockStyle.EPIGRAPH, ParagraphMarkup.emphasis("abc")))
+        )
+        assertEquals(3, chapterTextLengths(chapters)[0])
+    }
+
+    @Test
+    fun pageMapLocatesTheFirstCharacterOfAPage() {
+        val map = BookPageMap(
+            pageStartParagraphs = listOf(intArrayOf(0, 0, 4), intArrayOf(0)),
+            pageStartOffsets = listOf(intArrayOf(0, 120, 30), intArrayOf(0))
+        )
+        assertEquals(BookPageLocation(0, 1, 0, 120), map.locate(1))
+        assertEquals(BookPageLocation(0, 2, 4, 30), map.locate(2))
+        assertEquals(BookPageLocation(1, 0, 0, 0), map.locate(3))
+    }
+
+    @Test
+    fun pdfBookWithoutTextUsesChapterCount() {
+        val pdf = listOf(
+            Chapter(index = 0, title = "Страница 1", paragraphs = emptyList(), pdfPageNumber = 0),
+            Chapter(index = 1, title = "Страница 2", paragraphs = emptyList(), pdfPageNumber = 1)
+        )
+        val lengths = chapterTextLengths(pdf)
+        assertEquals(50f, paragraphProgressPercent(pdf, lengths, 1, 0), 0.001f)
+    }
+
     private fun chapter(index: Int, vararg paragraphs: String) = Chapter(
         index = index,
         title = "Глава ${index + 1}",
-        content = paragraphs.joinToString("\n"),
         paragraphs = paragraphs.toList()
     )
 }

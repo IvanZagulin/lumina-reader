@@ -1,10 +1,15 @@
 package com.lumina.reader.core.preferences
 
 import android.content.Context
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.lumina.reader.core.model.ReaderSettings
-import com.lumina.reader.core.model.ReadingTheme
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -24,72 +29,83 @@ class ReaderPreferences(private val context: Context) {
         val VOLUME_NAV = booleanPreferencesKey("volume_key_nav")
         val TTS_SPEED = floatPreferencesKey("tts_speed")
         val FOOTER_BOOK_PAGES = booleanPreferencesKey("footer_book_pages")
+        val TEXT_ALIGN = stringPreferencesKey("text_align")
+        val HYPHENATION = booleanPreferencesKey("hyphenation")
+        val FIRST_LINE_INDENT = floatPreferencesKey("first_line_indent_em")
+        val PARAGRAPH_SPACING = intPreferencesKey("paragraph_spacing_dp")
+        val PAGE_TURN_ANIMATION = stringPreferencesKey("page_turn_animation")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val SHOW_TIME_LEFT = booleanPreferencesKey("show_time_left")
+        val TAP_ZONES_INVERTED = booleanPreferencesKey("tap_zones_inverted")
     }
 
-    val settingsFlow: Flow<ReaderSettings> = context.dataStore.data.map { preferences ->
-        val fontSize = preferences[PreferencesKeys.FONT_SIZE] ?: 18
-        val lineSpacing = preferences[PreferencesKeys.LINE_SPACING] ?: 1.45f
-        val padding = preferences[PreferencesKeys.HORIZONTAL_PADDING] ?: 20
-        val fontFamily = preferences[PreferencesKeys.FONT_FAMILY] ?: "Serif"
-        val themeStr = preferences[PreferencesKeys.THEME] ?: ReadingTheme.OLED_BLACK.name
-        val theme = try {
-            ReadingTheme.valueOf(themeStr)
-        } catch (e: Exception) {
-            ReadingTheme.OLED_BLACK
-        }
-        val bionic = preferences[PreferencesKeys.BIONIC_READING] ?: false
-        val continuous = preferences[PreferencesKeys.CONTINUOUS_SCROLL] ?: false
-        val screenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: true
-        val volumeNav = preferences[PreferencesKeys.VOLUME_NAV] ?: true
-        val ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f
-        val footerBookPages = preferences[PreferencesKeys.FOOTER_BOOK_PAGES] ?: false
-
-        ReaderSettings(
-            fontSizeSp = fontSize,
-            lineSpacingMultiplier = lineSpacing,
-            horizontalPaddingDp = padding,
-            fontFamily = fontFamily,
-            theme = theme,
-            isBionicReadingEnabled = bionic,
-            isContinuousScroll = continuous,
-            keepScreenOn = screenOn,
-            volumeKeyNavigation = volumeNav,
-            ttsSpeed = ttsSpeed,
-            showBookPagesInFooter = footerBookPages
-        )
-    }
+    val settingsFlow: Flow<ReaderSettings> = context.dataStore.data.map { readSettings(it) }
 
     suspend fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
         context.dataStore.edit { preferences ->
-            val current = ReaderSettings(
-                fontSizeSp = preferences[PreferencesKeys.FONT_SIZE] ?: 18,
-                lineSpacingMultiplier = preferences[PreferencesKeys.LINE_SPACING] ?: 1.45f,
-                horizontalPaddingDp = preferences[PreferencesKeys.HORIZONTAL_PADDING] ?: 20,
-                fontFamily = preferences[PreferencesKeys.FONT_FAMILY] ?: "Serif",
-                theme = try {
-                    ReadingTheme.valueOf(preferences[PreferencesKeys.THEME] ?: ReadingTheme.OLED_BLACK.name)
-                } catch (e: Exception) {
-                    ReadingTheme.OLED_BLACK
-                },
-                isBionicReadingEnabled = preferences[PreferencesKeys.BIONIC_READING] ?: false,
-                isContinuousScroll = preferences[PreferencesKeys.CONTINUOUS_SCROLL] ?: false,
-                keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: true,
-                volumeKeyNavigation = preferences[PreferencesKeys.VOLUME_NAV] ?: true,
-                ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f,
-                showBookPagesInFooter = preferences[PreferencesKeys.FOOTER_BOOK_PAGES] ?: false
-            )
-            val updated = transform(current)
-            preferences[PreferencesKeys.FONT_SIZE] = updated.fontSizeSp
-            preferences[PreferencesKeys.LINE_SPACING] = updated.lineSpacingMultiplier
-            preferences[PreferencesKeys.HORIZONTAL_PADDING] = updated.horizontalPaddingDp
-            preferences[PreferencesKeys.FONT_FAMILY] = updated.fontFamily
-            preferences[PreferencesKeys.THEME] = updated.theme.name
-            preferences[PreferencesKeys.BIONIC_READING] = updated.isBionicReadingEnabled
-            preferences[PreferencesKeys.CONTINUOUS_SCROLL] = updated.isContinuousScroll
-            preferences[PreferencesKeys.KEEP_SCREEN_ON] = updated.keepScreenOn
-            preferences[PreferencesKeys.VOLUME_NAV] = updated.volumeKeyNavigation
-            preferences[PreferencesKeys.TTS_SPEED] = updated.ttsSpeed
-            preferences[PreferencesKeys.FOOTER_BOOK_PAGES] = updated.showBookPagesInFooter
+            writeSettings(preferences, transform(readSettings(preferences)))
         }
     }
+
+    private fun readSettings(preferences: Preferences): ReaderSettings {
+        val defaults = ReaderSettings()
+        return ReaderSettings(
+            fontSizeSp = preferences[PreferencesKeys.FONT_SIZE] ?: defaults.fontSizeSp,
+            lineSpacingMultiplier = preferences[PreferencesKeys.LINE_SPACING]
+                ?: defaults.lineSpacingMultiplier,
+            horizontalPaddingDp = preferences[PreferencesKeys.HORIZONTAL_PADDING]
+                ?: defaults.horizontalPaddingDp,
+            fontFamily = preferences[PreferencesKeys.FONT_FAMILY] ?: defaults.fontFamily,
+            theme = enumOrDefault(preferences[PreferencesKeys.THEME], defaults.theme),
+            isBionicReadingEnabled = preferences[PreferencesKeys.BIONIC_READING]
+                ?: defaults.isBionicReadingEnabled,
+            isContinuousScroll = preferences[PreferencesKeys.CONTINUOUS_SCROLL]
+                ?: defaults.isContinuousScroll,
+            keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: defaults.keepScreenOn,
+            volumeKeyNavigation = preferences[PreferencesKeys.VOLUME_NAV]
+                ?: defaults.volumeKeyNavigation,
+            ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: defaults.ttsSpeed,
+            showBookPagesInFooter = preferences[PreferencesKeys.FOOTER_BOOK_PAGES]
+                ?: defaults.showBookPagesInFooter,
+            textAlign = enumOrDefault(preferences[PreferencesKeys.TEXT_ALIGN], defaults.textAlign),
+            hyphenation = preferences[PreferencesKeys.HYPHENATION] ?: defaults.hyphenation,
+            firstLineIndentEm = preferences[PreferencesKeys.FIRST_LINE_INDENT]
+                ?: defaults.firstLineIndentEm,
+            paragraphSpacingDp = preferences[PreferencesKeys.PARAGRAPH_SPACING]
+                ?: defaults.paragraphSpacingDp,
+            pageTurnAnimation = enumOrDefault(
+                preferences[PreferencesKeys.PAGE_TURN_ANIMATION],
+                defaults.pageTurnAnimation
+            ),
+            themeMode = enumOrDefault(preferences[PreferencesKeys.THEME_MODE], defaults.themeMode),
+            showTimeLeft = preferences[PreferencesKeys.SHOW_TIME_LEFT] ?: defaults.showTimeLeft,
+            tapZonesInverted = preferences[PreferencesKeys.TAP_ZONES_INVERTED]
+                ?: defaults.tapZonesInverted
+        )
+    }
+
+    private fun writeSettings(preferences: MutablePreferences, settings: ReaderSettings) {
+        preferences[PreferencesKeys.FONT_SIZE] = settings.fontSizeSp
+        preferences[PreferencesKeys.LINE_SPACING] = settings.lineSpacingMultiplier
+        preferences[PreferencesKeys.HORIZONTAL_PADDING] = settings.horizontalPaddingDp
+        preferences[PreferencesKeys.FONT_FAMILY] = settings.fontFamily
+        preferences[PreferencesKeys.THEME] = settings.theme.name
+        preferences[PreferencesKeys.BIONIC_READING] = settings.isBionicReadingEnabled
+        preferences[PreferencesKeys.CONTINUOUS_SCROLL] = settings.isContinuousScroll
+        preferences[PreferencesKeys.KEEP_SCREEN_ON] = settings.keepScreenOn
+        preferences[PreferencesKeys.VOLUME_NAV] = settings.volumeKeyNavigation
+        preferences[PreferencesKeys.TTS_SPEED] = settings.ttsSpeed
+        preferences[PreferencesKeys.FOOTER_BOOK_PAGES] = settings.showBookPagesInFooter
+        preferences[PreferencesKeys.TEXT_ALIGN] = settings.textAlign.name
+        preferences[PreferencesKeys.HYPHENATION] = settings.hyphenation
+        preferences[PreferencesKeys.FIRST_LINE_INDENT] = settings.firstLineIndentEm
+        preferences[PreferencesKeys.PARAGRAPH_SPACING] = settings.paragraphSpacingDp
+        preferences[PreferencesKeys.PAGE_TURN_ANIMATION] = settings.pageTurnAnimation.name
+        preferences[PreferencesKeys.THEME_MODE] = settings.themeMode.name
+        preferences[PreferencesKeys.SHOW_TIME_LEFT] = settings.showTimeLeft
+        preferences[PreferencesKeys.TAP_ZONES_INVERTED] = settings.tapZonesInverted
+    }
+
+    private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =
+        if (name == null) default else enumValues<T>().firstOrNull { it.name == name } ?: default
 }

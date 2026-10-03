@@ -1,10 +1,20 @@
 package com.lumina.reader.core.model
 
 import androidx.compose.ui.graphics.Color
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "bookmarks")
+/**
+ * A saved place in a book. The position is the first visible character of a
+ * page: [paragraphIndex] plus [charOffset] in that paragraph's
+ * [ParagraphMarkup.plainText].
+ */
+@Entity(
+    tableName = "bookmarks",
+    indices = [Index("bookId")]
+)
 data class Bookmark(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -13,10 +23,21 @@ data class Bookmark(
     val paragraphIndex: Int = 0,
     val chapterTitle: String = "",
     val snippet: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0")
+    val charOffset: Int = 0
 )
 
-@Entity(tableName = "highlights")
+/**
+ * A highlighted passage inside one paragraph. [startOffset] (inclusive) and
+ * [endOffset] (exclusive) are offsets in the paragraph's
+ * [ParagraphMarkup.plainText]. Rows created before offsets existed have an
+ * empty range and are not drawn.
+ */
+@Entity(
+    tableName = "highlights",
+    indices = [Index("bookId")]
+)
 data class ReadingHighlight(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -25,10 +46,19 @@ data class ReadingHighlight(
     val selectedText: String,
     val note: String? = null,
     val colorHex: String = "#FFEB3B",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0")
+    val paragraphIndex: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val startOffset: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val endOffset: Int = 0
 )
 
-@Entity(tableName = "reading_stats")
+@Entity(
+    tableName = "reading_stats",
+    indices = [Index("bookId")]
+)
 data class ReadingStats(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -92,6 +122,55 @@ enum class ReadingTheme(
     val textComposeColor: Color get() = Color(textColor)
     val surfaceComposeColor: Color get() = Color(surfaceColor)
     val secondaryTextComposeColor: Color get() = Color(secondaryTextColor)
+
+    /** Light text on a dark page. */
+    val isDark: Boolean
+        get() = when (this) {
+            OLED_BLACK, DARK_SLATE, WARM_AMBER -> true
+            SEPIA, CREAM, LIGHT -> false
+        }
+
+    /**
+     * The theme of the opposite brightness that matches this one best. Used
+     * when the reader follows the system light/dark setting.
+     */
+    val counterpart: ReadingTheme
+        get() = when (this) {
+            OLED_BLACK -> LIGHT
+            DARK_SLATE -> CREAM
+            WARM_AMBER -> SEPIA
+            SEPIA -> WARM_AMBER
+            CREAM -> DARK_SLATE
+            LIGHT -> OLED_BLACK
+        }
+}
+
+/** How a paragraph is aligned horizontally. */
+enum class ReaderTextAlign {
+    /** Both edges aligned, like a printed book. */
+    JUSTIFY,
+
+    /** Ragged right edge. */
+    START
+}
+
+/** Animation of a page turn in the paged reader. */
+enum class PageTurnAnimation {
+    SLIDE,
+    FLIP,
+    CURL
+}
+
+/** Where the reading theme comes from. */
+enum class ReaderThemeMode {
+    /** Always [ReaderSettings.theme]. */
+    MANUAL,
+
+    /**
+     * [ReaderSettings.theme] while its brightness matches the system dark
+     * mode, otherwise its [ReadingTheme.counterpart].
+     */
+    SYSTEM
 }
 
 data class ReaderSettings(
@@ -107,5 +186,24 @@ data class ReaderSettings(
     val ttsSpeed: Float = 1.0f,
     val ttsPitch: Float = 1.0f,
     /** Footer shows book-wide page numbers instead of the percentage. */
-    val showBookPagesInFooter: Boolean = false
+    val showBookPagesInFooter: Boolean = false,
+    val textAlign: ReaderTextAlign = ReaderTextAlign.JUSTIFY,
+    /** Automatic hyphenation (Russian patterns for Cyrillic books). */
+    val hyphenation: Boolean = true,
+    /** First-line indent of ordinary paragraphs, in em. */
+    val firstLineIndentEm: Float = 1.5f,
+    /** Extra space after every paragraph. */
+    val paragraphSpacingDp: Int = 6,
+    val pageTurnAnimation: PageTurnAnimation = PageTurnAnimation.SLIDE,
+    val themeMode: ReaderThemeMode = ReaderThemeMode.MANUAL,
+    /** Footer shows the estimated reading time left in the chapter. */
+    val showTimeLeft: Boolean = true,
+    /** Left edge turns forward and right edge turns back. */
+    val tapZonesInverted: Boolean = false
 )
+
+/** The theme the reader actually draws with. */
+fun ReaderSettings.effectiveTheme(systemInDarkMode: Boolean): ReadingTheme = when (themeMode) {
+    ReaderThemeMode.MANUAL -> theme
+    ReaderThemeMode.SYSTEM -> if (theme.isDark == systemInDarkMode) theme else theme.counterpart
+}

@@ -54,6 +54,7 @@ interface BookDao {
         UPDATE books
         SET currentChapterIndex = :chapterIndex,
             currentParagraphIndex = :paragraphIndex,
+            currentCharOffset = :charOffset,
             currentProgressPercent = :progress,
             lastReadTimestamp = :timestamp,
             startedAt = CASE
@@ -72,6 +73,7 @@ interface BookDao {
         bookId: Long,
         chapterIndex: Int,
         paragraphIndex: Int,
+        charOffset: Int,
         progress: Float,
         timestamp: Long = System.currentTimeMillis()
     )

@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.ReaderSettings
+import com.lumina.reader.core.model.ReaderTextAlign
+import com.lumina.reader.core.model.ReaderThemeMode
 import com.lumina.reader.core.model.ReadingTheme
 import com.lumina.reader.core.preferences.AppDisplayController
 import kotlin.math.roundToInt
@@ -177,7 +178,7 @@ fun ReaderSettingsSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(ReadingTheme.values()) { theme ->
+                items(ReadingTheme.entries) { theme ->
                     val isSelected = settings.theme == theme
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -216,6 +217,19 @@ fun ReaderSettingsSheet(
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            SettingSwitchRow(
+                title = "Как в системе",
+                subtitle = "Светлая или тёмная пара выбранной темы по системной настройке",
+                checked = settings.themeMode == ReaderThemeMode.SYSTEM,
+                onCheckedChange = { enabled ->
+                    onSettingsChanged {
+                        it.copy(themeMode = if (enabled) ReaderThemeMode.SYSTEM else ReaderThemeMode.MANUAL)
+                    }
+                }
+            )
+
             Spacer(modifier = Modifier.height(20.dp))
 
             // 2. Font Family Selector
@@ -230,16 +244,12 @@ fun ReaderSettingsSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf(
-                    "Serif" to "Книжный (Serif)",
-                    "SansSerif" to "Гротеск (Sans)",
-                    "Monospace" to "Моноширинный",
-                    "Cursive" to "Курсив"
-                ).forEach { (family, label) ->
+                readerFontOptions.forEach { option ->
                     FilterChip(
-                        selected = settings.fontFamily == family,
-                        onClick = { onSettingsChanged { it.copy(fontFamily = family) } },
-                        label = { Text(label, fontSize = 11.sp) }
+                        selected = settings.fontFamily == option.name ||
+                            (option.name == "Serif" && readerFontOptions.none { it.name == settings.fontFamily }),
+                        onClick = { onSettingsChanged { it.copy(fontFamily = option.name) } },
+                        label = { Text(option.label, fontSize = 11.sp) }
                     )
                 }
             }
@@ -325,6 +335,86 @@ fun ReaderSettingsSheet(
                         FilterChip(
                             selected = settings.horizontalPaddingDp == pad,
                             onClick = { onSettingsChanged { it.copy(horizontalPaddingDp = pad) } },
+                            label = { Text(label, fontSize = 12.sp) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Typography
+            Text(
+                text = "Выравнивание",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    ReaderTextAlign.JUSTIFY to "По ширине",
+                    ReaderTextAlign.START to "По левому краю"
+                ).forEach { (align, label) ->
+                    FilterChip(
+                        selected = settings.textAlign == align,
+                        onClick = { onSettingsChanged { it.copy(textAlign = align) } },
+                        label = { Text(label, fontSize = 12.sp) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            SettingSwitchRow(
+                title = "Переносы слов",
+                subtitle = "Ровнее строки при выравнивании по ширине",
+                checked = settings.hyphenation,
+                onCheckedChange = { enabled -> onSettingsChanged { it.copy(hyphenation = enabled) } }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Отступ абзаца",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0f to "Нет", 1f to "1", 1.5f to "1.5", 2f to "2").forEach { (indent, label) ->
+                        FilterChip(
+                            selected = settings.firstLineIndentEm == indent,
+                            onClick = { onSettingsChanged { it.copy(firstLineIndentEm = indent) } },
+                            label = { Text(label, fontSize = 12.sp) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Между абзацами",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Нет", 6 to "Мало", 12 to "Много").forEach { (spacing, label) ->
+                        FilterChip(
+                            selected = settings.paragraphSpacingDp == spacing,
+                            onClick = { onSettingsChanged { it.copy(paragraphSpacingDp = spacing) } },
                             label = { Text(label, fontSize = 12.sp) }
                         )
                     }
@@ -485,6 +575,52 @@ fun ReaderSettingsSheet(
                     }
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SettingSwitchRow(
+                title = "Время до конца главы",
+                subtitle = "Оценка по вашей скорости чтения внизу страницы",
+                checked = settings.showTimeLeft,
+                onCheckedChange = { enabled -> onSettingsChanged { it.copy(showTimeLeft = enabled) } }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SettingSwitchRow(
+                title = "Поменять зоны касания",
+                subtitle = "Касание слева листает вперёд, справа — назад",
+                checked = settings.tapZonesInverted,
+                onCheckedChange = { enabled -> onSettingsChanged { it.copy(tapZonesInverted = enabled) } }
+            )
         }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

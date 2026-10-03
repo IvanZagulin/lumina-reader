@@ -19,7 +19,7 @@ import com.lumina.reader.core.model.ReadingStats
         ReadingHighlight::class,
         ReadingStats::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -32,9 +32,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        private fun tableColumns(database: SupportSQLiteDatabase): MutableSet<String> {
+        private fun tableColumns(
+            database: SupportSQLiteDatabase,
+            table: String = "books"
+        ): MutableSet<String> {
             val result = mutableSetOf<String>()
-            database.query("PRAGMA table_info(`books`)").use { cursor ->
+            database.query("PRAGMA table_info(`$table`)").use { cursor ->
                 val nameIndex = cursor.getColumnIndex("name")
                 while (cursor.moveToNext()) result += cursor.getString(nameIndex)
             }
@@ -107,6 +110,41 @@ abstract class AppDatabase : RoomDatabase() {
             )
         }
 
+        /**
+         * Version 8 anchors reading positions, bookmarks and highlights to a
+         * character inside a paragraph and indexes the per-book tables.
+         *
+         * Every column must match the entity exactly (type, NOT NULL and the
+         * `@ColumnInfo(defaultValue = "0")` default), and every index name
+         * must be the one Room derives from `Index("bookId")`, otherwise Room's
+         * schema validation rejects the migrated database at startup.
+         */
+        private fun migrateReaderAnchors(database: SupportSQLiteDatabase) {
+            fun addIntColumnIfMissing(table: String, column: String) {
+                if (column !in tableColumns(database, table)) {
+                    database.execSQL(
+                        "ALTER TABLE `$table` ADD COLUMN `$column` INTEGER NOT NULL DEFAULT 0"
+                    )
+                }
+            }
+
+            addIntColumnIfMissing("books", "currentCharOffset")
+            addIntColumnIfMissing("bookmarks", "charOffset")
+            addIntColumnIfMissing("highlights", "paragraphIndex")
+            addIntColumnIfMissing("highlights", "startOffset")
+            addIntColumnIfMissing("highlights", "endOffset")
+
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_highlights_bookId` ON `highlights` (`bookId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_reading_stats_bookId` ON `reading_stats` (`bookId`)"
+            )
+        }
+
         val MIGRATION_1_5 = object : Migration(1, 5) {
             override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
         }
@@ -125,6 +163,20 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) = migrateStartedHistory(database)
         }
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) = migrateReaderAnchors(database)
+        }
+
+        /** Every migration, in the order Room should know them. */
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_5,
+            MIGRATION_2_5,
+            MIGRATION_3_5,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8
+        )
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -132,14 +184,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "lumina_reader.db"
-                ).addMigrations(
-                    MIGRATION_1_5,
-                    MIGRATION_2_5,
-                    MIGRATION_3_5,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6,
-                    MIGRATION_6_7
-                ).build()
+                ).addMigrations(*ALL_MIGRATIONS).build()
                 INSTANCE = instance
                 instance
             }

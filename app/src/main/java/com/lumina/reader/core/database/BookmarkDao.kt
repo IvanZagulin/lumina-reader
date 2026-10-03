@@ -1,6 +1,10 @@
 package com.lumina.reader.core.database
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
 import com.lumina.reader.core.model.Bookmark
 import com.lumina.reader.core.model.ReadingHighlight
 import com.lumina.reader.core.model.ReadingStats
@@ -8,7 +12,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BookmarkDao {
-    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY chapterIndex ASC, paragraphIndex ASC")
+    @Query(
+        "SELECT * FROM bookmarks WHERE bookId = :bookId " +
+            "ORDER BY chapterIndex ASC, paragraphIndex ASC, charOffset ASC"
+    )
     fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -20,7 +27,14 @@ interface BookmarkDao {
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteBookmarkById(id: Long)
 
-    @Query("SELECT * FROM highlights WHERE bookId = :bookId ORDER BY chapterIndex ASC")
+    /** Removes every bookmark of a book; call it when the book is deleted. */
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId")
+    suspend fun deleteBookmarksForBook(bookId: Long)
+
+    @Query(
+        "SELECT * FROM highlights WHERE bookId = :bookId " +
+            "ORDER BY chapterIndex ASC, paragraphIndex ASC, startOffset ASC"
+    )
     fun getHighlightsForBook(bookId: Long): Flow<List<ReadingHighlight>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -28,6 +42,16 @@ interface BookmarkDao {
 
     @Delete
     suspend fun deleteHighlight(highlight: ReadingHighlight)
+
+    @Query("DELETE FROM highlights WHERE id = :id")
+    suspend fun deleteHighlightById(id: Long)
+
+    @Query("UPDATE highlights SET note = :note WHERE id = :id")
+    suspend fun updateHighlightNote(id: Long, note: String?)
+
+    /** Removes every highlight and note of a book; call it when the book is deleted. */
+    @Query("DELETE FROM highlights WHERE bookId = :bookId")
+    suspend fun deleteHighlightsForBook(bookId: Long)
 }
 
 @Dao
@@ -46,6 +70,14 @@ interface ReadingStatsDao {
 
     @Query("SELECT COUNT(*) FROM reading_stats WHERE timestamp >= :startOfDayMillis")
     suspend fun countSessionsSince(startOfDayMillis: Long): Int
+
+    /** Latest sessions in which text was actually read, for the reading-speed estimate. */
+    @Query(
+        "SELECT * FROM reading_stats " +
+            "WHERE wordsReadCount > 0 AND sessionDurationSeconds >= :minSeconds " +
+            "ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun getRecentReadingSessions(limit: Int, minSeconds: Long): List<ReadingStats>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStats(stats: ReadingStats)

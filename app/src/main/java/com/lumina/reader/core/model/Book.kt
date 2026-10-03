@@ -56,6 +56,9 @@ data class Book(
     val format: BookFormat = BookFormat.EPUB,
     val currentChapterIndex: Int = 0,
     val currentParagraphIndex: Int = 0,
+    /** First visible character of the saved page inside [currentParagraphIndex]. */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val currentCharOffset: Int = 0,
     val currentProgressPercent: Float = 0f,
     val totalChapters: Int = 1,
     val lastReadTimestamp: Long = System.currentTimeMillis(),
