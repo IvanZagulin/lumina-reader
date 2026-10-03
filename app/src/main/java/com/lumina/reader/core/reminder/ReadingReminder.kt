@@ -15,13 +15,66 @@ import androidx.core.content.ContextCompat
 import com.lumina.reader.MainActivity
 import com.lumina.reader.R
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.preferences.ReminderPreferences
+import com.lumina.reader.core.preferences.ReminderSettings
+import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Calendar
+import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+
+/**
+ * Public entry point for the daily reading reminder.
+ *
+ * - [reschedule] — call on app start and after anything that may affect the
+ *   alarm; it reads [ReminderSettings] and schedules or cancels the alarm.
+ * - [setEnabled] / [setTime] — for the settings UI: persist and reschedule.
+ * - [settings] — observe the current settings.
+ */
+object ReadingReminder {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun settings(context: Context): Flow<ReminderSettings> =
+        ReminderPreferences(context.applicationContext).settingsFlow
+
+    /** Fire-and-forget: reads the saved settings and (re)schedules or cancels the alarm. */
+    fun reschedule(context: Context) {
+        val appContext = context.applicationContext
+        scope.launch { rescheduleNow(appContext) }
+    }
+
+    /** Suspending variant of [reschedule]; returns once the alarm has been updated. */
+    suspend fun rescheduleNow(context: Context) {
+        val appContext = context.applicationContext
+        ReadingReminderScheduler.applySettings(appContext, readSettings(appContext))
+    }
+
+    suspend fun setEnabled(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
+        ReminderPreferences(appContext).setEnabled(enabled)
+        rescheduleNow(appContext)
+    }
+
+    /** [hour] 0..23, [minute] 0..59 (clamped). */
+    suspend fun setTime(context: Context, hour: Int, minute: Int) {
+        val appContext = context.applicationContext
+        ReminderPreferences(appContext).setTime(hour, minute)
+        rescheduleNow(appContext)
+    }
+
+    internal suspend fun readSettings(context: Context): ReminderSettings =
+        try {
+            ReminderPreferences(context).current()
+        } catch (error: IOException) {
+            ReminderSettings()
+        }
+}
 
 object ReadingReminderScheduler {
     const val ACTION_REMIND = "com.lumina.reader.action.READING_REMINDER"
@@ -29,21 +82,47 @@ object ReadingReminderScheduler {
     private const val REMINDER_ID = 701
     private const val REQUEST_CODE = 702
 
+    /** Do not schedule closer than this to "now", so an alarm firing a moment early cannot repeat itself. */
+    private const val MIN_LEAD_MILLIS = 30_000L
+
+    /** Kept for existing callers; same as [ReadingReminder.reschedule]. */
     fun schedule(context: Context) {
-        createChannel(context)
+        ReadingReminder.reschedule(context)
+    }
+
+    /** Schedules the next reminder for [settings], or cancels it when reminders are disabled. */
+    fun applySettings(context: Context, settings: ReminderSettings) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 20)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        if (!settings.enabled) {
+            alarmManager.cancel(reminderPendingIntent(context))
+            return
         }
+        createChannel(context)
         alarmManager.setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
-            calendar.timeInMillis,
+            nextTriggerMillis(
+                nowMillis = System.currentTimeMillis(),
+                hour = settings.hour,
+                minute = settings.minute,
+                timeZone = TimeZone.getDefault()
+            ),
             reminderPendingIntent(context)
         )
+    }
+
+    /** The next moment (strictly after [nowMillis] plus a small lead) that is [hour]:[minute] in [timeZone]. */
+    fun nextTriggerMillis(nowMillis: Long, hour: Int, minute: Int, timeZone: TimeZone): Long {
+        val calendar = Calendar.getInstance(timeZone).apply {
+            timeInMillis = nowMillis
+            set(Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+            set(Calendar.MINUTE, minute.coerceIn(0, 59))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        while (calendar.timeInMillis <= nowMillis + MIN_LEAD_MILLIS) {
+            calendar.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return calendar.timeInMillis
     }
 
     fun showReminder(context: Context) {
@@ -51,6 +130,7 @@ object ReadingReminderScheduler {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
 
+        createChannel(context)
         val openApp = PendingIntent.getActivity(
             context,
             REMINDER_ID,
@@ -85,7 +165,7 @@ object ReadingReminderScheduler {
                     "Напоминания о чтении",
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
-                    description = "Одно вечернее напоминание продолжить чтение"
+                    description = "Одно ежедневное напоминание продолжить чтение"
                 }
             )
         }
@@ -94,22 +174,27 @@ object ReadingReminderScheduler {
 
 class ReadingReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            ReadingReminderScheduler.schedule(context)
-            return
-        }
-
+        val appContext = context.applicationContext
+        val isReminder = intent.action == ReadingReminderScheduler.ACTION_REMIND
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val zone = ZoneId.systemDefault()
-                val startOfDay = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
-                if (AppDatabase.getDatabase(context).readingStatsDao().countSessionsSince(startOfDay) == 0) {
-                    ReadingReminderScheduler.showReminder(context)
+                if (isReminder && ReadingReminder.readSettings(appContext).enabled) {
+                    val zone = ZoneId.systemDefault()
+                    val startOfDay = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
+                    if (AppDatabase.getDatabase(appContext).readingStatsDao().countSessionsSince(startOfDay) == 0) {
+                        ReadingReminderScheduler.showReminder(appContext)
+                    }
                 }
+            } catch (error: Exception) {
+                // A missed reminder is harmless; never crash a background broadcast over it.
             } finally {
-                ReadingReminderScheduler.schedule(context)
-                pendingResult.finish()
+                try {
+                    // Also handles BOOT_COMPLETED: alarms do not survive a reboot.
+                    ReadingReminder.rescheduleNow(appContext)
+                } finally {
+                    pendingResult.finish()
+                }
             }
         }
     }

@@ -43,7 +43,13 @@ fun AppUpdateDialog(
     onDownload: (AppRelease) -> Unit,
     onCancelDownload: () -> Unit,
     onRetryCheck: () -> Unit,
-    onRetryInstall: () -> Unit
+    onRetryInstall: () -> Unit,
+    /**
+     * "Открыть настройки" in the install-permission dialog. Defaults to
+     * [onRetryInstall], which re-sends the downloaded APK to the Activity and
+     * makes it open the "install unknown apps" settings again.
+     */
+    onOpenInstallSettings: (() -> Unit)? = null
 ) {
     when (state) {
         null -> Unit
@@ -62,13 +68,13 @@ fun AppUpdateDialog(
         is AppUpdateDialogState.Installing -> ProgressMessageDialog(
             title = "Обновление готово",
             message = "Открываем системный установщик…",
-            icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) }
+            icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
+            onDismiss = onDismiss
         )
 
-        is AppUpdateDialogState.AwaitingInstallPermission -> ProgressMessageDialog(
-            title = "Разрешите установку",
-            message = "Включите установку из этого источника в открывшихся настройках. После этого установка продолжится автоматически.",
-            icon = { Icon(Icons.Default.Security, contentDescription = null) }
+        is AppUpdateDialogState.AwaitingInstallPermission -> InstallPermissionDialog(
+            onOpenSettings = onOpenInstallSettings ?: onRetryInstall,
+            onDismiss = onDismiss
         )
 
         is AppUpdateDialogState.UpToDate -> UpToDateDialog(
@@ -238,10 +244,11 @@ private fun DownloadingDialog(
 private fun ProgressMessageDialog(
     title: String,
     message: String,
-    icon: @Composable () -> Unit
+    icon: @Composable () -> Unit,
+    onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = {},
+        onDismissRequest = onDismiss,
         icon = icon,
         title = { Text(title) },
         text = {
@@ -254,7 +261,38 @@ private fun ProgressMessageDialog(
                 )
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Скрыть") }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
+}
+
+@Composable
+private fun InstallPermissionDialog(
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Security, contentDescription = null) },
+        title = { Text("Разрешите установку") },
+        text = {
+            Text(
+                text = "Чтобы установить обновление, включите «Разрешить установку из этого источника» " +
+                    "для Lumina Reader в системных настройках и вернитесь в приложение — " +
+                    "установка продолжится автоматически.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenSettings) {
+                Text("Открыть настройки", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
         shape = RoundedCornerShape(28.dp)
     )
 }

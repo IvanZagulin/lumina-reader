@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup rules for Android 11 and below (android:fullBackupContent).
+    Android 12+ uses data_extraction_rules.xml; keep both files in sync.
+
+    Only the listed paths are backed up:
+      - database: every file of every database, including the SQLite -wal/-shm
+        journals, so a restore never sees a half-written database;
+      - sharedpref: all SharedPreferences;
+      - file datastore/: Preferences DataStore files (reader, reminder settings).
+    Everything else is left out on purpose: files/books and files/covers are too
+    large for the 25 MB backup quota, and cacheDir is never backed up by Android.
+    The library copes with restored rows whose book file is missing.
+-->
 <full-backup-content>
-    <include domain="database" path="lumina_reader.db" />
+    <include domain="database" path="." />
     <include domain="sharedpref" path="." />
+    <include domain="file" path="datastore/" />
 </full-backup-content>
