@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
@@ -44,6 +42,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import com.lumina.reader.ui.theme.LoraFamily
 import com.lumina.reader.ui.components.BookCover
 import com.lumina.reader.ui.components.Endpaper
 import com.lumina.reader.ui.theme.Lumina
@@ -64,7 +66,9 @@ internal class TransitionFrame(
     /** Elevation of the flying book in dp (4 → 24 over the flight). */
     val shadowDp: Float,
     val hinge: Float,
-    val expand: Float
+    val expand: Float,
+    /** «Приятного чтения» on the page: appears as the cover opens, never while closing. */
+    val greetingAlpha: Float
 )
 
 internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): TransitionFrame {
@@ -79,7 +83,16 @@ internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): Tra
     }
     val book = TransitionGeometry.lerpRect(source, stageRect, f)
         .translate(Offset(0f, TransitionGeometry.arcOffset(f, arcPx)))
-    var page = TransitionGeometry.lerpRect(TransitionGeometry.pageRect(book, h), endRect, e)
+    // As the cover swings open the camera moves onto the right-hand page: it
+    // grows and slides to the screen centre while the open cover slips off
+    // the left edge, so the book visibly opens wide before the page fills the screen.
+    val focus = TransitionGeometry.smoothstep(TransitionGeometry.window(h, BookTransitionState.FOCUS_START, 1f))
+    val openPage = TransitionGeometry.lerpRect(
+        TransitionGeometry.pageRect(book, h),
+        TransitionGeometry.focusedPageRect(book, fullRect.center.x, BookTransitionState.OPEN_ZOOM),
+        focus
+    )
+    var page = TransitionGeometry.lerpRect(openPage, endRect, e)
     if (v > 0f) page = TransitionGeometry.scaleAbout(page, page.center, 1f - 0.4f * v)
     val sinH = sin(PI * h).toFloat()
     return TransitionFrame(
@@ -91,7 +104,8 @@ internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): Tra
         pageAlpha = 1f - v,
         shadowDp = TransitionGeometry.lerp(4f, 24f, f) * (1f - e) * (1f - v),
         hinge = h,
-        expand = e
+        expand = e,
+        greetingAlpha = if (closing) 0f else TransitionGeometry.window(h, 0.55f, 0.9f) * (1f - v)
     )
 }
 
@@ -192,6 +206,21 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                 }
         )
 
+        // «Приятного чтения» centred on the page, under the swinging cover.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val fr = state.frame(arcPx, closedCornerPx)
+                    translationX = fr.page.center.x - size.width / 2f
+                    translationY = fr.page.center.y - size.height / 2f
+                    alpha = fr.greetingAlpha * fr.pageAlpha
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Greeting(ink = state.paperInk, waiting = state.waitingVisible, reducedMotion = state.reducedMotion)
+        }
+
         // The cover: placed and scaled onto the page rect, hinged at its left edge.
         Box(
             modifier = Modifier
@@ -233,12 +262,6 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
             }
         }
 
-        if (state.waitingVisible) {
-            WaitingLine(
-                ink = state.paperInk,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
     }
 }
 
@@ -306,27 +329,46 @@ private fun DrawScope.drawPage(state: BookTransitionState, fr: TransitionFrame, 
     }
 }
 
-/** «Открываю книгу…» with a 96×2 dp indeterminate line at 72% of the height. */
+/**
+ * «Приятного чтения» with a small ornament. If the reader is still loading
+ * when the page has opened, three soft dots breathe under it instead of a
+ * progress bar.
+ */
 @Composable
-private fun WaitingLine(ink: Color, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.weight(0.72f))
-        LinearProgressIndicator(
-            modifier = Modifier
-                .width(96.dp)
-                .height(2.dp),
-            color = ink.copy(alpha = 0.7f),
-            trackColor = ink.copy(alpha = 0.12f)
+private fun Greeting(ink: Color, waiting: Boolean, reducedMotion: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "❦",
+            color = ink.copy(alpha = 0.45f),
+            fontSize = 20.sp
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "Открываю книгу…",
-            color = ink.copy(alpha = 0.6f),
+            text = "Приятного чтения",
+            color = ink.copy(alpha = 0.82f),
+            fontFamily = LoraFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontStyle = FontStyle.Italic,
+            fontSize = 22.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(14.dp))
+        val dotsAlpha = if (waiting && !reducedMotion) {
+            rememberInfiniteTransition(label = "reader-wait").animateFloat(
+                initialValue = 0.2f,
+                targetValue = 0.6f,
+                animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
+                label = "dots"
+            ).value
+        } else if (waiting) {
+            0.4f
+        } else {
+            0f
+        }
+        Text(
+            text = "• • •",
+            color = ink.copy(alpha = dotsAlpha),
             fontSize = 12.sp
         )
-        Spacer(Modifier.weight(0.28f))
     }
 }

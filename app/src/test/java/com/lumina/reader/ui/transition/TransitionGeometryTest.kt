@@ -79,6 +79,24 @@ class TransitionGeometryTest {
     }
 
     @Test
+    fun focusedPageIsZoomedAndCentredOnTheScreen() {
+        val book = Rect(100f, 200f, 200f, 350f)
+        val page = TransitionGeometry.focusedPageRect(book, screenCenterX = 180f, zoom = 1.3f)
+        assertEquals(130f, page.width, eps)
+        assertEquals(195f, page.height, eps)
+        assertEquals(180f, page.center.x, eps)
+        assertEquals(book.center.y, page.center.y, eps)
+    }
+
+    @Test
+    fun smoothstepIsClampedAndFlatAtTheEnds() {
+        assertEquals(0f, TransitionGeometry.smoothstep(-1f), eps)
+        assertEquals(0.5f, TransitionGeometry.smoothstep(0.5f), eps)
+        assertEquals(1f, TransitionGeometry.smoothstep(2f), eps)
+        assertEquals(0.028f, TransitionGeometry.smoothstep(0.1f), 0.001f)
+    }
+
+    @Test
     fun readerShotKeepsItsAspectRatio() {
         val page = Rect(0f, 0f, 100f, 200f)
         val dst = TransitionGeometry.fitHeightCentered(Size(1080f, 2400f), page)

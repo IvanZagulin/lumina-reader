@@ -272,26 +272,29 @@ class BookTransitionState internal constructor(
                 val fast = mode == OpenAnimation.FAST
                 coroutineScope {
                     if (fast) {
-                        launch { flight.animateTo(1f, tween(220, easing = LuminaMotion.Emphasized)) }
-                        launch { libraryBackdrop.animateTo(1f, tween(300, easing = LinearOutSlowInEasing)) }
+                        launch { flight.animateTo(1f, tween(300, easing = LuminaMotion.Emphasized)) }
+                        launch { libraryBackdrop.animateTo(1f, tween(360, easing = LinearOutSlowInEasing)) }
                         launch {
-                            delay(160)
-                            hinge.animateTo(FAST_HINGE, tween(240, easing = LuminaMotion.Hinge))
+                            delay(200)
+                            hinge.animateTo(1f, tween(520, easing = LuminaMotion.Hinge))
                         }
                         launch {
-                            delay(260)
-                            expand.animateTo(1f, tween(260, easing = LuminaMotion.Emphasized))
+                            delay(760)
+                            expand.animateTo(1f, tween(360, easing = LuminaMotion.Emphasized))
                         }
                     } else {
-                        launch { flight.animateTo(1f, tween(380, easing = LuminaMotion.Emphasized)) }
-                        launch { libraryBackdrop.animateTo(1f, tween(420, easing = LinearOutSlowInEasing)) }
+                        // The book flies to the centre, the cover swings open slowly while
+                        // the camera moves onto the page, the open book holds for a moment
+                        // with «Приятного чтения», then the page fills the screen.
+                        launch { flight.animateTo(1f, tween(620, easing = LuminaMotion.Emphasized)) }
+                        launch { libraryBackdrop.animateTo(1f, tween(700, easing = LinearOutSlowInEasing)) }
                         launch {
-                            delay(280)
-                            hinge.animateTo(1f, tween(480, easing = LuminaMotion.Hinge))
+                            delay(460)
+                            hinge.animateTo(1f, tween(1050, easing = LuminaMotion.Hinge))
                         }
                         launch {
-                            delay(600)
-                            expand.animateTo(1f, tween(320, easing = LuminaMotion.Emphasized))
+                            delay(1800)
+                            expand.animateTo(1f, tween(560, easing = LuminaMotion.Emphasized))
                         }
                     }
                 }
@@ -304,7 +307,7 @@ class BookTransitionState internal constructor(
                         readerReady.first { it == bookId }
                     }
                 }
-                overlayAlpha.animateTo(0f, tween(if (fast) 150 else 200, easing = LinearOutSlowInEasing))
+                overlayAlpha.animateTo(0f, tween(if (fast) 200 else 380, easing = LinearOutSlowInEasing))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -483,9 +486,12 @@ class BookTransitionState internal constructor(
     internal companion object {
         /** The library behind the overlay is scaled down by this much (spec §5.1, §6.5). */
         const val LIBRARY_SCALE_DEPTH = 0.06f
+        /** Hinge progress at which the camera starts moving onto the right-hand page. */
+        const val FOCUS_START = 0.3f
+        /** Size of the open page relative to the closed book once the camera is on it. */
+        const val OPEN_ZOOM = 1.3f
 
         /** «Быстрая» opens the cover to about −110° (h = 0.61). */
-        const val FAST_HINGE = 0.61f
         const val WAIT_BEFORE_INDICATOR_MS = 400L
         const val READER_TIMEOUT_MS = 10_000L
     }

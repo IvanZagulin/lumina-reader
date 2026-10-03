@@ -60,6 +60,24 @@ internal object TransitionGeometry {
         return Rect(spine, book.top, spine + book.width, book.bottom)
     }
 
+    /**
+     * The right-hand page once the camera has moved onto it: centred
+     * horizontally on the screen, at the closed book's height, [zoom] times the
+     * closed book's size. The opened cover then lies mostly off the left edge.
+     */
+    fun focusedPageRect(book: Rect, screenCenterX: Float, zoom: Float): Rect {
+        val w = book.width * zoom
+        val h = book.height * zoom
+        val cy = book.center.y
+        return Rect(screenCenterX - w / 2f, cy - h / 2f, screenCenterX + w / 2f, cy + h / 2f)
+    }
+
+    /** Smooth 0..1 ramp with zero slope at both ends. */
+    fun smoothstep(t: Float): Float {
+        val x = t.coerceIn(0f, 1f)
+        return x * x * (3f - 2f * x)
+    }
+
     fun scaleAbout(rect: Rect, pivot: Offset, scale: Float): Rect = Rect(
         pivot.x + (rect.left - pivot.x) * scale,
         pivot.y + (rect.top - pivot.y) * scale,
