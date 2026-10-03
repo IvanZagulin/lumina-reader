@@ -10,6 +10,7 @@ on:
       - 'shared/**'
       - 'sharedUi/**'
       - 'iosApp/**'
+      - 'altstore/**'
       - 'gradle/**'
       - '*.gradle.kts'
       - 'gradle.properties'
@@ -19,6 +20,7 @@ on:
       - 'shared/**'
       - 'sharedUi/**'
       - 'iosApp/**'
+      - 'altstore/**'
       - 'gradle/**'
       - '*.gradle.kts'
       - 'gradle.properties'
@@ -78,6 +80,10 @@ jobs:
           fi
           xcodebuild -version
           xcrun simctl list runtimes available
+
+      - name: AltStore source script tests
+        shell: bash
+        run: python3 -m unittest discover -s altstore -v
 
       - name: Compile, link and test for iOS
         shell: bash

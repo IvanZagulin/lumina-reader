@@ -44,6 +44,27 @@ class ReleaseSelectorTest {
     }
 
     @Test
+    fun `iOS builds published by ios-release yml are never offered to Android`() {
+        // ios-release.yml publishes "ios-v1.0.N" prereleases that carry only an .ipa.
+        // Each of the three properties alone keeps them out of the Android updater.
+        val ipa = listOf(asset("LuminaReader-1.0.99.ipa"))
+        val selected = ReleaseSelector.select(
+            listOf(
+                release("v1.1.5"),
+                release("ios-v1.0.99", prerelease = true, publishedAt = "2026-12-01T00:00:00Z", assets = ipa),
+                release("ios-v1.0.98", publishedAt = "2026-12-01T00:00:00Z", assets = ipa),
+                release("v9.0.0", publishedAt = "2026-12-01T00:00:00Z", assets = ipa),
+                release(
+                    "ios-v9.0.0",
+                    publishedAt = "2026-12-01T00:00:00Z",
+                    assets = listOf(asset("LuminaReader-9.0.0.apk"))
+                )
+            )
+        )
+        assertEquals("v1.1.5", selected?.tagName)
+    }
+
+    @Test
     fun `releases with unparseable tags are skipped`() {
         val selected = ReleaseSelector.select(listOf(release("latest"), release("v1.0.1")))
         assertEquals("v1.0.1", selected?.tagName)

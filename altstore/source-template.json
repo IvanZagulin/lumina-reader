@@ -1,0 +1,32 @@
+{
+  "name": "Lumina Reader",
+  "identifier": "com.lumina.reader.source",
+  "subtitle": "Читалка EPUB, FB2, PDF и TXT для iPhone",
+  "description": "Неподписанные сборки Lumina Reader для iPhone, собранные GitHub Actions из ветки main. AltStore подписывает приложение вашим Apple ID при установке и обновлении.",
+  "iconURL": "https://raw.githubusercontent.com/{repository}/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+  "website": "https://github.com/{repository}",
+  "sourceURL": "https://raw.githubusercontent.com/{repository}/automation/altstore-source/source.json",
+  "tintColor": "#A64A23",
+  "featuredApps": [
+    "com.lumina.reader"
+  ],
+  "apps": [
+    {
+      "name": "Lumina Reader",
+      "bundleIdentifier": "com.lumina.reader",
+      "developerName": "IvanZagulin",
+      "subtitle": "Читалка электронных книг",
+      "localizedDescription": "Lumina Reader — читалка электронных книг EPUB, FB2, PDF и TXT. Это предварительные сборки для iPhone: перенос приложения с Android идёт по этапам, и пока сборка показывает только экран-заглушку.",
+      "iconURL": "https://raw.githubusercontent.com/{repository}/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "tintColor": "#A64A23",
+      "category": "lifestyle",
+      "screenshots": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      },
+      "versions": []
+    }
+  ],
+  "news": []
+}

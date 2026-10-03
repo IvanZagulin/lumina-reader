@@ -1,0 +1,222 @@
+# Builds the unsigned iPhone app (.ipa) and, on main, publishes it as a GitHub
+# prerelease "ios-v1.0.<run>" and updates the AltStore source on the branch
+# automation/altstore-source. AltStore re-signs the app with the user's Apple ID.
+#
+# The prerelease is never marked "latest" and carries no .apk, so the Android
+# updater (core/update/ReleaseSelector) ignores it. Android releases come from
+# release.yml, which ignores iOS-only changes.
+name: iOS build and AltStore update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'shared/**'
+      - 'sharedUi/**'
+      - 'iosApp/**'
+      - 'altstore/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/ios-release.yml'
+  # On main: build and publish. On any other branch: build and upload the .ipa
+  # as a workflow artifact only.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lumina-ios-release
+  cancel-in-progress: false
+
+jobs:
+  ipa:
+    name: Unsigned IPA, prerelease and AltStore source
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      IOS_VERSION: "1.0.${{ github.run_number }}"
+      IOS_BUILD: "${{ github.run_number }}"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Keep the write token out of .git/config while Gradle and Xcode run;
+          # the publishing steps pass it explicitly.
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          shopt -s nullglob
+          candidates=(/Applications/Xcode_26.0*.app)
+          if [ "${#candidates[@]}" -eq 0 ]; then candidates=(/Applications/Xcode_26*.app); fi
+          XCODE=""
+          if [ "${#candidates[@]}" -gt 0 ]; then
+            XCODE="$(printf '%s\n' "${candidates[@]}" | sort | tail -n 1)"
+          fi
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE/Contents/Developer"
+            echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Xcode 26 is not installed on this runner; using $(xcode-select -p)"
+          fi
+          xcodebuild -version
+
+      - name: AltStore source script tests
+        shell: bash
+        run: python3 -m unittest discover -s altstore -v
+
+      - name: Generate the Xcode project
+        shell: bash
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          cd iosApp
+          xcodegen generate
+
+      - name: Link the Kotlin framework for devices
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :sharedUi:linkReleaseFrameworkIosArm64 --no-daemon --stacktrace
+
+      - name: Build the unsigned device app
+        shell: bash
+        run: |
+          xcodebuild \
+            -project iosApp/LuminaReader.xcodeproj \
+            -scheme LuminaReader \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios \
+            ARCHS=arm64 \
+            MARKETING_VERSION="$IOS_VERSION" \
+            CURRENT_PROJECT_VERSION="$IOS_BUILD" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package and check the IPA
+        shell: bash
+        run: |
+          APP=build/ios/Build/Products/Release-iphoneos/LuminaReader.app
+          PLIST="$APP/Info.plist"
+          test -d "$APP"
+          plutil -p "$PLIST"
+          expect() {
+            local actual
+            actual="$(/usr/libexec/PlistBuddy -c "Print :$1" "$PLIST" 2>/dev/null || true)"
+            if [ "$actual" != "$2" ]; then
+              echo "::error::Info.plist $1 is '$actual', expected '$2'"
+              exit 1
+            fi
+          }
+          # AltStore matches these against the source; Compose aborts at start-up
+          # without CADisableMinimumFrameDurationOnPhone.
+          expect CFBundleIdentifier com.lumina.reader
+          expect CFBundleShortVersionString "$IOS_VERSION"
+          expect CFBundleVersion "$IOS_BUILD"
+          expect CFBundleDisplayName Lumina
+          expect MinimumOSVersion 15.0
+          expect CADisableMinimumFrameDurationOnPhone true
+          if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$PLIST" 2>/dev/null || true)" != "AppIcon" ]; then
+            echo "::warning::The app icon is missing from Info.plist (CFBundleIcons)"
+          fi
+          lipo -info "$APP/LuminaReader"
+          lipo -archs "$APP/LuminaReader" | grep -qw arm64
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/
+          (cd dist && zip -qry "LuminaReader-$IOS_VERSION.ipa" Payload)
+          echo "IPA=dist/LuminaReader-$IOS_VERSION.ipa" >> "$GITHUB_ENV"
+          ls -la dist
+
+      - name: Upload the IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaReader-ipa
+          path: dist/*.ipa
+          if-no-files-found: error
+
+      - name: Publish the prerelease
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-v$IOS_VERSION"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$IPA" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            # --prerelease and --latest=false: Android's updater reads the release
+            # list, and "latest" must stay the newest Android release.
+            gh release create "$TAG" "$IPA" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Lumina Reader iOS $IOS_VERSION" \
+              --notes "Неподписанная сборка для iPhone (установка через AltStore). Коммит $GITHUB_SHA." \
+              --prerelease \
+              --latest=false
+          fi
+
+      - name: Update the AltStore source
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SIZE="$(stat -f%z "$IPA")"
+          SHA256="$(shasum -a 256 "$IPA" | cut -d' ' -f1)"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          BRANCH=automation/altstore-source
+          # The published source keeps the version history; start empty if the
+          # branch does not exist yet.
+          if git fetch --quiet --depth 1 "$REMOTE" "$BRANCH" 2>/dev/null; then
+            git show FETCH_HEAD:source.json > "$RUNNER_TEMP/current.json" || echo '{}' > "$RUNNER_TEMP/current.json"
+          else
+            echo '{}' > "$RUNNER_TEMP/current.json"
+          fi
+          python3 altstore/update_source.py \
+            --template altstore/source-template.json \
+            --current "$RUNNER_TEMP/current.json" \
+            --out "$RUNNER_TEMP/source.json" \
+            --repository "$GITHUB_REPOSITORY" \
+            --version "$IOS_VERSION" \
+            --build "$IOS_BUILD" \
+            --url "https://github.com/$GITHUB_REPOSITORY/releases/download/ios-v$IOS_VERSION/LuminaReader-$IOS_VERSION.ipa" \
+            --size "$SIZE" \
+            --sha256 "$SHA256" \
+            --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --notes "Сборка $IOS_VERSION из коммита ${GITHUB_SHA:0:7}." \
+            --keep 5
+          # One-commit branch that holds only source.json; AltStore reads it from
+          # https://raw.githubusercontent.com/<owner>/<repo>/automation/altstore-source/source.json
+          PUBLISH="$RUNNER_TEMP/altstore-source"
+          mkdir -p "$PUBLISH"
+          cp "$RUNNER_TEMP/source.json" "$PUBLISH/source.json"
+          cd "$PUBLISH"
+          git init --quiet
+          git add source.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "AltStore source: Lumina Reader iOS $IOS_VERSION"
+          git push --quiet --force "$REMOTE" "HEAD:refs/heads/$BRANCH"
+          echo "AltStore source: https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$BRANCH/source.json"
