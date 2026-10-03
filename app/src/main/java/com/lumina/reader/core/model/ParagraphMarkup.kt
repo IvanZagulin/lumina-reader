@@ -85,6 +85,20 @@ object ParagraphMarkup {
     fun noteRef(label: String, id: String): String =
         "$NOTE_START${label.filterNot(::isMarker)}$NOTE_ID_SEP${id.filterNot(::isMarker)}$NOTE_END"
 
+    /** Text of the centered scene break that parsers emit as a [BlockStyle.SUBTITLE] paragraph. */
+    const val SCENE_BREAK_TEXT = "* * *"
+
+    /** A ready-made scene-break paragraph ("* * *", centered). */
+    fun sceneBreak(): String = block(BlockStyle.SUBTITLE, SCENE_BREAK_TEXT)
+
+    /** Removes every marker character, e.g. to sanitise raw source text before wrapping it. */
+    fun stripMarkers(text: String): String =
+        if (!hasMarkup(text)) text else text.filterNot(::isMarker)
+
+    /** [raw] without its leading block marker; inline markers are kept. */
+    fun withoutBlockMarker(raw: String): String =
+        if (blockStyle(raw) == BlockStyle.NORMAL) raw else raw.substring(1)
+
     // ---- Readers ---------------------------------------------------------
 
     fun blockStyle(raw: String): BlockStyle =

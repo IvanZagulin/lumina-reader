@@ -1,356 +1,709 @@
 package com.lumina.reader.core.parser.fb2
 
-import android.util.Base64
-import android.util.Log
-import android.util.Xml
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.Chapter
+import com.lumina.reader.core.model.ParagraphMarkup
+import com.lumina.reader.core.model.ParagraphMarkup.BlockStyle
 import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.TocItem
 import com.lumina.reader.core.parser.BookParser
-import org.xmlpull.v1.XmlPullParser
+import com.lumina.reader.core.parser.common.Base64StreamDecoder
+import com.lumina.reader.core.parser.common.ImageSniffer
+import com.lumina.reader.core.parser.common.MarkupToken
+import com.lumina.reader.core.parser.common.MarkupTokenizer
+import com.lumina.reader.core.parser.common.NoteSupport
+import com.lumina.reader.core.parser.common.ParagraphAccumulator
+import com.lumina.reader.core.parser.common.ParserLimits
+import com.lumina.reader.core.parser.common.TextEncoding
+import com.lumina.reader.core.parser.common.TextSupport
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStream
-import java.nio.charset.Charset
+import java.io.InputStreamReader
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipFile
 
 internal fun fb2ChapterTitle(explicitTitle: String, chapterIndex: Int): String =
     explicitTitle.ifBlank { "Глава ${chapterIndex + 1}" }
 
+/**
+ * FictionBook 2 parser (plain `.fb2` and zipped `.fb2.zip`).
+ *
+ * The XML is read in a streaming fashion with a forgiving tokenizer: HTML named
+ * entities are understood, malformed markup does not abort parsing, and a file
+ * that ends unexpectedly keeps everything read so far plus a final note that
+ * the file is damaged. Encoding: BOM, then the XML declaration, else UTF-8 when
+ * the bytes are valid UTF-8, else windows-1251.
+ *
+ * Chapters follow the `<section>` structure: a section with its own text is a
+ * chapter; a titled section nested in a chapter that already has text becomes
+ * a HEADING inside it (with its own TOC entry); sections that only group
+ * others (e.g. "Часть 1" with an epigraph) contribute TOC entries one level up.
+ * The notes body (`<body name="notes">`) fills [ParsedBook.footnotes].
+ */
 class Fb2Parser : BookParser {
 
-    override fun parse(file: File): ParsedBook {
-        return parse(FileInputStream(file), file.name)
-    }
+    override fun parse(file: File): ParsedBook = parseFile(file, file.name)
 
     override fun parse(inputStream: InputStream, fileName: String): ParsedBook {
-        val isZip = fileName.lowercase().endsWith(".zip") || fileName.lowercase().endsWith(".fb2_zip")
-        var effectiveStream: InputStream? = null
-        var zipStream: ZipInputStream? = null
-
+        val temp = File.createTempFile("lumina_fb2_", ".tmp")
         try {
-            if (isZip) {
-                zipStream = ZipInputStream(inputStream)
-                var entry: ZipEntry? = zipStream.nextEntry
-                while (entry != null) {
-                    val name = entry.name.lowercase()
-                    if (!entry.isDirectory && (name.endsWith(".fb2") || name.endsWith(".xml"))) {
-                        effectiveStream = zipStream
-                        break
-                    }
-                    zipStream.closeEntry()
-                    entry = zipStream.nextEntry
-                }
-                if (effectiveStream == null) {
-                    return createEmptyBook(fileName, isZip)
-                }
-            } else {
-                effectiveStream = inputStream
-            }
-
-            // Wrap in BufferedInputStream to allow mark/reset for encoding detection
-            val bufferedStream = BufferedInputStream(effectiveStream, 64 * 1024)
-            bufferedStream.mark(2048)
-
-            val buffer = ByteArray(2048)
-            val bytesRead = bufferedStream.read(buffer, 0, buffer.size)
-            bufferedStream.reset()
-
-            var charsetName = "UTF-8"
-            if (bytesRead > 0) {
-                val headerSnippet = String(buffer, 0, bytesRead, Charsets.US_ASCII)
-                val encodingMatch = Regex("encoding=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(headerSnippet)
-                if (encodingMatch != null) {
-                    charsetName = encodingMatch.groupValues[1]
-                }
-            }
-
-            return try {
-                parseXmlStream(bufferedStream, fileName, charsetName, isZip)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                createEmptyBook(fileName, isZip, "Ошибка чтения XML: ${e.message}")
-            }
-
+            inputStream.use { input -> FileOutputStream(temp).use { output -> input.copyTo(output) } }
+            return parseFile(temp, fileName)
         } finally {
+            temp.delete()
+        }
+    }
+
+    private fun parseFile(file: File, displayName: String): ParsedBook {
+        val isZip = isZipArchive(file) ||
+            displayName.lowercase().let { it.endsWith(".zip") || it.endsWith(".fb2_zip") }
+        return try {
             if (isZip) {
-                zipStream?.close()
+                ZipFile(file).use { zip ->
+                    val entry = findFb2Entry(zip)
+                        ?: return createEmptyBook(displayName, true, "В архиве не найден файл FB2")
+                    parseSource({ zip.getInputStream(entry) }, displayName, true)
+                }
             } else {
-                effectiveStream?.close()
-                inputStream.close()
+                parseSource({ FileInputStream(file) }, displayName, false)
+            }
+        } catch (e: Exception) {
+            createEmptyBook(displayName, isZip, "Не удалось прочитать файл: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun isZipArchive(file: File): Boolean {
+        val head = ByteArray(4)
+        val read = try {
+            FileInputStream(file).use { it.read(head) }
+        } catch (e: Exception) {
+            -1
+        }
+        return read == 4 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte() &&
+            head[2] == 3.toByte() && head[3] == 4.toByte()
+    }
+
+    private fun findFb2Entry(zip: ZipFile): ZipEntry? {
+        var xmlEntry: ZipEntry? = null
+        val entries = zip.entries()
+        while (entries.hasMoreElements()) {
+            val entry = entries.nextElement()
+            if (entry.isDirectory) continue
+            val name = entry.name.lowercase()
+            if (name.endsWith(".fb2")) return entry
+            if (xmlEntry == null && name.endsWith(".xml")) xmlEntry = entry
+        }
+        return xmlEntry
+    }
+
+    private fun parseSource(open: () -> InputStream, fileName: String, isZip: Boolean): ParsedBook {
+        val charset = TextEncoding.detect(open)
+        val builder = Fb2BookBuilder(fileName, isZip)
+        return open().use { raw ->
+            val reader = InputStreamReader(BufferedInputStream(raw, 64 * 1024), charset)
+            val tokenizer = MarkupTokenizer(reader)
+            var failed = false
+            try {
+                while (true) {
+                    val token = tokenizer.next() ?: break
+                    builder.accept(token)
+                }
+            } catch (e: Exception) {
+                failed = true
+            }
+            builder.build(damaged = failed || tokenizer.truncated)
+        }
+    }
+
+    companion object {
+        internal const val DAMAGED_NOTE = "Файл книги повреждён: дальше этого места текст прочитать не удалось."
+
+        internal fun createEmptyBook(
+            fileName: String,
+            isZip: Boolean,
+            message: String = "Пустой или неподдерживаемый файл"
+        ): ParsedBook {
+            val chapter = Chapter(index = 0, title = "Ошибка", paragraphs = listOf(message))
+            return ParsedBook(
+                title = fileName.substringBeforeLast("."),
+                author = "Неизвестный автор",
+                chapters = listOf(chapter),
+                tableOfContents = listOf(TocItem(id = "err_0", title = "Ошибка", chapterIndex = 0)),
+                format = if (isZip) BookFormat.FB2_ZIP else BookFormat.FB2
+            )
+        }
+    }
+}
+
+/** Streaming state machine that turns FB2 tokens into a [ParsedBook]. */
+internal class Fb2BookBuilder(private val fileName: String, private val isZip: Boolean) {
+
+    private class Author {
+        var first = ""
+        var middle = ""
+        var last = ""
+        var nick = ""
+
+        fun display(): String =
+            listOf(last, first, middle).filter { it.isNotBlank() }.joinToString(" ").ifBlank { nick }
+    }
+
+    private class Section(val depth: Int) {
+        var title: String? = null
+        /** null until known: true when the section continues the open chapter as a sub-heading. */
+        var inline: Boolean? = null
+        var hasDirectText = false
+    }
+
+    private class NoteSection(val id: String?) {
+        val parts = ArrayList<String>()
+        var title: String? = null
+    }
+
+    private class ChapterBuilder(val title: String, val owner: Section?) {
+        val paragraphs = ArrayList<String>()
+        var chars = 0
+    }
+
+    private enum class TitleContext { BODY, SECTION, NOTE }
+
+    // metadata
+    private var bookTitle = ""
+    private val authors = ArrayList<String>()
+    private var author: Author? = null
+    private val annotation = ArrayList<String>()
+    private var seriesName = ""
+    private var seriesOrder = 0
+    private var coverImageId = ""
+    private var coverBytes: ByteArray? = null
+    private val images = LinkedHashMap<String, ByteArray>()
+    private var imageBytes = 0L
+
+    // structure
+    private val stack = ArrayList<String>()
+    private var leaf: StringBuilder? = null
+    private var leafName = ""
+    private var inBody = false
+    private var notesBody = false
+    private var bodyTitle: String? = null
+    private val sections = ArrayList<Section>()
+    private val noteSections = ArrayList<NoteSection>()
+    private val chapters = ArrayList<Chapter>()
+    private var current: ChapterBuilder? = null
+    private val toc = ArrayList<TocItem>()
+    private val pendingToc = ArrayList<Pair<String, Int>>()
+    private val footnotes = LinkedHashMap<String, String>()
+    private val noteLabels = HashMap<String, String>()
+    private var rootClosed = false
+
+    // text
+    private val acc = ParagraphAccumulator()
+    private val textBlocks = ArrayList<Pair<String, BlockStyle>>()
+    private var titleParts: ArrayList<String>? = null
+    private var titleContext = TitleContext.SECTION
+    private var titleDepth = -1
+    private val stanzaCounts = ArrayList<Int>()
+    private var noteLabel: StringBuilder? = null
+    private var noteTarget = ""
+    private var noteExplicit = false
+    private var binary: Base64StreamDecoder? = null
+    private var binaryId = ""
+
+    fun accept(token: MarkupToken) {
+        when (token) {
+            is MarkupToken.StartTag -> onStart(token)
+            is MarkupToken.EndTag -> onEnd(token.name)
+            is MarkupToken.Text -> onText(token.text)
+        }
+    }
+
+    private fun inside(name: String): Boolean = stack.contains(name)
+
+    // ---- start tags ------------------------------------------------------
+
+    private fun onStart(tag: MarkupToken.StartTag) {
+        val name = tag.name
+        val parent = stack.lastOrNull()
+        when (name) {
+            "author" -> if (parent == "title-info") author = Author()
+            "first-name", "middle-name", "last-name", "nickname" -> if (author != null && parent == "author") startLeaf(name)
+            "book-title" -> if (parent == "title-info") startLeaf(name)
+            "sequence" -> if (parent == "title-info" && seriesName.isBlank()) {
+                seriesName = tag.attr("name")?.trim().orEmpty()
+                seriesOrder = tag.attr("number")?.trim()?.toDoubleOrNull()?.toInt()?.coerceAtLeast(0) ?: 0
+            }
+            "image" -> onImage(tag)
+            "body" -> {
+                inBody = true
+                val bodyName = tag.attr("name")?.lowercase().orEmpty()
+                notesBody = bodyName.contains("note") || bodyName.contains("comment")
+                bodyTitle = null
+            }
+            "section" -> if (inBody) startSection(tag)
+            "title" -> if (inBody) startTitle(parent)
+            "p" -> startTextBlock(name, paragraphStyle())
+            "v" -> startTextBlock(name, BlockStyle.VERSE)
+            "subtitle" -> startTextBlock(name, BlockStyle.SUBTITLE)
+            "text-author" -> startTextBlock(name, BlockStyle.TEXT_AUTHOR)
+            "date" -> if (inBody && inside("poem")) startTextBlock(name, BlockStyle.TEXT_AUTHOR)
+            "tr" -> if (inBody) startTextBlock(name, BlockStyle.NORMAL)
+            "td", "th" -> if (acc.hasContent) acc.appendSeparator(" | ")
+            "poem" -> stanzaCounts.add(0)
+            "stanza" -> if (stanzaCounts.isNotEmpty()) {
+                val last = stanzaCounts.lastIndex
+                if (stanzaCounts[last] > 0) emitGap()
+                stanzaCounts[last] = stanzaCounts[last] + 1
+            }
+            "empty-line" -> if (inBody && titleParts == null) {
+                flushInline()
+                emitGap()
+            }
+            "emphasis" -> acc.beginEmphasis()
+            "strong" -> acc.beginStrong()
+            "a" -> startLink(tag)
+            "binary" -> {
+                binaryId = tag.attr("id").orEmpty()
+                binary = Base64StreamDecoder(ParserLimits.MAX_IMAGE_BYTES)
+            }
+        }
+        if (!tag.selfClosing) {
+            stack.add(name)
+        } else {
+            // A self-closing element ends immediately.
+            when (name) {
+                "emphasis" -> acc.endEmphasis()
+                "strong" -> acc.endStrong()
+                "binary" -> binary = null
+                "a" -> finishLink()
+                "section" -> if (inBody) endSection()
+                "p", "v", "subtitle", "text-author", "date", "tr" ->
+                    if (textBlocks.isNotEmpty() && textBlocks.last().first == name) endTextBlock()
+                "poem" -> if (stanzaCounts.isNotEmpty()) stanzaCounts.removeAt(stanzaCounts.lastIndex)
+                "title" -> if (titleParts != null && titleDepth == stack.size) endTitle()
             }
         }
     }
 
-    private fun parseXmlStream(stream: InputStream, fileName: String, charsetName: String, isZip: Boolean): ParsedBook {
-        var title = ""
-        var firstName = ""
-        var lastName = ""
-        var middleName = ""
-        var annotation = ""
-        var coverImageId = ""
-        var seriesName = ""
-        var seriesOrder = 0
+    private fun startLeaf(name: String) {
+        leaf = StringBuilder()
+        leafName = name
+    }
 
-        var coverBase64: String? = null
-        val images = mutableMapOf<String, ByteArray>()
-        val chapters = mutableListOf<Chapter>()
-        val tocList = mutableListOf<TocItem>()
+    private fun paragraphStyle(): BlockStyle = when {
+        titleParts == null && inside("title") -> BlockStyle.SUBTITLE // poem / stanza titles
+        inside("epigraph") || inside("cite") -> BlockStyle.EPIGRAPH
+        inBody && inside("annotation") -> BlockStyle.EPIGRAPH
+        else -> BlockStyle.NORMAL
+    }
 
-        val currentChapterParagraphs = mutableListOf<String>()
-        var currentChapterTitle = ""
+    private fun startTextBlock(name: String, style: BlockStyle) {
+        flushInline()
+        textBlocks.add(name to style)
+    }
 
-        var inTitleInfo = false
-        var inAuthor = false
-        var inAnnotation = false
-        var inCoverpage = false
-        var inBody = false
-        var inSection = false
-        var inTitle = false
-        var inCoverBinary = false
-        var currentBinaryId = ""
-        val binaryBuilder = StringBuilder()
+    private fun startTitle(parent: String?) {
+        when {
+            notesBody && parent == "section" -> {
+                titleContext = TitleContext.NOTE
+                titleParts = ArrayList()
+            }
+            parent == "section" -> {
+                titleContext = TitleContext.SECTION
+                titleParts = ArrayList()
+            }
+            parent == "body" -> {
+                titleContext = TitleContext.BODY
+                titleParts = ArrayList()
+            }
+            // poem/stanza titles stay null: their <p> become SUBTITLE paragraphs
+        }
+        if (titleParts != null) titleDepth = stack.size
+    }
 
-        val parser = Xml.newPullParser()
-        parser.setInput(stream, charsetName)
+    private fun startLink(tag: MarkupToken.StartTag) {
+        val href = tag.hrefAttr()?.trim() ?: return
+        if (!href.startsWith("#") || href.length < 2) return
+        noteLabel = StringBuilder()
+        noteTarget = href.substring(1)
+        noteExplicit = tag.attr("type")?.equals("note", ignoreCase = true) == true
+    }
 
-        var event = parser.eventType
+    private fun onImage(tag: MarkupToken.StartTag) {
+        val id = tag.hrefAttr()?.trim()?.removePrefix("#").orEmpty()
+        if (id.isEmpty()) return
+        if (inside("coverpage")) {
+            if (coverImageId.isEmpty()) coverImageId = id
+            return
+        }
+        if (!inBody || notesBody || titleParts != null) return
+        flushInline()
+        emitRaw("[IMG:$id]", direct = false)
+    }
 
-        fun flushChapter() {
-            if (currentChapterParagraphs.isNotEmpty() || currentChapterTitle.isNotEmpty()) {
-                val chapterIndex = chapters.size
-                val finalTitle = fb2ChapterTitle(currentChapterTitle, chapterIndex)
-                val content = currentChapterParagraphs.joinToString("\n\n")
-                val chapter = Chapter(
-                    index = chapterIndex,
-                    title = finalTitle,
-                    content = content,
-                    paragraphs = ArrayList(currentChapterParagraphs)
+    // ---- end tags --------------------------------------------------------
+
+    private fun onEnd(name: String) {
+        val index = stack.lastIndexOf(name)
+        if (index < 0) return
+        while (stack.size > index) {
+            val closing = stack.removeAt(stack.lastIndex)
+            onElementEnd(closing)
+        }
+    }
+
+    private fun onElementEnd(name: String) {
+        val leafText = if (leaf != null && leafName == name) {
+            val text = TextSupport.collapse(leaf.toString())
+            leaf = null
+            text
+        } else {
+            null
+        }
+        when (name) {
+            "first-name" -> if (leafText != null) author?.first = leafText
+            "middle-name" -> if (leafText != null) author?.middle = leafText
+            "last-name" -> if (leafText != null) author?.last = leafText
+            "nickname" -> if (leafText != null) author?.nick = leafText
+            "book-title" -> if (leafText != null && bookTitle.isEmpty()) bookTitle = leafText
+            "author" -> {
+                val display = author?.display().orEmpty()
+                if (display.isNotBlank() && authors.none { it.equals(display, ignoreCase = true) }) authors.add(display)
+                author = null
+            }
+            "p", "v", "subtitle", "text-author", "date", "tr" ->
+                if (textBlocks.isNotEmpty() && textBlocks.last().first == name) endTextBlock()
+            "title" -> if (titleParts != null && titleDepth == stack.size) endTitle()
+            "section" -> if (inBody) endSection()
+            "poem" -> {
+                if (stanzaCounts.isNotEmpty()) stanzaCounts.removeAt(stanzaCounts.lastIndex)
+                emitGap()
+            }
+            "emphasis" -> acc.endEmphasis()
+            "strong" -> acc.endStrong()
+            "a" -> finishLink()
+            "body" -> endBody()
+            "binary" -> endBinary()
+            "fictionbook" -> rootClosed = true
+        }
+    }
+
+    private fun endTextBlock() {
+        val (_, style) = textBlocks.removeAt(textBlocks.lastIndex)
+        val content = acc.take() ?: return
+        val parts = titleParts
+        when {
+            parts != null -> parts.add(ParagraphMarkup.plainText(content))
+            !inBody && inside("annotation") -> {
+                if (inside("title-info")) annotation.add(ParagraphMarkup.plainText(content))
+            }
+            inBody -> emit(style, content)
+        }
+    }
+
+    private fun endTitle() {
+        val parts = titleParts ?: return
+        titleParts = null
+        titleDepth = -1
+        val title = TextSupport.joinTitleParts(parts)
+        if (title.isEmpty()) return
+        when (titleContext) {
+            TitleContext.NOTE -> noteSections.lastOrNull()?.title = title
+            TitleContext.BODY -> if (!notesBody) bodyTitle = title
+            TitleContext.SECTION -> sections.lastOrNull()?.let { onSectionTitle(it, title) }
+        }
+    }
+
+    private fun finishLink() {
+        val label = noteLabel ?: return
+        noteLabel = null
+        val raw = label.toString()
+        val trimmed = TextSupport.collapse(raw)
+        val isNote = trimmed.isNotEmpty() &&
+            ((noteExplicit && trimmed.length <= 24) || NoteSupport.looksLikeNoteLabel(trimmed))
+        if (isNote) {
+            val clean = NoteSupport.cleanLabel(trimmed)
+            acc.appendNoteRef(clean, noteTarget)
+            noteLabels.putIfAbsent(noteTarget, clean)
+        } else {
+            acc.appendText(raw)
+        }
+    }
+
+    private fun endBinary() {
+        val decoder = binary ?: return
+        binary = null
+        val bytes = decoder.result() ?: return
+        val id = binaryId
+        // Only formats the reader can decode (JPEG, PNG, GIF, WebP, BMP) are kept.
+        if (id.isEmpty() || !ImageSniffer.isRasterImage(bytes)) return
+        val isCover = if (coverImageId.isNotEmpty()) {
+            id.equals(coverImageId, ignoreCase = true)
+        } else {
+            coverBytes == null && id.contains("cover", ignoreCase = true)
+        }
+        if (isCover) coverBytes = bytes
+        if (imageBytes + bytes.size <= ParserLimits.MAX_TOTAL_IMAGE_BYTES) {
+            images[id] = bytes
+            imageBytes += bytes.size
+        }
+    }
+
+    // ---- text ------------------------------------------------------------
+
+    private fun onText(text: String) {
+        leaf?.let {
+            it.append(text)
+            return
+        }
+        binary?.let {
+            it.feed(text)
+            return
+        }
+        noteLabel?.let {
+            it.append(text)
+            return
+        }
+        if (textBlocks.isNotEmpty()) acc.appendText(text)
+    }
+
+    /** Emits text collected so far inside the current text block (before an inline image etc.). */
+    private fun flushInline() {
+        if (!acc.hasContent) return
+        val style = textBlocks.lastOrNull()?.second ?: BlockStyle.NORMAL
+        val content = acc.take() ?: return
+        val parts = titleParts
+        if (parts != null) {
+            parts.add(ParagraphMarkup.plainText(content))
+        } else if (inBody) {
+            emit(style, content)
+        }
+    }
+
+    // ---- sections and chapters -----------------------------------------
+
+    private fun startSection(tag: MarkupToken.StartTag) {
+        if (notesBody) {
+            noteSections.add(NoteSection(tag.attr("id")?.trim()?.takeIf { it.isNotEmpty() }))
+            return
+        }
+        sections.lastOrNull()?.let { parent -> if (parent.inline == null) decide(parent, titled = false) }
+        if (current?.owner == null) closeChapter() // body-level front matter ends here
+        sections.add(Section(sections.size + 1))
+    }
+
+    private fun endSection() {
+        if (notesBody) {
+            if (noteSections.isEmpty()) return
+            val note = noteSections.removeAt(noteSections.lastIndex)
+            val id = note.id ?: return
+            val text = note.parts.joinToString("\n").trim().ifEmpty { note.title.orEmpty() }
+            if (text.isNotEmpty()) footnotes[id] = text
+            return
+        }
+        if (sections.isEmpty()) return
+        val section = sections.removeAt(sections.lastIndex)
+        if (current?.owner === section) closeChapter()
+    }
+
+    /**
+     * Decides whether [section] continues the open chapter (sub-heading) or
+     * starts its own. Untitled sections inside a chapter with text are scene
+     * breaks; titled ones become headings while the chapter is not too long.
+     */
+    private fun decide(section: Section, titled: Boolean) {
+        val chapter = current
+        val owner = chapter?.owner
+        val inline = chapter != null && owner != null && owner.hasDirectText &&
+            chapter.chars < INLINE_SECTION_LIMIT
+        section.inline = inline
+        if (!inline) {
+            closeChapter()
+        } else if (!titled) {
+            emitGap()
+        }
+    }
+
+    private fun onSectionTitle(section: Section, title: String) {
+        if (section.inline == null) decide(section, titled = true)
+        section.title = title
+        val level = section.depth - 1
+        val chapter = current
+        if (section.inline == true && chapter != null) {
+            toc.add(
+                TocItem(
+                    id = "toc_${toc.size}",
+                    title = title,
+                    chapterIndex = chapters.size,
+                    level = level,
+                    paragraphIndex = chapter.paragraphs.size
                 )
-                chapters.add(chapter)
-                tocList.add(TocItem(id = "ch_$chapterIndex", title = finalTitle, chapterIndex = chapterIndex))
-                currentChapterParagraphs.clear()
-                currentChapterTitle = ""
-            }
+            )
+            chapter.paragraphs.add(ParagraphMarkup.block(BlockStyle.HEADING, title))
+            chapter.chars += title.length
+        } else {
+            pendingToc.add(title to level)
         }
+    }
 
-        fun readText(parser: XmlPullParser): String {
-            val sb = java.lang.StringBuilder()
-            var depth = 1
-            while (depth > 0) {
-                val ev = parser.next()
-                when (ev) {
-                    XmlPullParser.START_TAG -> {
-                        depth++
-                        if (parser.name.lowercase() == "image") {
-                            val href = parser.getAttributeValue(null, "l:href")
-                                ?: parser.getAttributeValue(null, "href")
-                                ?: parser.getAttributeValue("http://www.w3.org/1999/xlink", "href")
-                            if (href != null) {
-                                val id = href.removePrefix("#")
-                                sb.append("\n[IMG:$id]\n")
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> depth--
-                    XmlPullParser.TEXT -> sb.append(parser.text)
-                    XmlPullParser.END_DOCUMENT -> break
-                }
-            }
-            return sb.toString()
+    private fun ensureChapter(): ChapterBuilder {
+        sections.lastOrNull()?.let { if (it.inline == null) decide(it, titled = false) }
+        current?.let { return it }
+        val owner = sections.lastOrNull { it.inline != true }
+        // An untitled section right below a titled one ("Часть 1" > untitled text) takes that title.
+        val inheritedTitle = pendingToc.lastOrNull()?.first
+        val title = if (owner == null) {
+            bodyTitle ?: bookTitle.ifBlank { "Начало" }
+        } else {
+            owner.title ?: inheritedTitle ?: fb2ChapterTitle("", chapters.size)
         }
-
-        while (event != XmlPullParser.END_DOCUMENT) {
-            when (event) {
-                XmlPullParser.START_TAG -> {
-                    val tag = parser.name.lowercase()
-                    when (tag) {
-                        "title-info" -> inTitleInfo = true
-                        "book-title" -> if (inTitleInfo) title = readText(parser).trim()
-                        "author" -> if (inTitleInfo) inAuthor = true
-                        "first-name" -> if (inAuthor) firstName = readText(parser).trim()
-                        "last-name" -> if (inAuthor) lastName = readText(parser).trim()
-                        "middle-name" -> if (inAuthor) middleName = readText(parser).trim()
-                        "annotation" -> if (inTitleInfo) inAnnotation = true
-                        "sequence" -> if (inTitleInfo && seriesName.isBlank()) {
-                            seriesName = parser.getAttributeValue(null, "name")?.trim().orEmpty()
-                            seriesOrder = parser.getAttributeValue(null, "number")
-                                ?.trim()
-                                ?.toIntOrNull()
-                                ?.coerceAtLeast(0)
-                                ?: 0
-                        }
-                        "coverpage" -> inCoverpage = true
-                        "image" -> {
-                            val href = parser.getAttributeValue(null, "l:href")
-                                ?: parser.getAttributeValue(null, "href")
-                                ?: parser.getAttributeValue("http://www.w3.org/1999/xlink", "href")
-                            Log.d("Fb2Parser", "IMAGE tag: href=$href inCoverpage=$inCoverpage inSection=$inSection inBody=$inBody")
-                            if (href != null) {
-                                val id = href.removePrefix("#")
-                                if (inCoverpage) {
-                                    coverImageId = id
-                                } else if (inBody) {
-                                    currentChapterParagraphs.add("[IMG:$id]")
-                                    Log.d("Fb2Parser", "Added IMG paragraph: [IMG:$id]")
-                                }
-                            }
-                        }
-                        "body" -> {
-                            val bodyName = parser.getAttributeValue(null, "name")
-                            if (bodyName == null || bodyName != "notes") {
-                                inBody = true
-                            }
-                        }
-                        "section" -> {
-                            if (inBody) {
-                                inSection = true
-                            }
-                        }
-                        "title" -> {
-                            if (inBody && inSection) {
-                                if (currentChapterParagraphs.isNotEmpty()) {
-                                    flushChapter()
-                                }
-                                inTitle = true
-                            }
-                        }
-                        "p" -> {
-                            val text = readText(parser).trim()
-                            if (inAnnotation) {
-                                annotation += (if (annotation.isNotEmpty()) "\n" else "") + text
-                            } else if (inTitle) {
-                                currentChapterTitle = if (currentChapterTitle.isNotEmpty()) "$currentChapterTitle - $text" else text
-                            } else if (inBody) {
-                                if (text.isNotEmpty()) {
-                                    val parts = text.split("\n")
-                                    for (part in parts) {
-                                        if (part.isNotBlank()) {
-                                            currentChapterParagraphs.add(part.trim())
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        "empty-line" -> {
-                            if (inBody) {
-                                currentChapterParagraphs.add("")
-                            }
-                        }
-                        "binary" -> {
-                            currentBinaryId = parser.getAttributeValue(null, "id") ?: ""
-                            inCoverBinary = true // Extract all binaries
-                            binaryBuilder.clear()
-                        }
-                    }
-                }
-                XmlPullParser.TEXT -> {
-                    if (inCoverBinary && binaryBuilder.length < 5000000) {
-                        binaryBuilder.append(parser.text.trim())
-                    }
-                }
-                XmlPullParser.END_TAG -> {
-                    val tag = parser.name.lowercase()
-                    when (tag) {
-                        "title-info" -> inTitleInfo = false
-                        "author" -> inAuthor = false
-                        "annotation" -> inAnnotation = false
-                        "coverpage" -> inCoverpage = false
-                        "title" -> inTitle = false
-                        "section" -> {
-                            // Do nothing, let chapters continue unless a new title appears or body ends
-                        }
-                        "body" -> {
-                            if (inBody) {
-                                flushChapter()
-                            }
-                            inBody = false
-                            // A FictionBook can have a separate <body name="notes">
-                            // after the main text. Never let the last section from
-                            // the main body leak into it, otherwise each footnote is
-                            // parsed as another chapter.
-                            inSection = false
-                            inTitle = false
-                        }
-                        "binary" -> {
-                            if (inCoverBinary) {
-                                inCoverBinary = false
-                                if (binaryBuilder.isNotEmpty()) {
-                                    val base64Str = binaryBuilder.toString()
-                                    Log.d("Fb2Parser", "Decoded binary id='$currentBinaryId' base64len=${base64Str.length}")
-                                    try {
-                                        val bytes = Base64.decode(base64Str, Base64.DEFAULT)
-                                        images[currentBinaryId] = bytes
-                                        Log.d("Fb2Parser", "Stored image id='$currentBinaryId' bytes=${bytes.size}")
-                                    } catch (e: Exception) {
-                                        Log.e("Fb2Parser", "Failed to decode binary '$currentBinaryId': ${e.message}")
-                                    }
-
-                                    val isCover = (coverImageId.isNotBlank() && currentBinaryId.equals(coverImageId, ignoreCase = true)) ||
-                                            (coverImageId.isBlank() && coverBase64 == null && currentBinaryId.contains("cover", ignoreCase = true))
-                                    if (isCover) {
-                                        coverBase64 = base64Str
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            event = parser.next()
+        val needsOwnTocEntry = owner?.title == null && pendingToc.isEmpty()
+        val chapter = ChapterBuilder(title, owner)
+        current = chapter
+        val index = chapters.size
+        for ((pendingTitle, level) in pendingToc) {
+            toc.add(TocItem(id = "toc_${toc.size}", title = pendingTitle, chapterIndex = index, level = level))
         }
-
-        flushChapter()
-
-        val authorName = listOf(lastName, firstName, middleName).filter { it.isNotBlank() }.joinToString(" ")
-            .ifBlank { "Неизвестный автор" }
-
-        var coverBytes: ByteArray? = null
-        if (coverBase64 != null) {
-            try {
-                coverBytes = Base64.decode(coverBase64, Base64.DEFAULT)
-            } catch (e: Exception) {
-                // Ignore decode errors
-            }
+        pendingToc.clear()
+        if (needsOwnTocEntry) {
+            toc.add(TocItem(id = "toc_${toc.size}", title = title, chapterIndex = index, level = ((owner?.depth ?: 1) - 1)))
         }
+        return chapter
+    }
 
+    private fun closeChapter() {
+        val chapter = current ?: return
+        current = null
+        val paragraphs = chapter.paragraphs
+        while (paragraphs.isNotEmpty() && paragraphs.last().isEmpty()) paragraphs.removeAt(paragraphs.lastIndex)
+        if (paragraphs.isEmpty()) return
+        chapters.add(Chapter(index = chapters.size, title = chapter.title, paragraphs = ArrayList(paragraphs)))
+    }
+
+    private fun emit(style: BlockStyle, content: String) {
+        val plain = ParagraphMarkup.plainText(content).trim()
+        if (plain.isEmpty()) return
+        val isBreak = TextSupport.isSceneBreak(plain)
+        val raw = if (isBreak) ParagraphMarkup.sceneBreak() else ParagraphMarkup.block(style, content)
+        if (notesBody) {
+            noteSections.lastOrNull()?.parts?.add(if (isBreak) ParagraphMarkup.SCENE_BREAK_TEXT else content)
+            return
+        }
+        val direct = style != BlockStyle.EPIGRAPH && style != BlockStyle.TEXT_AUTHOR
+        emitRaw(raw, direct)
+    }
+
+    private fun emitRaw(raw: String, direct: Boolean) {
+        if (notesBody || !inBody) return
+        val chapter = ensureChapter()
+        chapter.paragraphs.add(raw)
+        chapter.chars += raw.length
+        if (direct) {
+            val innermost = sections.lastOrNull()
+            if (innermost != null && innermost === chapter.owner) innermost.hasDirectText = true
+        }
+    }
+
+    private fun emitGap() {
+        if (!inBody || notesBody) return
+        val chapter = current ?: return
+        if (chapter.paragraphs.isEmpty() || chapter.paragraphs.last().isEmpty()) return
+        chapter.paragraphs.add("")
+    }
+
+    private fun endBody() {
+        flushInline()
+        textBlocks.clear()
+        closeChapter()
+        pendingToc.clear()
+        sections.clear()
+        noteSections.clear()
+        inBody = false
+        notesBody = false
+    }
+
+    // ---- result ------------------------------------------------------------
+
+    fun build(damaged: Boolean): ParsedBook {
+        if (inBody) endBody()
+        val isDamaged = damaged || !rootClosed
         if (chapters.isEmpty()) {
-            return createEmptyBook(fileName, isZip, "Текст не найден. Возможно, файл поврежден.")
+            val message = if (isDamaged) {
+                "Текст не найден. Возможно, файл повреждён."
+            } else {
+                "Текст не найден. Возможно, файл повреждён или пуст."
+            }
+            return Fb2Parser.createEmptyBook(fileName, isZip, message)
         }
+        if (isDamaged) {
+            val last = chapters.last()
+            chapters[chapters.lastIndex] = last.copy(
+                paragraphs = last.paragraphs + ParagraphMarkup.block(BlockStyle.SUBTITLE, Fb2Parser.DAMAGED_NOTE)
+            )
+        }
+
+        // Footnotes: strip repeated labels, then turn references without a note into plain text.
+        val notes = LinkedHashMap<String, String>()
+        for ((id, text) in footnotes) {
+            notes[id] = NoteSupport.stripLeadingLabel(text, noteLabels[id].orEmpty())
+        }
+        for (id in notes.keys.toList()) {
+            notes[id] = NoteSupport.dropUnknownRefs(notes.getValue(id)) { it in notes }
+        }
+        // Images whose <binary> is missing or unusable are dropped; TOC positions follow.
+        val remaps = HashMap<Int, IntArray>()
+        val finalChapters = chapters.mapIndexed { chapterIndex, chapter ->
+            var paragraphs = chapter.paragraphs
+            val missingImage = paragraphs.any { p -> ParagraphMarkup.imageId(p)?.let { it !in images } == true }
+            if (missingImage) {
+                val kept = ArrayList<String>(paragraphs.size)
+                val remap = IntArray(paragraphs.size)
+                for ((i, p) in paragraphs.withIndex()) {
+                    remap[i] = kept.size
+                    val imageId = ParagraphMarkup.imageId(p)
+                    if (imageId == null || imageId in images) kept.add(p)
+                }
+                while (kept.isNotEmpty() && kept.last().isEmpty()) kept.removeAt(kept.lastIndex)
+                if (kept.isNotEmpty()) {
+                    paragraphs = kept
+                    remaps[chapterIndex] = remap
+                }
+            }
+            if (paragraphs.any { it.indexOf(ParagraphMarkup.NOTE_START) >= 0 }) {
+                paragraphs = paragraphs.map { p -> NoteSupport.dropUnknownRefs(p) { it in notes } }
+            }
+            if (paragraphs === chapter.paragraphs) chapter else chapter.copy(paragraphs = paragraphs)
+        }
+        val tocItems = toc.filter { it.chapterIndex in finalChapters.indices }
+            .map { item ->
+                val remap = remaps[item.chapterIndex] ?: return@map item
+                val size = finalChapters[item.chapterIndex].paragraphs.size
+                val index = remap.getOrElse(item.paragraphIndex) { size - 1 }.coerceIn(0, (size - 1).coerceAtLeast(0))
+                item.copy(paragraphIndex = index)
+            }
+            .ifEmpty {
+                finalChapters.map { TocItem(id = "ch_${it.index}", title = it.title, chapterIndex = it.index) }
+            }
 
         return ParsedBook(
-            title = title.ifBlank { fileName.substringBeforeLast(".") },
-            author = authorName,
-            description = annotation,
+            title = bookTitle.ifBlank { fileName.substringBeforeLast(".") },
+            author = authors.joinToString(", ").ifBlank { "Неизвестный автор" },
+            description = annotation.joinToString("\n"),
             seriesName = seriesName,
             seriesOrder = seriesOrder,
             coverBytes = coverBytes,
-            chapters = chapters,
-            tableOfContents = tocList,
+            chapters = finalChapters,
+            tableOfContents = tocItems,
             images = images,
-            format = if (isZip) BookFormat.FB2_ZIP else BookFormat.FB2
+            format = if (isZip) BookFormat.FB2_ZIP else BookFormat.FB2,
+            footnotes = notes
         )
     }
 
-    private fun createEmptyBook(fileName: String, isZip: Boolean, message: String = "Пустой или неподдерживаемый файл"): ParsedBook {
-        val title = fileName.substringBeforeLast(".")
-        val chapter = Chapter(
-            index = 0,
-            title = "Ошибка",
-            content = message,
-            paragraphs = listOf(message)
-        )
-        return ParsedBook(
-            title = title,
-            author = "Неизвестный автор",
-            description = "",
-            coverBytes = null,
-            chapters = listOf(chapter),
-            tableOfContents = listOf(TocItem(id = "err_0", title = "Ошибка", chapterIndex = 0)),
-            format = if (isZip) BookFormat.FB2_ZIP else BookFormat.FB2
-        )
+    private companion object {
+        /** A titled sub-section starts a new chapter once the open one has this many characters. */
+        const val INLINE_SECTION_LIMIT = 300_000
     }
 }
