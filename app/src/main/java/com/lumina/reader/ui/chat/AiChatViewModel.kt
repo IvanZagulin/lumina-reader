@@ -18,14 +18,14 @@ import com.lumina.reader.core.opds.FoundPublication
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
 import com.lumina.reader.core.preferences.CatalogPreferences
+import com.lumina.reader.ui.downloads.DownloadMeta
+import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -74,14 +74,6 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
-
-    private val _actionFlow = MutableSharedFlow<AiAction>()
-
-    /**
-     * Kept for the chat screen's API. Actions are executed by this view model
-     * and are no longer emitted here.
-     */
-    val actionFlow = _actionFlow.asSharedFlow()
 
     /** Limits parallel catalogue searches when the assistant asks for many books. */
     private val searchSlots = Semaphore(2)
@@ -187,6 +179,17 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
         val title = best.publication.title
         reportExecutionResult("Найдена «$title». Начинаю загрузку…")
+        val cover = best.publication.thumbnailUrl ?: best.publication.coverUrl
+        DownloadMetaRegistry.put(
+            acquisition.url,
+            DownloadMeta(
+                title = title,
+                author = best.publication.authorLine,
+                coverUrl = cover,
+                coverHeaders = best.catalog.authHeadersFor(cover),
+                formatLabel = acquisition.label
+            )
+        )
         val outcome = importer.downloadAndAwait(
             DownloadRequest(
                 url = acquisition.url,
