@@ -1,15 +1,17 @@
 package com.lumina.reader.ui.reader
 
 import com.lumina.reader.core.model.Chapter
+import com.lumina.reader.core.model.ParagraphMarkup
 
 /**
  * Pages of every chapter measured with the reader's current typography.
  * [pageStartParagraphs] holds, for each chapter, the source paragraph that
- * opens each of its pages so a book-wide page number can be turned back into
- * a reader position.
+ * opens each of its pages and [pageStartOffsets] the character in it, so a
+ * book-wide page number can be turned back into a reader position.
  */
 internal class BookPageMap(
-    private val pageStartParagraphs: List<IntArray>
+    private val pageStartParagraphs: List<IntArray>,
+    private val pageStartOffsets: List<IntArray> = emptyList()
 ) {
     private val pagesBeforeChapter: IntArray = IntArray(pageStartParagraphs.size).also { offsets ->
         var total = 0
@@ -48,14 +50,16 @@ internal class BookPageMap(
         }
         val localPage = (target - pagesBeforeChapter[low]).coerceIn(0, pageCount(low) - 1)
         val paragraph = pageStartParagraphs[low].getOrNull(localPage) ?: 0
-        return BookPageLocation(low, localPage, paragraph)
+        val offset = pageStartOffsets.getOrNull(low)?.getOrNull(localPage) ?: 0
+        return BookPageLocation(low, localPage, paragraph, offset)
     }
 }
 
 internal data class BookPageLocation(
     val chapterIndex: Int,
     val localPage: Int,
-    val paragraphIndex: Int
+    val paragraphIndex: Int,
+    val charOffset: Int = 0
 )
 
 /**
@@ -74,7 +78,7 @@ internal fun chapterTextLengths(chapters: List<Chapter>): IntArray =
     IntArray(chapters.size) { index -> chapters[index].paragraphs.sumOf(::visibleTextLength) }
 
 private fun visibleTextLength(paragraph: String): Int =
-    if (paragraph.startsWith("[IMG:") && paragraph.endsWith("]")) 0 else paragraph.trim().length
+    if (ParagraphMarkup.isImage(paragraph)) 0 else ParagraphMarkup.plainText(paragraph).trim().length
 
 /**
  * Book-wide position of [localPage] of [chapterIndex]. The percentage marks
@@ -122,16 +126,17 @@ internal fun bookPosition(
 }
 
 /**
- * Text-weighted book progress for a paragraph position, used when no page
- * layout is available (scrolling mode, or before the first page settles).
- * Weighting by text keeps a long first chapter from being worth as much as a
- * two-line epigraph.
+ * Text-weighted book progress for a position, used when no page layout is
+ * available (scrolling mode, or before the first page settles). Weighting by
+ * text keeps a long first chapter from being worth as much as a two-line
+ * epigraph. [charOffset] adds the part of the current paragraph already read.
  */
 internal fun paragraphProgressPercent(
     chapters: List<Chapter>,
     chapterLengths: IntArray,
     chapterIndex: Int,
-    paragraphIndex: Int
+    paragraphIndex: Int,
+    charOffset: Int = 0
 ): Float {
     if (chapters.isEmpty()) return 0f
     val chapter = chapterIndex.coerceIn(0, chapters.lastIndex)
@@ -141,10 +146,15 @@ internal fun paragraphProgressPercent(
         paragraphIndex == Int.MAX_VALUE -> 1.0
         paragraphs.isEmpty() -> 0.0
         chapterLengths.getOrNull(chapter)?.let { it > 0 } == true -> {
+            val current = paragraphIndex.coerceIn(0, paragraphs.size)
             val before = paragraphs
-                .subList(0, paragraphIndex.coerceIn(0, paragraphs.size))
+                .subList(0, current)
                 .sumOf(::visibleTextLength)
-            before.toDouble() / chapterLengths[chapter]
+            val inParagraph = paragraphs.getOrNull(current)
+                ?.let(::visibleTextLength)
+                ?.let { length -> charOffset.coerceIn(0, length) }
+                ?: 0
+            ((before + inParagraph).toDouble() / chapterLengths[chapter]).coerceIn(0.0, 1.0)
         }
         else -> paragraphIndex.coerceIn(0, paragraphs.size).toDouble() / paragraphs.size
     }

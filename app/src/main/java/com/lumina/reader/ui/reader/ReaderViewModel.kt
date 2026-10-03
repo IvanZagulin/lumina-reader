@@ -1,26 +1,44 @@
 package com.lumina.reader.ui.reader
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.model.*
+import com.lumina.reader.core.model.Book
+import com.lumina.reader.core.model.BookFormat
+import com.lumina.reader.core.model.Bookmark
+import com.lumina.reader.core.model.Chapter
+import com.lumina.reader.core.model.ParsedBook
+import com.lumina.reader.core.model.ReaderSettings
+import com.lumina.reader.core.model.ReadingHighlight
+import com.lumina.reader.core.model.ReadingStats
 import com.lumina.reader.core.parser.BookParserFactory
 import com.lumina.reader.core.preferences.ReaderPreferences
+import com.lumina.reader.core.repository.BookCacheRepository
 import com.lumina.reader.core.tts.TtsManager
 import com.lumina.reader.core.tts.TtsState
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 class ReaderViewModel(
     application: Application,
@@ -33,59 +51,141 @@ class ReaderViewModel(
     private val statsDao = db.readingStatsDao()
     private val preferences = ReaderPreferences(application)
 
-    private var _ttsManager: TtsManager? = null
-    private val ttsManager: TtsManager
-        get() {
-            if (_ttsManager == null) {
-                _ttsManager = TtsManager(getApplication())
-            }
-            return _ttsManager!!
-        }
+    private val storedSettings: Flow<ReaderSettings?> = preferences.settingsFlow
 
-    val settings: StateFlow<ReaderSettings> = preferences.settingsFlow.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        ReaderSettings()
+    /**
+     * Null until the stored settings have been read: the reader waits for
+     * them instead of laying out (and paginating) with defaults first.
+     */
+    val settings: StateFlow<ReaderSettings?> =
+        storedSettings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // ---- Book ------------------------------------------------------------
+
+    private val _book = MutableStateFlow<Book?>(null)
+    val book: StateFlow<Book?> = _book.asStateFlow()
+
+    private val _parsedBook = MutableStateFlow<ParsedBook?>(null)
+    val parsedBook: StateFlow<ParsedBook?> = _parsedBook.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+
+    private val _pdfDocument = MutableStateFlow<PdfDocumentRenderer?>(null)
+    internal val pdfDocument: StateFlow<PdfDocumentRenderer?> = _pdfDocument.asStateFlow()
+
+    /** Pages measured by the paged reader, shared by every chapter and the book map. */
+    internal val pageCache = ChapterPageCache()
+
+    /** Decoded illustrations of this book. */
+    internal val imageCache = ReaderImageCache(ReaderImageCache.defaultMaxBytes())
+
+    private val _textInfo = MutableStateFlow(BookTextInfo(IntArray(0), null))
+
+    /** Text lengths and language of the book, computed once off the main thread. */
+    internal val textInfo: StateFlow<BookTextInfo> = _textInfo.asStateFlow()
+
+    // ---- Position and navigation ------------------------------------------
+
+    private val _position = MutableStateFlow(ReaderPosition(0, 0, 0))
+
+    /** First visible character of the current page (or line, when scrolling). */
+    val position: StateFlow<ReaderPosition> = _position.asStateFlow()
+
+    private val _currentChapterIndex = MutableStateFlow(0)
+    val currentChapterIndex: StateFlow<Int> = _currentChapterIndex.asStateFlow()
+
+    private val _navigationRequest = MutableStateFlow<NavigationRequest?>(null)
+
+    /** A position the viewers should show; acknowledged with [onNavigationHandled]. */
+    val navigationRequest: StateFlow<NavigationRequest?> = _navigationRequest.asStateFlow()
+    private val navigationIds = AtomicLong(0)
+
+    private val _visibleRange = MutableStateFlow<VisibleRange?>(null)
+
+    /** What the reader shows right now, as reported by the active viewer. */
+    val visibleRange: StateFlow<VisibleRange?> = _visibleRange.asStateFlow()
+
+    // ---- Bookmarks and highlights -------------------------------------------
+
+    val bookmarks: StateFlow<List<Bookmark>> = bookmarkDao.getBookmarksForBook(bookId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val highlights: StateFlow<List<ReadingHighlight>> = bookmarkDao.getHighlightsForBook(bookId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** True when a bookmark lies on the page (or screen) being shown. */
+    val isCurrentPageBookmarked: StateFlow<Boolean> = combine(bookmarks, _visibleRange) { list, range ->
+        range != null && list.any { range.contains(it.chapterIndex, it.paragraphIndex, it.charOffset) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // ---- Search -------------------------------------------------------------
+
+    private val _searchState = MutableStateFlow(SearchState())
+    val searchState: StateFlow<SearchState> = _searchState.asStateFlow()
+
+    private val _activeSearchMatch = MutableStateFlow<SearchMatch?>(null)
+
+    /** The match the reader jumped to from search, emphasised on its page. */
+    val activeSearchMatch: StateFlow<SearchMatch?> = _activeSearchMatch.asStateFlow()
+    private var searchJob: Job? = null
+
+    // ---- Time left ------------------------------------------------------------
+
+    private val _wordsPerMinute = MutableStateFlow(DEFAULT_WORDS_PER_MINUTE)
+
+    private class ChapterWords(
+        val chapterIndex: Int,
+        val plainParagraphs: List<String>,
+        val wordCounts: IntArray,
+        val totalWords: Int
     )
 
+    @Volatile
+    private var cachedChapterWords: ChapterWords? = null
+
+    /** Estimated minutes to the end of the chapter; null when unknown (e.g. PDF). */
+    val minutesLeftInChapter: StateFlow<Int?> =
+        combine(_position, _parsedBook, _wordsPerMinute) { position, parsed, wordsPerMinute ->
+            val chapter = parsed?.chapters?.getOrNull(position.chapterIndex)
+            if (chapter == null) {
+                null
+            } else {
+                val words = chapterWords(position.chapterIndex, chapter)
+                if (words.totalWords == 0) {
+                    null
+                } else {
+                    estimateMinutesLeft(
+                        wordsRemainingInChapter(
+                            words.plainParagraphs,
+                            words.wordCounts,
+                            position.paragraphIndex,
+                            position.charOffset
+                        ),
+                        wordsPerMinute
+                    )
+                }
+            }
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // ---- Text to speech ---------------------------------------------------
+
+    private var ttsManager: TtsManager? = null
+    private var ttsStateJob: Job? = null
     private val _ttsState = MutableStateFlow(TtsState.IDLE)
     val ttsState: StateFlow<TtsState> = _ttsState.asStateFlow()
 
-    private val _book = MutableStateFlow<Book?>(null)
-    val book = _book.asStateFlow()
-
-    private val _parsedBook = MutableStateFlow<ParsedBook?>(null)
-    val parsedBook = _parsedBook.asStateFlow()
-
-    private val _currentChapterIndex = MutableStateFlow(0)
-    val currentChapterIndex = _currentChapterIndex.asStateFlow()
-
-    private val _currentParagraphIndex = MutableStateFlow(0)
-    val currentParagraphIndex = _currentParagraphIndex.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading = _isLoading.asStateFlow()
-
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError = _loadError.asStateFlow()
-
-    val bookmarks: StateFlow<List<Bookmark>> = bookmarkDao.getBookmarksForBook(bookId).stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        emptyList()
-    )
-
-    val highlights: StateFlow<List<ReadingHighlight>> = bookmarkDao.getHighlightsForBook(bookId).stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        emptyList()
-    )
+    // ---- Session statistics -------------------------------------------------
 
     private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sessionLock = Any()
     private var sessionStartTime: Long? = null
     private var wordsReadInSession: Int = 0
-    private val countedTextFragments = mutableSetOf<Triple<Int, Int, Int>>()
+    private val wordTracker = SessionWordTracker()
     private var progressUpdateJob: Job? = null
 
     @Volatile
@@ -97,8 +197,7 @@ class ReaderViewModel(
      * number as the reader footer.
      */
     private data class ReportedProgress(
-        val chapterIndex: Int,
-        val paragraphIndex: Int,
+        val position: ReaderPosition,
         val percent: Float
     )
 
@@ -107,6 +206,7 @@ class ReaderViewModel(
 
     init {
         loadBook()
+        loadReadingSpeed()
     }
 
     private fun loadBook() {
@@ -120,7 +220,6 @@ class ReaderViewModel(
                         _loadError.value = "Книга не найдена"
                         return@withContext
                     }
-
                     _book.value = currentBook
                     val file = File(currentBook.filePath)
                     if (!file.isFile) {
@@ -128,27 +227,46 @@ class ReaderViewModel(
                         return@withContext
                     }
 
-                    // Always clear cache to force fresh parse after app update
-                    com.lumina.reader.core.repository.BookCacheRepository.remove(file.absolutePath)
-                    val parser = BookParserFactory.getParser(currentBook.format)
-                    val parsed = parser.parse(file)
+                    // The cache entry is only used while it matches the file on
+                    // disk and the current parser version.
+                    val parsed = BookCacheRepository.get(file.absolutePath)
+                        ?: BookParserFactory.getParser(currentBook.format).parse(file).also {
+                            BookCacheRepository.put(file.absolutePath, it)
+                        }
                     if (parsed.chapters.isEmpty()) {
                         _loadError.value = "В книге не найден текст"
                         return@withContext
                     }
-                    val position = restoreReaderPosition(
+                    if (currentBook.format == BookFormat.PDF) {
+                        _pdfDocument.value = PdfDocumentRenderer.open(file)
+                    }
+                    val restored = restoreReaderPosition(
                         chapters = parsed.chapters,
                         chapterIndex = currentBook.currentChapterIndex,
-                        paragraphIndex = currentBook.currentParagraphIndex
+                        paragraphIndex = currentBook.currentParagraphIndex,
+                        charOffset = currentBook.currentCharOffset
                     )
+                    Log.d(TAG, "Opened book: chapters=${parsed.chapters.size}, images=${parsed.images.size}")
+                    val lengths = chapterTextLengths(parsed.chapters)
+                    chapterLengths = lengths
+                    _textInfo.value = BookTextInfo(
+                        chapterLengths = lengths,
+                        localeTag = detectTextLocaleTag(bookTextSample(parsed))
+                    )
+                    val position = restored.position
+                    _position.value = position
                     _currentChapterIndex.value = position.chapterIndex
-                    _currentParagraphIndex.value = position.paragraphIndex
-                    Log.d("ReaderViewModel", "Parsed book: chapters=${parsed.chapters.size}, images=${parsed.images.size} keys=${parsed.images.keys.joinToString(",")}")
-                    com.lumina.reader.core.repository.BookCacheRepository.put(file.absolutePath, parsed)
-                    chapterLengths = chapterTextLengths(parsed.chapters)
+                    _navigationRequest.value = NavigationRequest(
+                        id = navigationIds.incrementAndGet(),
+                        chapterIndex = position.chapterIndex,
+                        paragraphIndex = position.paragraphIndex,
+                        charOffset = position.charOffset,
+                        toChapterEnd = restored.atChapterEnd,
+                        countAsReading = false
+                    )
                     _parsedBook.value = parsed
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(TAG, "Failed to open book $bookId", e)
                     _loadError.value = "Не удалось открыть книгу: ${e.localizedMessage ?: "ошибка чтения файла"}"
                 } finally {
                     _isLoading.value = false
@@ -157,144 +275,238 @@ class ReaderViewModel(
         }
     }
 
+    private fun loadReadingSpeed() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sessions: List<ReadingStats> = try {
+                statsDao.getRecentReadingSessions(limit = 20, minSeconds = 30)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            _wordsPerMinute.value = averageWordsPerMinute(sessions)
+        }
+    }
+
+    // ---- Navigation -----------------------------------------------------------
+
+    /** Opens a chapter at its beginning (table of contents). */
     fun goToChapter(index: Int) {
-        val parsed = _parsedBook.value ?: return
-        if (index in parsed.chapters.indices) {
-            _currentChapterIndex.value = index
-            _currentParagraphIndex.value = 0
-            scheduleProgressUpdate(index, 0)
-        }
-    }
-
-    /** Opens [chapterIndex] at the page that contains [paragraphIndex]. */
-    fun goToPosition(chapterIndex: Int, paragraphIndex: Int) {
-        val parsed = _parsedBook.value ?: return
-        if (chapterIndex !in parsed.chapters.indices) return
-        val safeParagraph = paragraphIndex.coerceIn(
-            0,
-            parsed.chapters[chapterIndex].paragraphs.lastIndex.coerceAtLeast(0)
-        )
-        _currentChapterIndex.value = chapterIndex
-        _currentParagraphIndex.value = safeParagraph
-        scheduleProgressUpdate(chapterIndex, safeParagraph)
-    }
-
-    /** Called by the paged reader whenever the footer percentage changes. */
-    fun onPageProgressChanged(chapterIndex: Int, percent: Float) {
-        if (chapterIndex != _currentChapterIndex.value) return
-        val paragraphIndex = _currentParagraphIndex.value
-        val progress = ReportedProgress(chapterIndex, paragraphIndex, percent.coerceIn(0f, 100f))
-        if (reportedProgress == progress) return
-        reportedProgress = progress
-        scheduleProgressUpdate(chapterIndex, paragraphIndex)
-    }
-
-    fun nextChapter() {
-        val parsed = _parsedBook.value ?: return
-        if (_currentChapterIndex.value < parsed.chapters.size - 1) {
-            goToChapter(_currentChapterIndex.value + 1)
-        }
-    }
-
-    fun previousChapter() {
-        if (_currentChapterIndex.value > 0) {
-            val parsed = _parsedBook.value ?: return
-            _currentChapterIndex.value -= 1
-            _currentParagraphIndex.value = Int.MAX_VALUE
-            scheduleProgressUpdate(_currentChapterIndex.value, 0)
-        }
-    }
-
-    fun onParagraphVisible(paragraphIndex: Int) {
-        val chapterIndex = _currentChapterIndex.value
-        val parsed = _parsedBook.value
-        val chapter = parsed?.chapters?.getOrNull(chapterIndex)
-        val paragraph = chapter?.paragraphs?.getOrNull(paragraphIndex).orEmpty()
-
-        countTextFragment(
-            chapterIndex = chapterIndex,
-            paragraphIndex = paragraphIndex,
-            fragmentIndex = 0,
-            text = paragraph
-        )
-        updateVisiblePosition(chapterIndex, paragraphIndex)
+        navigate(index, 0, 0, toChapterEnd = false, countAsReading = false)
     }
 
     /**
-     * Paged mode can split one source paragraph across several measured pages.
-     * Count only the fragment that was actually shown instead of crediting the
-     * complete source paragraph as soon as its first line becomes visible.
+     * Shows the page that contains [charOffset] of [paragraphIndex]. Used for
+     * every jump: search results, bookmarks, the table of contents and page
+     * numbers. Jumps never count as reading.
      */
-    fun onParagraphFragmentVisible(paragraphIndex: Int, fragmentIndex: Int, text: String) {
-        val chapterIndex = _currentChapterIndex.value
-        countTextFragment(chapterIndex, paragraphIndex, fragmentIndex, text)
-        updateVisiblePosition(chapterIndex, paragraphIndex)
+    fun goToPosition(chapterIndex: Int, paragraphIndex: Int = 0, charOffset: Int = 0) {
+        navigate(chapterIndex, paragraphIndex, charOffset, toChapterEnd = false, countAsReading = false)
     }
 
-    private fun countTextFragment(
+    fun goToBookmark(bookmark: Bookmark) {
+        goToPosition(bookmark.chapterIndex, bookmark.paragraphIndex, bookmark.charOffset)
+    }
+
+    /** Page turn past the end of a chapter. */
+    fun nextChapter() {
+        val parsed = _parsedBook.value ?: return
+        val next = _currentChapterIndex.value + 1
+        if (next < parsed.chapters.size) {
+            navigate(next, 0, 0, toChapterEnd = false, countAsReading = true)
+        }
+    }
+
+    /** Page turn back from the start of a chapter: opens the previous chapter's last page. */
+    fun previousChapter() {
+        val previous = _currentChapterIndex.value - 1
+        if (previous >= 0) {
+            navigate(previous, 0, 0, toChapterEnd = true, countAsReading = true)
+        }
+    }
+
+    private fun navigate(
         chapterIndex: Int,
         paragraphIndex: Int,
-        fragmentIndex: Int,
-        text: String
+        charOffset: Int,
+        toChapterEnd: Boolean,
+        countAsReading: Boolean
     ) {
-        synchronized(sessionLock) {
-            if (countedTextFragments.add(Triple(chapterIndex, paragraphIndex, fragmentIndex))) {
-                val wordCount = if (
-                    text.startsWith("[IMG:") && text.endsWith("]")
-                ) {
-                    0
-                } else {
-                    text.trim()
-                        .split(Regex("\\s+"))
-                        .count { it.isNotBlank() }
-                }
-                wordsReadInSession += wordCount.coerceIn(0, 2_000)
+        val parsed = _parsedBook.value ?: return
+        val chapter = parsed.chapters.getOrNull(chapterIndex) ?: return
+        val lastParagraph = chapter.paragraphs.lastIndex.coerceAtLeast(0)
+        val paragraph = if (toChapterEnd) lastParagraph else paragraphIndex.coerceIn(0, lastParagraph)
+        val offset = if (toChapterEnd) 0 else charOffset.coerceAtLeast(0)
+        if (chapterIndex != _currentChapterIndex.value) _visibleRange.value = null
+        _position.value = ReaderPosition(chapterIndex, paragraph, offset)
+        _currentChapterIndex.value = chapterIndex
+        _navigationRequest.value = NavigationRequest(
+            id = navigationIds.incrementAndGet(),
+            chapterIndex = chapterIndex,
+            paragraphIndex = paragraph,
+            charOffset = offset,
+            toChapterEnd = toChapterEnd,
+            countAsReading = countAsReading
+        )
+        scheduleProgressUpdate()
+    }
+
+    /** The viewer has shown the request with [requestId]. */
+    fun onNavigationHandled(requestId: Long) {
+        _navigationRequest.update { current -> if (current?.id == requestId) null else current }
+    }
+
+    /**
+     * The viewer shows [range]. The position becomes its first character.
+     * Words are counted only when [countWords] is true, i.e. when the reader
+     * turned the page or scrolled by hand.
+     */
+    fun onVisibleRangeChanged(range: VisibleRange, countWords: Boolean) {
+        if (range.chapterIndex != _currentChapterIndex.value) return
+        _visibleRange.value = range
+        val position = ReaderPosition(range.chapterIndex, range.start.paragraphIndex, range.start.charOffset)
+        if (_position.value != position) {
+            _position.value = position
+            scheduleProgressUpdate()
+        }
+        if (countWords) {
+            countVisibleWords(range)
+            val match = _activeSearchMatch.value
+            if (match != null && !range.contains(match.chapterIndex, match.paragraphIndex, match.start)) {
+                _activeSearchMatch.value = null
             }
         }
     }
 
-    private fun updateVisiblePosition(chapterIndex: Int, paragraphIndex: Int) {
-        if (_currentParagraphIndex.value != paragraphIndex) {
-            _currentParagraphIndex.value = paragraphIndex
-            scheduleProgressUpdate(chapterIndex, paragraphIndex)
+    /** Called by the paged reader whenever the footer percentage changes. */
+    fun onPageProgressChanged(chapterIndex: Int, percent: Float) {
+        val position = _position.value
+        if (chapterIndex != position.chapterIndex) return
+        val progress = ReportedProgress(position, percent.coerceIn(0f, 100f))
+        if (reportedProgress == progress) return
+        reportedProgress = progress
+        scheduleProgressUpdate()
+    }
+
+    private fun countVisibleWords(range: VisibleRange) {
+        val chapter = _parsedBook.value?.chapters?.getOrNull(range.chapterIndex) ?: return
+        if (chapter.paragraphs.isEmpty()) return
+        val first = range.start.paragraphIndex.coerceIn(0, chapter.paragraphs.lastIndex)
+        val last = minOf(range.end.paragraphIndex, chapter.paragraphs.lastIndex)
+        synchronized(sessionLock) {
+            var added = 0
+            for (paragraphIndex in first..last) {
+                val text = paragraphPlainText(chapter.paragraphs[paragraphIndex])
+                if (text.isEmpty()) continue
+                val start = if (paragraphIndex == range.start.paragraphIndex) range.start.charOffset else 0
+                val end = if (paragraphIndex == range.end.paragraphIndex) range.end.charOffset else text.length
+                if (end <= start) continue
+                added += wordTracker.count(range.chapterIndex, paragraphIndex, text, start, end)
+            }
+            wordsReadInSession += added.coerceAtMost(MAX_WORDS_PER_REPORT)
         }
     }
 
-    private fun calculateProgress(chapterIndex: Int, paragraphIndex: Int): Float {
+    private fun calculateProgress(position: ReaderPosition): Float {
         reportedProgress
-            ?.takeIf { it.chapterIndex == chapterIndex && it.paragraphIndex == paragraphIndex }
+            ?.takeIf { it.position == position }
             ?.let { return it.percent }
         val chapters = _parsedBook.value?.chapters ?: return 0f
-        return paragraphProgressPercent(chapters, chapterLengths, chapterIndex, paragraphIndex)
+        return paragraphProgressPercent(
+            chapters,
+            chapterLengths,
+            position.chapterIndex,
+            position.paragraphIndex,
+            position.charOffset
+        )
     }
 
-    private fun scheduleProgressUpdate(chapterIndex: Int, paragraphIndex: Int) {
+    private fun scheduleProgressUpdate() {
         progressUpdateJob?.cancel()
         progressUpdateJob = viewModelScope.launch(Dispatchers.IO) {
             delay(400) // debounce DB write
-            val progressPercent = calculateProgress(chapterIndex, paragraphIndex)
-            bookDao.updateProgress(bookId, chapterIndex, paragraphIndex, progressPercent)
+            val position = _position.value
+            bookDao.updateProgress(
+                bookId = bookId,
+                chapterIndex = position.chapterIndex,
+                paragraphIndex = position.paragraphIndex,
+                charOffset = position.charOffset,
+                progress = calculateProgress(position)
+            )
         }
     }
 
-    fun addBookmark() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val parsed = _parsedBook.value ?: return@launch
-            val chIndex = _currentChapterIndex.value
-            val currentChapter = parsed.chapters.getOrNull(chIndex) ?: return@launch
-            val pIndex = _currentParagraphIndex.value
-            val snippet = currentChapter.paragraphs.getOrNull(pIndex)
-                ?: currentChapter.paragraphs.firstOrNull()
-                ?: "Закладка"
+    // ---- Search -----------------------------------------------------------
 
-            val bookmark = Bookmark(
-                bookId = bookId,
-                chapterIndex = chIndex,
-                paragraphIndex = pIndex,
-                chapterTitle = currentChapter.title,
-                snippet = snippet.take(120)
+    /** Debounced, cancellable search over the whole book. */
+    fun onSearchQueryChange(query: String) {
+        searchJob?.cancel()
+        val parsed = _parsedBook.value
+        if (parsed == null || query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
+            _searchState.value = SearchState(query = query)
+            return
+        }
+        _searchState.value = _searchState.value.copy(query = query, isSearching = true)
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            val outcome = withContext(Dispatchers.Default) {
+                searchChapters(parsed.chapters, query) { ensureActive() }
+            }
+            _searchState.value = SearchState(
+                query = query,
+                results = outcome.results,
+                isSearching = false,
+                truncated = outcome.truncated
             )
-            bookmarkDao.insertBookmark(bookmark)
+        }
+    }
+
+    /** Jumps to a search result and emphasises the match on its page. */
+    fun openSearchResult(result: SearchResult) {
+        _activeSearchMatch.value = SearchMatch(
+            chapterIndex = result.chapterIndex,
+            paragraphIndex = result.paragraphIndex,
+            start = result.matchStart,
+            end = result.matchEnd
+        )
+        goToPosition(result.chapterIndex, result.paragraphIndex, result.matchStart)
+    }
+
+    fun clearSearchMatch() {
+        _activeSearchMatch.value = null
+    }
+
+    // ---- Bookmarks ----------------------------------------------------------
+
+    /** Removes the bookmarks on the visible page, or bookmarks its first character. */
+    fun toggleBookmarkAtCurrentPosition() {
+        val parsed = _parsedBook.value ?: return
+        val position = _position.value
+        val range = _visibleRange.value
+        val onPage = bookmarks.value.filter { bookmark ->
+            if (range != null) {
+                range.contains(bookmark.chapterIndex, bookmark.paragraphIndex, bookmark.charOffset)
+            } else {
+                bookmark.chapterIndex == position.chapterIndex &&
+                    bookmark.paragraphIndex == position.paragraphIndex &&
+                    bookmark.charOffset == position.charOffset
+            }
+        }
+        val chapter = parsed.chapters.getOrNull(position.chapterIndex) ?: return
+        val isPdf = _book.value?.format == BookFormat.PDF
+        viewModelScope.launch(Dispatchers.IO) {
+            if (onPage.isNotEmpty()) {
+                onPage.forEach { bookmarkDao.deleteBookmark(it) }
+            } else {
+                bookmarkDao.insertBookmark(
+                    Bookmark(
+                        bookId = bookId,
+                        chapterIndex = position.chapterIndex,
+                        paragraphIndex = position.paragraphIndex,
+                        charOffset = position.charOffset,
+                        chapterTitle = displayChapterTitle(chapter.title, position.chapterIndex),
+                        snippet = bookmarkSnippet(chapter, position.paragraphIndex, position.charOffset, isPdf)
+                    )
+                )
+            }
         }
     }
 
@@ -304,33 +516,90 @@ class ReaderViewModel(
         }
     }
 
+    // ---- Highlights -----------------------------------------------------------
+
+    /** Highlights [startOffset, endOffset) of a paragraph's plain text. */
+    fun addHighlight(
+        chapterIndex: Int,
+        paragraphIndex: Int,
+        startOffset: Int,
+        endOffset: Int,
+        text: String,
+        colorHex: String = DEFAULT_HIGHLIGHT_HEX,
+        note: String? = null
+    ) {
+        if (endOffset <= startOffset) return
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.insertHighlight(
+                ReadingHighlight(
+                    bookId = bookId,
+                    chapterIndex = chapterIndex,
+                    paragraphIndex = paragraphIndex,
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    selectedText = text,
+                    colorHex = colorHex,
+                    note = note?.trim()?.takeIf { it.isNotEmpty() }
+                )
+            )
+        }
+    }
+
+    fun updateHighlightNote(highlightId: Long, note: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.updateHighlightNote(highlightId, note?.trim()?.takeIf { it.isNotEmpty() })
+        }
+    }
+
+    fun deleteHighlight(highlight: ReadingHighlight) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookmarkDao.deleteHighlight(highlight)
+        }
+    }
+
+    // ---- Settings -------------------------------------------------------------
+
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
         viewModelScope.launch {
             preferences.updateSettings(transform)
         }
     }
 
+    // ---- Text to speech -------------------------------------------------------
+
+    private fun ensureTtsManager(): TtsManager {
+        ttsManager?.let { return it }
+        val manager = TtsManager(getApplication<Application>())
+        ttsManager = manager
+        // One collector for the lifetime of the manager.
+        ttsStateJob = viewModelScope.launch {
+            manager.state.collect { state -> _ttsState.value = state }
+        }
+        return manager
+    }
+
     fun toggleTts() {
         val parsed = _parsedBook.value ?: return
-        val currentChapter = parsed.chapters.getOrNull(_currentChapterIndex.value) ?: return
-
-        when (ttsManager.state.value) {
+        val position = _position.value
+        val chapter = parsed.chapters.getOrNull(position.chapterIndex) ?: return
+        val manager = ensureTtsManager()
+        when (manager.state.value) {
             TtsState.IDLE -> {
-                ttsManager.play(currentChapter.paragraphs, _currentParagraphIndex.value)
-                viewModelScope.launch {
-                    ttsManager.state.collect { state ->
-                        _ttsState.value = state
-                    }
-                }
+                // Plain text with illustrations as "", so list indices are the
+                // chapter's paragraph indices. The speech package's TtsManager
+                // starts at the ORIGINAL paragraph index and skips blank entries.
+                val spoken = chapter.paragraphs.map(::paragraphPlainText)
+                if (spoken.none { it.isNotBlank() }) return
+                manager.play(spoken, position.paragraphIndex.coerceIn(0, spoken.lastIndex))
             }
-            TtsState.PLAYING -> {
-                ttsManager.pause()
-            }
-            TtsState.PAUSED -> {
-                ttsManager.resume()
-            }
+            TtsState.PLAYING -> manager.pause()
+            TtsState.PAUSED -> manager.resume()
+            // Keeps this compiling if the speech engine gains more states.
+            else -> Unit
         }
     }
+
+    // ---- Session ------------------------------------------------------------
 
     fun startSession() {
         synchronized(sessionLock) {
@@ -338,25 +607,22 @@ class ReaderViewModel(
         }
     }
 
+    private class SessionSnapshot(
+        val position: ReaderPosition,
+        val progressPercent: Float,
+        val durationSeconds: Long,
+        val words: Int
+    )
+
     fun saveSessionData() {
         progressUpdateJob?.cancel()
-
-        data class SessionSnapshot(
-            val chapterIndex: Int,
-            val paragraphIndex: Int,
-            val progressPercent: Float,
-            val durationSeconds: Long,
-            val words: Int
-        )
-
+        val bookLoaded = _parsedBook.value != null
         val snapshot = synchronized(sessionLock) {
             val startedAt = sessionStartTime ?: return
-            val chapterIndex = _currentChapterIndex.value
-            val paragraphIndex = _currentParagraphIndex.value
+            val position = _position.value
             SessionSnapshot(
-                chapterIndex = chapterIndex,
-                paragraphIndex = paragraphIndex,
-                progressPercent = calculateProgress(chapterIndex, paragraphIndex),
+                position = position,
+                progressPercent = calculateProgress(position),
                 durationSeconds = ((System.currentTimeMillis() - startedAt) / 1_000L).coerceAtLeast(0L),
                 words = wordsReadInSession
             ).also {
@@ -364,17 +630,20 @@ class ReaderViewModel(
                 // creating a duplicate session. ON_START begins a fresh interval.
                 sessionStartTime = null
                 wordsReadInSession = 0
-                countedTextFragments.clear()
+                wordTracker.clear()
             }
         }
 
         persistenceScope.launch {
-            bookDao.updateProgress(
-                bookId,
-                snapshot.chapterIndex,
-                snapshot.paragraphIndex,
-                snapshot.progressPercent
-            )
+            if (bookLoaded) {
+                bookDao.updateProgress(
+                    bookId = bookId,
+                    chapterIndex = snapshot.position.chapterIndex,
+                    paragraphIndex = snapshot.position.paragraphIndex,
+                    charOffset = snapshot.position.charOffset,
+                    progress = snapshot.progressPercent
+                )
+            }
             if (snapshot.durationSeconds >= 5) {
                 statsDao.insertStats(
                     ReadingStats(
@@ -387,41 +656,34 @@ class ReaderViewModel(
         }
     }
 
+    private fun chapterWords(chapterIndex: Int, chapter: Chapter): ChapterWords {
+        cachedChapterWords?.takeIf { it.chapterIndex == chapterIndex }?.let { return it }
+        val plain = chapter.paragraphs.map(::paragraphPlainText)
+        val counts = IntArray(plain.size) { countWords(plain[it]) }
+        return ChapterWords(chapterIndex, plain, counts, counts.sum()).also { cachedChapterWords = it }
+    }
+
     override fun onCleared() {
         saveSessionData()
-        _ttsManager?.release()
-        _ttsManager = null
+        searchJob?.cancel()
+        ttsStateJob?.cancel()
+        ttsManager?.release()
+        ttsManager = null
+        imageCache.clear()
+        val pdf = _pdfDocument.value
+        _pdfDocument.value = null
+        if (pdf != null) persistenceScope.launch { pdf.close() }
         super.onCleared()
     }
-}
 
-internal data class ReaderPosition(
-    val chapterIndex: Int,
-    val paragraphIndex: Int
-)
+    companion object {
+        private const val TAG = "ReaderViewModel"
+        private const val SEARCH_DEBOUNCE_MS = 300L
 
-/**
- * A book can be reparsed after an app update, which may change its chapter
- * count. Keep the persisted position valid so the reader never opens as a
- * blank screen because getOrNull(currentChapterIndex) returned null.
- */
-internal fun restoreReaderPosition(
-    chapters: List<Chapter>,
-    chapterIndex: Int,
-    paragraphIndex: Int
-): ReaderPosition {
-    val safeChapterIndex = chapterIndex.coerceIn(0, chapters.lastIndex.coerceAtLeast(0))
-    val paragraphCount = chapters.getOrNull(safeChapterIndex)
-        ?.paragraphs
-        ?.size
-        ?.coerceAtLeast(1)
-        ?: 1
-    val safeParagraphIndex = if (paragraphIndex == Int.MAX_VALUE) {
-        Int.MAX_VALUE
-    } else {
-        paragraphIndex.coerceIn(0, paragraphCount - 1)
+        /** Guards statistics against one huge report (e.g. a fast fling). */
+        private const val MAX_WORDS_PER_REPORT = 5_000
+        const val DEFAULT_HIGHLIGHT_HEX = "#FFEB3B"
     }
-    return ReaderPosition(safeChapterIndex, safeParagraphIndex)
 }
 
 class ReaderViewModelFactory(
