@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +16,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -153,16 +155,6 @@ fun GeneratedCover(
                     }
                 }
                 val hairlineStroke = Stroke(width = 1f)
-                val diamond = Path().apply {
-                    val r = 2.dp.toPx()
-                    val cx = size.width / 2f
-                    val cy = size.height * 0.64f
-                    moveTo(cx, cy - r)
-                    lineTo(cx + r, cy)
-                    lineTo(cx, cy + r)
-                    lineTo(cx - r, cy)
-                    close()
-                }
                 val grainBrush = grain?.let { paperGrainBrush(it) }
                 onDrawBehind {
                     drawRect(cloth.color)
@@ -181,7 +173,6 @@ fun GeneratedCover(
                         size = Size(size.width - 2 * i2, size.height - 2 * i2),
                         style = Stroke(innerW)
                     )
-                    drawPath(diamond, frameColor)
                 }
             }
     ) {
@@ -199,6 +190,23 @@ fun GeneratedCover(
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().wrapContentHeight()
+            )
+            Spacer(Modifier.height((w * 0.06f).dp))
+            // A 4 dp diamond ornament (Lora has no ✦).
+            val ornament = if (cloth.isFoil) LuminaExtendedColors.Light.foilLight else cloth.ink
+            Spacer(
+                modifier = Modifier
+                    .size(4.dp)
+                    .drawBehind {
+                        val path = Path().apply {
+                            moveTo(size.width / 2f, 0f)
+                            lineTo(size.width, size.height / 2f)
+                            lineTo(size.width / 2f, size.height)
+                            lineTo(0f, size.height / 2f)
+                            close()
+                        }
+                        drawPath(path, ornament)
+                    }
             )
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.height((w * 0.06f).dp))

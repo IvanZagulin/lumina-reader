@@ -115,8 +115,17 @@ class BookTransitionState internal constructor(
     internal var waitingVisible by mutableStateOf(false)
         private set
 
+    /** Slot bounds (open) or close target; unscaled while [sourceFollowsLibraryScale]. */
     var sourceRect: Rect = Rect.Zero
         internal set
+
+    /**
+     * While closing, the live library grows from [LIBRARY_SCALE_DEPTH] below 1 back
+     * to 1; the target slot is kept unscaled and re-scaled every frame so the book
+     * lands exactly on it.
+     */
+    internal var sourceFollowsLibraryScale = false
+        private set
     var stageRect: Rect = Rect.Zero
         internal set
 
@@ -228,6 +237,7 @@ class BookTransitionState internal constructor(
                 this@BookTransitionState.cover = cover
                 cloth = clothFor(cover)
                 originSlotKey = slotKey
+                sourceFollowsLibraryScale = false
                 readerReady.value = null
                 libraryShot = null
                 libraryShotSmall = null
@@ -343,6 +353,7 @@ class BookTransitionState internal constructor(
                 endCornerPx = start.cornerPx
                 stageRect = computeStage()
                 sourceRect = TransitionGeometry.centeredSource(stageRect)
+                sourceFollowsLibraryScale = false
                 this@BookTransitionState.cover = cover
                 cloth = clothFor(cover)
                 readerShot = runCatching { readerLayer.toImageBitmap() }.getOrNull()
@@ -373,7 +384,10 @@ class BookTransitionState internal constructor(
 
                 val found = target
                 if (found != null) {
-                    sourceRect = found.rect
+                    // Measured inside the scaled library: store it unscaled (see frame()).
+                    val measuredScale = librarySourceScale().coerceAtLeast(0.5f)
+                    sourceRect = TransitionGeometry.scaleAbout(found.rect, fullRect.center, 1f / measuredScale)
+                    sourceFollowsLibraryScale = true
                     coroutineScope {
                         launch { expand.animateTo(0f, tween(300, easing = LuminaMotion.EmphasizedAccelerate)) }
                         launch {
@@ -410,6 +424,9 @@ class BookTransitionState internal constructor(
             }
         }
     }
+
+    /** Scale of the live library while closing (1 − depth·backdrop). */
+    internal fun librarySourceScale(): Float = 1f - LIBRARY_SCALE_DEPTH * libraryBackdrop.value
 
     private fun findCloseTarget(bookId: Long): SlotCandidate? {
         val candidates = slots.mapNotNull { (key, entry) ->
@@ -459,6 +476,9 @@ class BookTransitionState internal constructor(
     }
 
     internal companion object {
+        /** The library behind the overlay is scaled down by this much (spec §5.1, §6.5). */
+        const val LIBRARY_SCALE_DEPTH = 0.06f
+
         /** «Быстрая» opens the cover to about −110° (h = 0.61). */
         const val FAST_HINGE = 0.61f
         const val WAIT_BEFORE_INDICATOR_MS = 400L

@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -127,13 +128,17 @@ fun LibraryScreen(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomPadding = max(LuminaDimens.DockClearance, navBottom + LuminaDimens.DockHeight + 36.dp)
 
+    val currentOnOpenBook by rememberUpdatedState(onOpenBook)
+    val currentOpenAnimation by rememberUpdatedState(openAnimation)
+    val currentBooksById by rememberUpdatedState(booksById)
+
     fun openBook(book: Book, slotKey: String?) {
         val id = book.id
         if (transition == null) {
-            onOpenBook(id)
+            currentOnOpenBook(id)
         } else {
-            transition.open(book.toCoverModel(), slotKey ?: transition.findSlotKey(id), openAnimation) {
-                onOpenBook(id)
+            transition.open(book.toCoverModel(), slotKey ?: transition.findSlotKey(id), currentOpenAnimation) {
+                currentOnOpenBook(id)
             }
         }
     }
@@ -143,13 +148,17 @@ fun LibraryScreen(
         actionsBookId = bookId
     }
 
-    val callbacks = ShelfCallbacks(
-        onOpen = { id, slot -> booksById[id]?.let { openBook(it, slot) } },
-        onActions = { id, page -> showActions(id, page) },
-        onShowAll = { key -> detailKey = key },
-        onRename = { name -> renameShelf = name },
-        onDelete = { name -> deleteShelf = name }
-    )
+    // One instance for the screen's lifetime, so shelf rows do not recompose when
+    // unrelated screen state (sheets, search text) changes.
+    val callbacks = remember(transition) {
+        ShelfCallbacks(
+            onOpen = { id, slot -> currentBooksById[id]?.let { openBook(it, slot) } },
+            onActions = { id, page -> showActions(id, page) },
+            onShowAll = { key -> detailKey = key },
+            onRename = { name -> renameShelf = name },
+            onDelete = { name -> deleteShelf = name }
+        )
+    }
 
     val shelvesView = status == ReadingStatus.COLLECTIONS && query.isBlank()
     val listState = rememberLazyListState()
@@ -162,7 +171,7 @@ fun LibraryScreen(
                 // While the reader closes onto the library it grows from 0.94 to 1.
                 val closing = transition?.phase == BookTransitionState.Phase.Closing
                 val p = if (closing) transition?.libraryBackdrop?.value ?: 0f else 0f
-                scaleX = 1f - 0.06f * p
+                scaleX = 1f - BookTransitionState.LIBRARY_SCALE_DEPTH * p
                 scaleY = scaleX
             }
             .drawWithCache {

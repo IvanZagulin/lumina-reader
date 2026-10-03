@@ -89,6 +89,9 @@ fun rememberShelfBookSize(): ShelfBookSize {
 /** Space above the covers inside a shelf row (room for the press lift). */
 val ShelfTopPadding: Dp = 16.dp
 
+/** Captions start below the plank and most of its shadow. */
+private val CaptionGap: Dp = ShelfPlankMetrics.Total - 6.dp
+
 /** Shelf rows show at most this many books, then an «Ещё N» card. */
 const val SHELF_ROW_MAX_BOOKS = 14
 
@@ -393,7 +396,7 @@ fun ShelfRow(
                         onLongClick = { onLongPress(book) }
                     )
                     if (captions) {
-                        Spacer(Modifier.height(ShelfPlankMetrics.TopFace + ShelfPlankMetrics.FrontFace + 8.dp))
+                        Spacer(Modifier.height(CaptionGap))
                         BookCaption(book, size.width)
                     }
                 }
@@ -453,7 +456,7 @@ fun BookcaseRow(
                             onClick = { onOpen(book, slotKey) },
                             onLongClick = { onLongPress(book) }
                         )
-                        Spacer(Modifier.height(ShelfPlankMetrics.TopFace + ShelfPlankMetrics.FrontFace + 8.dp))
+                        Spacer(Modifier.height(CaptionGap))
                         BookCaption(book, size.width)
                     }
                 }

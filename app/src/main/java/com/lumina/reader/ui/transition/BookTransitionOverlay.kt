@@ -61,7 +61,8 @@ internal class TransitionFrame(
     val coverShading: Float,
     val coverAlpha: Float,
     val pageAlpha: Float,
-    val shadowPx: Float,
+    /** Elevation of the flying book in dp (4 → 24 over the flight). */
+    val shadowDp: Float,
     val hinge: Float,
     val expand: Float
 )
@@ -71,7 +72,12 @@ internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): Tra
     val h = hinge.value
     val e = expand.value
     val v = vanish.value
-    val book = TransitionGeometry.lerpRect(sourceRect, stageRect, f)
+    val source = if (sourceFollowsLibraryScale) {
+        TransitionGeometry.scaleAbout(sourceRect, fullRect.center, librarySourceScale())
+    } else {
+        sourceRect
+    }
+    val book = TransitionGeometry.lerpRect(source, stageRect, f)
         .translate(Offset(0f, TransitionGeometry.arcOffset(f, arcPx)))
     var page = TransitionGeometry.lerpRect(TransitionGeometry.pageRect(book, h), endRect, e)
     if (v > 0f) page = TransitionGeometry.scaleAbout(page, page.center, 1f - 0.4f * v)
@@ -83,7 +89,7 @@ internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): Tra
         coverShading = 0.35f * sinH,
         coverAlpha = (1f - TransitionGeometry.window(e, 0.5f, 1f)) * (1f - v),
         pageAlpha = 1f - v,
-        shadowPx = TransitionGeometry.lerp(4f, 24f, f) * (1f - e) * (1f - v),
+        shadowDp = TransitionGeometry.lerp(4f, 24f, f) * (1f - e) * (1f - v),
         hinge = h,
         expand = e
     )
@@ -155,7 +161,7 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                         val b = state.libraryBackdrop.value
                         if (!state.closing && state.backdropReady) {
                             val shot = state.libraryShot
-                            scale(1f - 0.06f * b) {
+                            scale(1f - BookTransitionState.LIBRARY_SCALE_DEPTH * b) {
                                 if (shot != null) {
                                     drawImage(
                                         image = shot,
@@ -195,7 +201,8 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                     scaleX = if (stage.width > 0f) fr.page.width / stage.width else 1f
                     scaleY = if (stage.height > 0f) fr.page.height / stage.height else 1f
                     alpha = fr.coverAlpha
-                    shadowElevation = fr.shadowPx.dp.toPx() * (1f - fr.hinge)
+                    // The closed book casts a real shadow; once it opens the page draws its own.
+                    shadowElevation = fr.shadowDp.dp.toPx() * (1f - fr.hinge)
                     shape = LuminaShape.Book
                     clip = false
                 }
@@ -233,8 +240,8 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
 }
 
 private fun DrawScope.drawPageShadow(fr: TransitionFrame) {
-    if (fr.shadowPx <= 0f || fr.expand >= 1f) return
-    val radius = fr.shadowPx.dp.toPx()
+    if (fr.shadowDp <= 0f || fr.hinge <= 0f || fr.expand >= 1f) return
+    val radius = fr.shadowDp.dp.toPx()
     val dy = radius * 0.35f
     val steps = 4
     for (i in steps downTo 1) {
@@ -244,12 +251,14 @@ private fun DrawScope.drawPageShadow(fr: TransitionFrame) {
             topLeft = Offset(fr.page.left - grow * 0.5f, fr.page.top + dy - grow * 0.3f),
             size = Size(fr.page.width + grow, fr.page.height + grow * 0.8f),
             cornerRadius = CornerRadius(fr.cornerPx + grow),
-            alpha = 0.05f * fr.pageAlpha
+            alpha = 0.05f * fr.pageAlpha * fr.hinge
         )
     }
 }
 
 private fun DrawScope.drawPage(state: BookTransitionState, fr: TransitionFrame, clip: Path, hingeShadowMax: Float) {
+    // A closed book is all cover: the page only shows once the hinge or the expand starts.
+    if (fr.hinge <= 0f && fr.expand <= 0f) return
     val page = fr.page
     val shot = state.readerShot
     if (state.closing && shot != null) {

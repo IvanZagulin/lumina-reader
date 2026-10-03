@@ -181,7 +181,9 @@ fun LuminaNavGraph(
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importer.importFromUri(uri)
     }
-    val launchImport: () -> Unit = { runCatching { importLauncher.launch(BookMimeTypes) } }
+    val launchImport: () -> Unit = remember(importLauncher) {
+        { runCatching { importLauncher.launch(BookMimeTypes) } }
+    }
 
     // Notification taps, "Открыть с помощью" and snackbar actions open books here (plain fade).
     LaunchedEffect(navController) {
