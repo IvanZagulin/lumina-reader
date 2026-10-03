@@ -63,9 +63,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-/** Fixed chrome around the page body; every page has exactly the same body size. */
-private val PageHeaderHeight = 56.dp
-private val PageFooterHeight = 48.dp
+/**
+ * Fixed chrome around the page body; every page has exactly the same body
+ * size. The header leaves room for the status bar, which stays visible while
+ * reading, and the footer keeps clear of the gesture navigation area.
+ */
+private val PageHeaderHeight = 68.dp
+private val PageFooterHeight = 60.dp
 private val TitleSpacing = 12.dp
 
 /**
