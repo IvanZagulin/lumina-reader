@@ -26,7 +26,7 @@ import java.io.InputStream
  * - One chapter per spine document; a document longer than
  *   [ParserLimits.MAX_CHAPTER_CHARS] is split at paragraph boundaries into
  *   "<title> (часть N)" parts. `linear="no"` documents are skipped unless the
- *   TOC points at them.
+ *   TOC points at them (they are still read for footnotes the text links to).
  * - The TOC comes from the EPUB 3 nav document or the EPUB 2 NCX, keeps its
  *   nesting as [TocItem.level] and points at the paragraph of the target anchor.
  * - Chapter titles: TOC label of the document, else its opening heading(s),
@@ -123,10 +123,19 @@ class EpubParser : BookParser {
         val notes = EpubNotes()
         val docs = ArrayList<DocEntry>()
         val seen = HashSet<String>()
+        val canonicalPath: (String) -> String = { canonical(archive, it) }
         spineItems.forEachIndexed { spineIndex, (path, linear) ->
             if (!seen.add(path)) return@forEachIndexed
-            if (!linear && path !in tocPaths) return@forEachIndexed
-            val doc = readDocument(archive, path, notes, ::loadImage) ?: return@forEachIndexed
+            if (!linear && path !in tocPaths) {
+                // Not part of the reading order, but it may hold the footnotes
+                // the text links to (a common EPUB 3 layout): read it for them only.
+                val prefix = "$path#"
+                if (notes.referenced.keys.any { it.startsWith(prefix) }) {
+                    readDocument(archive, path, notes, canonicalPath) { null }
+                }
+                return@forEachIndexed
+            }
+            val doc = readDocument(archive, path, notes, canonicalPath, ::loadImage) ?: return@forEachIndexed
             if (doc.paragraphs.isEmpty()) return@forEachIndexed
             docs.add(DocEntry(path, spineIndex, doc))
         }
@@ -297,6 +306,7 @@ class EpubParser : BookParser {
         archive: EpubArchive,
         path: String,
         notes: EpubNotes,
+        canonicalPath: (String) -> String,
         loadImage: (String) -> String?
     ): XhtmlDocument? {
         val ext = path.substringAfterLast('.', "").lowercase()
@@ -306,7 +316,12 @@ class EpubParser : BookParser {
         }
         val bytes = archive.read(path, ParserLimits.MAX_DOCUMENT_BYTES.toLong()) ?: return null
         val text = TextEncoding.decode(bytes)
-        return XhtmlExtractor(path, notes, loadImage).extract(text)
+        return XhtmlExtractor(
+            docPath = path,
+            notes = notes,
+            canonicalPath = canonicalPath,
+            resolveImage = loadImage
+        ).extract(text)
     }
 
     /** Label of the TOC entry that opens [path] (no fragment, or an anchor before the body text). */

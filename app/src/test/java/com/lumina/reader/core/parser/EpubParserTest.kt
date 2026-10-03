@@ -377,4 +377,66 @@ class EpubParserTest {
         assertNotNull(book.images["small.png"])
         assertFalse(book.images.containsKey("huge.jpg"))
     }
+
+    @Test
+    fun hiddenNotesFileSuperscriptLinksProseBreaksAndAnchors() {
+        val opf3 = """
+            <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+              <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Книга</dc:title></metadata>
+              <manifest>
+                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="ch" href="ch.xhtml" media-type="application/xhtml+xml"/>
+                <item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine><itemref idref="ch"/><itemref idref="notes" linear="no"/></spine>
+            </package>
+        """.trimIndent()
+        val nav3 = """
+            <html xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>
+              <li><a href="ch.xhtml">Глава</a><ol><li><a href="ch.xhtml#s2">Раздел</a></li></ol></li>
+            </ol></nav></body></html>
+        """.trimIndent()
+        val longLine = "Длинная строка прозы, которую конвертер отделил тегом br вместо отдельного абзаца, " +
+            "как это часто бывает."
+        val ch = """
+            <html xmlns:epub="http://www.idpf.org/2007/ops"><body>Вводный текст без абзаца.<h2 id="s2">Раздел</h2>
+            <p>Проза<a href="notes.xhtml#n1" class="calibre5"><sup class="calibre6">1</sup></a> дальше.</p>
+            <div>$longLine<br/>$longLine</div>
+            <aside epub:type="footnote" id="lonely"><p>Видимая врезка.</p></aside>
+            </body></html>
+        """.trimIndent()
+        val notesDoc = "<html><body><div id=\"n1\"><p>1. Текст сноски из скрытого файла.</p></div></body></html>"
+        val book = parseBytes(
+            zip(
+                linkedMapOf(
+                    "META-INF/container.xml" to container.replace("OEBPS/content.opf", "content.opf").utf8(),
+                    "content.opf" to opf3.utf8(),
+                    "nav.xhtml" to nav3.utf8(),
+                    "ch.xhtml" to ch.utf8(),
+                    "notes.xhtml" to notesDoc.utf8()
+                )
+            )
+        )
+        // The linear="no" notes file is not a chapter, but its note is collected.
+        assertEquals(listOf("Глава"), book.chapters.map { it.title })
+        val paragraphs = book.chapters[0].paragraphs
+        assertEquals("Вводный текст без абзаца.", paragraphs[0])
+
+        // The anchor of a block that follows loose text points at the block itself.
+        val section = book.tableOfContents.single { it.title == "Раздел" }
+        assertEquals("Раздел", ParagraphMarkup.plainText(paragraphs[section.paragraphIndex]))
+
+        // <a><sup>1</sup></a> is a footnote reference.
+        val parsed = ParagraphMarkup.parse(paragraphs.single { ParagraphMarkup.plainText(it).startsWith("Проза") })
+        val ref = parsed.spans.single { it.kind == InlineKind.NOTE_REF }
+        assertEquals("Текст сноски из скрытого файла.", book.footnotes[ref.noteId])
+
+        // Prose lines separated by <br> keep the normal paragraph style.
+        val prose = paragraphs.filter { ParagraphMarkup.plainText(it) == longLine }
+        assertEquals(2, prose.size)
+        assertTrue(prose.all { ParagraphMarkup.blockStyle(it) == BlockStyle.NORMAL })
+
+        // An <aside> footnote nobody links to stays in the text.
+        assertTrue(paragraphs.any { ParagraphMarkup.plainText(it) == "Видимая врезка." })
+    }
 }

@@ -41,24 +41,27 @@ internal class EpubNotes {
  *   author/signature classes -> TEXT_AUTHOR, "* * *" or `<hr>` -> SUBTITLE "* * *";
  * - em/i -> emphasis, strong/b -> strong;
  * - `<br>` splits a paragraph into separate lines; every line of a block that
- *   contained a `<br>` becomes a VERSE paragraph (no indent, no justification).
+ *   contained a `<br>` becomes a VERSE paragraph (no indent, no justification),
+ *   unless the lines average 100+ characters (prose split by `<br>`: NORMAL).
  *   Two `<br>` in a row, or an empty `<p><br/></p>`, give a blank "" gap paragraph;
  *   inside a heading `<br>` joins the lines with ". ";
  * - table cells are joined with " | ", one paragraph per row;
  * - `<img>` and SVG `<image>` become `[IMG:<id>]` paragraphs in place;
  * - footnote references become [ParagraphMarkup.noteRef] and their bodies are
- *   collected into [EpubNotes]; `<aside>` footnotes are hidden from the flow.
+ *   collected into [EpubNotes]; referenced `<aside>` footnotes are hidden from the flow.
  */
 internal class XhtmlExtractor(
     private val docPath: String,
     private val notes: EpubNotes,
+    /** Archive spelling of a resolved link target, so note keys match the spine paths. */
+    private val canonicalPath: (String) -> String = { it },
     private val resolveImage: (String) -> String?
 ) {
     private class Capture(val key: String) {
         val parts = ArrayList<String>()
     }
 
-    private class NoteRefState(val key: String, val explicit: Boolean, val hint: Boolean) {
+    private class NoteRefState(val key: String, val explicit: Boolean, var hint: Boolean) {
         val label = StringBuilder()
         var abandoned = false
     }
@@ -79,6 +82,9 @@ internal class XhtmlExtractor(
         val ordered: Boolean
     ) {
         var hasBreaks = false
+
+        /** Indices of the paragraphs that are VERSE only because this block contained `<br>`. */
+        val brokenLines = ArrayList<Int>()
         var itemCount = 0
     }
 
@@ -122,7 +128,12 @@ internal class XhtmlExtractor(
         val name = tag.name
         val parent = stack.lastOrNull()
         val parentSkip = parent?.skip == true
+        val block = name in BLOCKS
+        val skip = parentSkip || name in SKIPPED
 
+        // A block opens a new paragraph: flush the previous one first, so an
+        // anchor on this element points at the paragraph it really starts.
+        if (block && !skip) flushBlockBoundary()
         if (!parentSkip || name == "image") {
             recordAnchor(tag)
         }
@@ -149,20 +160,18 @@ internal class XhtmlExtractor(
         val epubType = (tag.attr("epub:type") ?: tag.attributes.firstOrNull { it.first.endsWith(":type") }?.second)
             ?.lowercase().orEmpty()
         val role = tag.attr("role")?.lowercase().orEmpty()
-        val block = name in BLOCKS
-        val skip = parentSkip || name in SKIPPED
         val isHeadTitle = name == "title" && stack.any { it.name == "head" }
-
-        if (block && !skip) flushBlockBoundary()
 
         val isNoteElement = NOTE_TYPES.any { epubType.contains(it) } ||
             role.contains("doc-footnote") || role.contains("doc-endnote")
-        val hidden = !skip && name == "aside" && isNoteElement
         val id = tag.attr("id")
+        val key = if (!skip && !id.isNullOrEmpty()) "$docPath#$id" else null
+        val referenced = key != null && notes.referenced.containsKey(key)
+        // Only a footnote that the text really links to is taken out of the
+        // reading flow; an unreferenced <aside> stays visible so no text is lost.
+        val hidden = !skip && name == "aside" && isNoteElement && referenced
         var capture: Capture? = null
-        if (!skip && id != null && id.isNotEmpty()) {
-            val key = "$docPath#$id"
-            val referenced = notes.referenced.containsKey(key)
+        if (key != null) {
             when {
                 isNoteElement || (referenced && block && name !in NOT_CAPTURED) -> capture = Capture(key)
                 referenced && !block -> pendingInlineKeys.add(key)
@@ -189,7 +198,7 @@ internal class XhtmlExtractor(
                     val explicit = epubType.contains("noteref") || role.contains("doc-noteref")
                     val inSup = stack.any { it.name == "sup" }
                     val hint = inSup || NOTE_HINT.containsMatchIn(cls) || NOTE_HINT.containsMatchIn(fragment)
-                    noteRef = NoteRefState("$path#$fragment", explicit, hint)
+                    noteRef = NoteRefState("${canonicalPath(path)}#$fragment", explicit, hint)
                 }
             }
         }
@@ -211,6 +220,8 @@ internal class XhtmlExtractor(
             list = !skip && (name == "ul" || name == "ol"),
             ordered = name == "ol"
         )
+        // <a href="#n1"><sup>1</sup></a>: a superscript label marks a footnote link.
+        if (!skip && name == "sup") activeNoteRef?.let { it.hint = true }
         if (tag.selfClosing) {
             // <p/>, <a id="x"/> and friends: nothing inside.
             return
@@ -244,6 +255,7 @@ internal class XhtmlExtractor(
         val frame = stack.last()
         if (frame.noteRef != null) finishNoteRef(frame.noteRef)
         if (frame.block) flushBlockBoundary()
+        if (frame.brokenLines.isNotEmpty()) demoteProseLines(frame.brokenLines)
         if (frame.emphasis) acc.endEmphasis()
         if (frame.strong) acc.endStrong()
         stack.removeAt(stack.lastIndex)
@@ -365,14 +377,29 @@ internal class XhtmlExtractor(
 
     private fun flush() {
         val content = acc.take() ?: return
-        emit(currentStyle(), content)
+        val explicit = explicitStyle()
+        if (explicit != null) {
+            emit(explicit, content)
+            return
+        }
+        val lineBlock = stack.lastOrNull { it.block }?.takeIf { it.hasBreaks }
+        if (lineBlock == null) {
+            emit(BlockStyle.NORMAL, content)
+            return
+        }
+        val before = paragraphs.size
+        emit(BlockStyle.VERSE, content)
+        if (paragraphs.size > before && ParagraphMarkup.blockStyle(paragraphs.last()) == BlockStyle.VERSE) {
+            lineBlock.brokenLines.add(paragraphs.lastIndex)
+        }
     }
 
-    private fun currentStyle(): BlockStyle {
+    /** Style set by the element itself or an ancestor (heading, epigraph, poem class...). */
+    private fun explicitStyle(): BlockStyle? {
         for (i in stack.indices.reversed()) {
             stack[i].style?.let { return it }
         }
-        return if (stack.lastOrNull { it.block }?.hasBreaks == true) BlockStyle.VERSE else BlockStyle.NORMAL
+        return null
     }
 
     private fun emit(style: BlockStyle, content: String) {
@@ -401,6 +428,18 @@ internal class XhtmlExtractor(
         paragraphs.add(ParagraphMarkup.block(finalStyle, finalContent))
     }
 
+    /**
+     * A block split by `<br>` reads as verse only when its lines are short;
+     * converters often separate whole prose paragraphs with `<br>`, and those
+     * lines keep the normal paragraph style.
+     */
+    private fun demoteProseLines(lines: List<Int>) {
+        var chars = 0L
+        for (i in lines) chars += ParagraphMarkup.plainText(paragraphs[i]).length
+        if (chars / lines.size < PROSE_LINE_CHARS) return
+        for (i in lines) paragraphs[i] = ParagraphMarkup.withoutBlockMarker(paragraphs[i])
+    }
+
     private fun emitSceneBreak() {
         if (hiddenDepth > 0) return
         if (paragraphs.isEmpty() || paragraphs.last() == ParagraphMarkup.sceneBreak()) return
@@ -417,6 +456,9 @@ internal class XhtmlExtractor(
     private companion object {
         const val MAX_LABEL = 24
         const val MAX_NOTE_PARAGRAPHS = 40
+
+        /** Average line length from which `<br>`-separated lines count as prose, not verse. */
+        const val PROSE_LINE_CHARS = 100L
 
         val RAW_TEXT = setOf("script", "style")
         val SKIPPED = setOf("head", "script", "style", "noscript", "template", "svg", "math", "object", "title")

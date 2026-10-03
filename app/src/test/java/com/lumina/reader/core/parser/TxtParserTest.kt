@@ -172,4 +172,48 @@ class TxtParserTest {
             file.delete()
         }
     }
+
+    @Test
+    fun sentencesThatStartWithAKeywordAreNotHeadings() {
+        listOf("Часть первая была скучной", "Book I am reading", "Глава вторая началась тихо")
+            .forEach { assertNull(it, TxtLayout.heading(it)) }
+        listOf("Часть первая Начало", "Part I The Beginning", "Глава 3 возвращение")
+            .forEach { assertNotNull(it, TxtLayout.heading(it)) }
+    }
+
+    @Test
+    fun hugeChapterAfterASingleHeadingIsSplit() {
+        val paragraph = "Длинное предложение для проверки разбиения большой главы на части. ".repeat(10).trim()
+        val text = "Пролог\n\n" + List(250) { paragraph }.joinToString("\n\n")
+        val book = parse(text)
+        assertTrue(book.chapters.size >= 4)
+        assertEquals("Пролог (часть 1)", book.chapters[0].title)
+        assertEquals("Пролог (часть 2)", book.chapters[1].title)
+        assertEquals(250, book.chapters.sumOf { it.paragraphs.size })
+        assertTrue(book.chapters.all { chapter -> chapter.paragraphs.sumOf { it.length } <= 40_000 })
+        val toc = book.tableOfContents
+        assertEquals("Пролог", toc[0].title)
+        assertEquals(book.chapters.indices.toList(), toc.map { it.chapterIndex })
+        assertEquals(listOf(0) + List(book.chapters.size - 1) { 1 }, toc.map { it.level })
+    }
+
+    @Test
+    fun shortLinesOfVaryingLengthStayOneParagraphPerLine() {
+        val lines = listOf(
+            "— Привет!", "— Как дела?", "Он улыбнулся и посмотрел в окно, где шёл дождь.", "— Хорошо.",
+            "Она кивнула.", "— Пойдём гулять?", "Дождь стучал по крыше всё сильнее и сильнее, не переставая.",
+            "— Нет.", "Тишина.", "— Почему?"
+        )
+        assertEquals(TxtLayout.Mode.LINE_PER_PARAGRAPH, TxtLayout.detectMode(lines))
+        assertEquals(lines, parse(lines.joinToString("\n")).chapters.single().paragraphs)
+    }
+
+    @Test
+    fun utf8WithAStrayByteIsNotDecodedAsWindows1251() {
+        val bytes = "Привет, мир! ".repeat(50).toByteArray(Charsets.UTF_8) + byteArrayOf(0xFF.toByte()) +
+            " Ещё текст".toByteArray(Charsets.UTF_8)
+        val paragraph = parse(bytes).chapters.single().paragraphs.single()
+        assertTrue(paragraph, paragraph.startsWith("Привет, мир!"))
+        assertTrue(paragraph, paragraph.endsWith("Ещё текст"))
+    }
 }

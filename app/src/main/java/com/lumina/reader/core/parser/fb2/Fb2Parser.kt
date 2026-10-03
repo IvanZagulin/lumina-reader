@@ -8,6 +8,7 @@ import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.TocItem
 import com.lumina.reader.core.parser.BookParser
 import com.lumina.reader.core.parser.common.Base64StreamDecoder
+import com.lumina.reader.core.parser.common.ImageSniffer
 import com.lumina.reader.core.parser.common.MarkupToken
 import com.lumina.reader.core.parser.common.MarkupTokenizer
 import com.lumina.reader.core.parser.common.NoteSupport
@@ -436,7 +437,8 @@ internal class Fb2BookBuilder(private val fileName: String, private val isZip: B
         binary = null
         val bytes = decoder.result() ?: return
         val id = binaryId
-        if (id.isEmpty()) return
+        // Only formats the reader can decode (JPEG, PNG, GIF, WebP, BMP) are kept.
+        if (id.isEmpty() || !ImageSniffer.isRasterImage(bytes)) return
         val isCover = if (coverImageId.isNotEmpty()) {
             id.equals(coverImageId, ignoreCase = true)
         } else {
@@ -650,16 +652,40 @@ internal class Fb2BookBuilder(private val fileName: String, private val isZip: B
         for (id in notes.keys.toList()) {
             notes[id] = NoteSupport.dropUnknownRefs(notes.getValue(id)) { it in notes }
         }
-        val finalChapters = chapters.map { chapter ->
-            if (chapter.paragraphs.none { it.indexOf(ParagraphMarkup.NOTE_START) >= 0 }) {
-                chapter
-            } else {
-                chapter.copy(paragraphs = chapter.paragraphs.map { p -> NoteSupport.dropUnknownRefs(p) { it in notes } })
+        // Images whose <binary> is missing or unusable are dropped; TOC positions follow.
+        val remaps = HashMap<Int, IntArray>()
+        val finalChapters = chapters.mapIndexed { chapterIndex, chapter ->
+            var paragraphs = chapter.paragraphs
+            val missingImage = paragraphs.any { p -> ParagraphMarkup.imageId(p)?.let { it !in images } == true }
+            if (missingImage) {
+                val kept = ArrayList<String>(paragraphs.size)
+                val remap = IntArray(paragraphs.size)
+                for ((i, p) in paragraphs.withIndex()) {
+                    remap[i] = kept.size
+                    val imageId = ParagraphMarkup.imageId(p)
+                    if (imageId == null || imageId in images) kept.add(p)
+                }
+                while (kept.isNotEmpty() && kept.last().isEmpty()) kept.removeAt(kept.lastIndex)
+                if (kept.isNotEmpty()) {
+                    paragraphs = kept
+                    remaps[chapterIndex] = remap
+                }
             }
+            if (paragraphs.any { it.indexOf(ParagraphMarkup.NOTE_START) >= 0 }) {
+                paragraphs = paragraphs.map { p -> NoteSupport.dropUnknownRefs(p) { it in notes } }
+            }
+            if (paragraphs === chapter.paragraphs) chapter else chapter.copy(paragraphs = paragraphs)
         }
-        val tocItems = toc.filter { it.chapterIndex in finalChapters.indices }.ifEmpty {
-            finalChapters.map { TocItem(id = "ch_${it.index}", title = it.title, chapterIndex = it.index) }
-        }
+        val tocItems = toc.filter { it.chapterIndex in finalChapters.indices }
+            .map { item ->
+                val remap = remaps[item.chapterIndex] ?: return@map item
+                val size = finalChapters[item.chapterIndex].paragraphs.size
+                val index = remap.getOrElse(item.paragraphIndex) { size - 1 }.coerceIn(0, (size - 1).coerceAtLeast(0))
+                item.copy(paragraphIndex = index)
+            }
+            .ifEmpty {
+                finalChapters.map { TocItem(id = "ch_${it.index}", title = it.title, chapterIndex = it.index) }
+            }
 
         return ParsedBook(
             title = bookTitle.ifBlank { fileName.substringBeforeLast(".") },

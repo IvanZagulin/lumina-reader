@@ -23,7 +23,8 @@ import java.nio.charset.Charset
  *
  * Chapters start at strict headings ("Глава 1", "ГЛАВА ПЕРВАЯ", "Часть II",
  * "Chapter 3", "Пролог", markdown "#"); a text without headings is split into
- * parts of roughly 30 000 characters at paragraph boundaries.
+ * parts of roughly 30 000 characters at paragraph boundaries, and so is a
+ * chapter longer than [MAX_CHAPTER_CHARS] ("<title> (часть N)").
  */
 class TxtParser : BookParser {
 
@@ -67,13 +68,31 @@ class TxtParser : BookParser {
             fun commit() {
                 while (current.isNotEmpty() && current.last().isEmpty()) current.removeAt(current.lastIndex)
                 if (current.isEmpty()) return
+                // A missed heading must not leave one enormous chapter: split it into parts.
+                val parts: List<List<String>> =
+                    if (current.sumOf { it.length } > MAX_CHAPTER_CHARS) chunk(current) else listOf(current)
                 val index = chapters.size
-                chapters.add(Chapter(index = index, title = title, paragraphs = current))
+                for ((partIndex, part) in parts.withIndex()) {
+                    val partTitle = if (parts.size > 1) "$title (часть ${partIndex + 1})" else title
+                    chapters.add(Chapter(index = chapters.size, title = partTitle, paragraphs = part))
+                }
                 if (pending.isEmpty()) {
                     toc.add(TocItem(id = "toc_${toc.size}", title = title, chapterIndex = index))
                 }
                 for ((pendingTitle, level) in pending) {
                     toc.add(TocItem(id = "toc_${toc.size}", title = pendingTitle, chapterIndex = index, level = level))
+                }
+                val partLevel = (pending.lastOrNull()?.second ?: 0) + 1
+                for (partIndex in 1 until parts.size) {
+                    val chapterIndex = index + partIndex
+                    toc.add(
+                        TocItem(
+                            id = "toc_${toc.size}",
+                            title = chapters[chapterIndex].title,
+                            chapterIndex = chapterIndex,
+                            level = partLevel
+                        )
+                    )
                 }
                 pending.clear()
                 current = ArrayList()
@@ -120,6 +139,9 @@ class TxtParser : BookParser {
         private const val TARGET_PART_CHARS = 30_000
         private const val MIN_LAST_PART_CHARS = 8_000
 
+        /** A chapter between two headings longer than this is split into ~30k parts. */
+        internal const val MAX_CHAPTER_CHARS = 100_000
+
         /** Splits paragraphs into parts of ~30k characters; a short tail is merged into the previous part. */
         internal fun chunk(paragraphs: List<String>): List<List<String>> {
             val parts = ArrayList<MutableList<String>>()
@@ -148,7 +170,7 @@ class TxtParser : BookParser {
                 String(bytes, bom.length, bytes.size - bom.length, bom.charset)
             } else {
                 val charset: Charset =
-                    if (TextEncoding.isValidUtf8(bytes)) Charsets.UTF_8 else TextEncoding.WINDOWS_1251
+                    if (TextEncoding.looksLikeUtf8(bytes)) Charsets.UTF_8 else TextEncoding.WINDOWS_1251
                 String(bytes, charset)
             }
             return ParagraphMarkup.stripMarkers(text.replace("﻿", ""))
@@ -212,14 +234,18 @@ internal object TxtLayout {
         val number = afterKeyword.takeWhile { it.isLetterOrDigit() || it == '-' }
         if (number.isEmpty()) return null
         val lowerNumber = number.lowercase()
-        val isNumber = arabic.matches(lowerNumber) || roman.matches(number) || wordNumber.matches(lowerNumber)
+        val isArabic = arabic.matches(lowerNumber)
+        val isNumber = isArabic || roman.matches(number) || wordNumber.matches(lowerNumber)
         if (!isNumber) return null
         val after = afterKeyword.substring(number.length)
         val afterTrim = after.trim()
         val ok = when {
             afterTrim.isEmpty() -> true
             afterTrim[0] in TITLE_SEPARATORS -> true
-            after[0].isWhitespace() -> afterTrim.length <= 60 && afterTrim.last() !in ".,;!?…"
+            // "Глава 3 Возвращение", "Part I The Beginning"; but not "Часть первая была скучной"
+            // or "Book I am reading", where a sentence simply starts with the keyword.
+            after[0].isWhitespace() -> afterTrim.length <= 60 && afterTrim.last() !in ".,;!?…" &&
+                (isArabic || !afterTrim[0].isLetter() || afterTrim[0].isUpperCase())
             else -> false
         }
         return if (ok) TxtBlock.Heading(t, isPart = isPart) else null
@@ -232,7 +258,11 @@ internal object TxtLayout {
         val lengths = nonEmpty.map { it.trimEnd().length }.sorted()
         val p90 = lengths[((lengths.size - 1) * 9) / 10]
         val longLines = lengths.count { it > 120 }
-        val hardWrapped = nonEmpty.size >= 8 && p90 in 40..110 && longLines * 50 < nonEmpty.size
+        // Hard-wrapped text has most lines close to the wrap width; one line per
+        // paragraph gives lengths spread all over the place.
+        val nearWidth = lengths.count { it * 4 >= p90 * 3 && it <= p90 + 10 }
+        val hardWrapped = nonEmpty.size >= 8 && p90 in 40..110 && longLines * 50 < nonEmpty.size &&
+            nearWidth * 5 >= nonEmpty.size * 2
         if (!hardWrapped) return Mode.LINE_PER_PARAGRAPH
         val indented = nonEmpty.count { isIndented(it) }
         return when {

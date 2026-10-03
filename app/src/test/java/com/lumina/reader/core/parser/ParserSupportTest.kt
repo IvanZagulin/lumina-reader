@@ -103,6 +103,14 @@ class ParserSupportTest {
         )
         assertEquals("Тест", TextEncoding.decode("Тест".toByteArray(Charset.forName("windows-1251"))))
         assertEquals("Тест", TextEncoding.decode(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "Тест".toByteArray()))
+
+        // A stray byte inside a UTF-8 text does not turn the whole document into windows-1251.
+        val mostly = "Привет, мир! ".repeat(50).toByteArray(Charsets.UTF_8) + byteArrayOf(0xFF.toByte()) +
+            "Ещё".toByteArray(Charsets.UTF_8)
+        assertFalse(TextEncoding.isValidUtf8(mostly))
+        assertTrue(TextEncoding.looksLikeUtf8(mostly))
+        assertTrue(TextEncoding.decode(mostly).startsWith("Привет, мир!"))
+        assertFalse(TextEncoding.looksLikeUtf8("Привет, мир! ".repeat(50).toByteArray(Charset.forName("windows-1251"))))
     }
 
     @Test

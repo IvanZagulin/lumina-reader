@@ -63,6 +63,7 @@ internal object TextEncoding {
         return null
     }
 
+    /** Strict check: every byte belongs to a well-formed UTF-8 sequence. */
     fun isValidUtf8(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset): Boolean {
         val validator = Utf8Validator()
         validator.update(bytes, offset, length)
@@ -70,13 +71,25 @@ internal object TextEncoding {
     }
 
     /**
+     * True when [bytes] should be read as UTF-8: valid, or valid apart from a
+     * few stray bytes among many multi-byte characters. Windows-1251 text never
+     * passes, because its Cyrillic letters do not form UTF-8 sequences.
+     */
+    fun looksLikeUtf8(bytes: ByteArray): Boolean {
+        val validator = Utf8Validator()
+        validator.update(bytes, 0, bytes.size)
+        return validator.isMostlyValid
+    }
+
+    /**
      * Charset of a whole in-memory document: BOM, then the document's own
-     * declaration, then UTF-8 when the bytes are valid UTF-8, else [fallback].
+     * declaration, then UTF-8 when the bytes are (almost entirely) valid
+     * UTF-8, else [fallback].
      */
     fun detect(bytes: ByteArray, fallback: Charset = WINDOWS_1251): Charset {
         detectBom(bytes)?.let { return it.charset }
         declaredCharset(bytes)?.let { return it }
-        return if (isValidUtf8(bytes)) Charsets.UTF_8 else fallback
+        return if (looksLikeUtf8(bytes)) Charsets.UTF_8 else fallback
     }
 
     /** Decodes [bytes] with [detect], dropping a byte-order mark. */
@@ -105,10 +118,11 @@ internal object TextEncoding {
             while (true) {
                 val read = input.read(buffer)
                 if (read < 0) break
-                if (!validator.update(buffer, 0, read)) break
+                validator.update(buffer, 0, read)
+                if (validator.isHopeless) break
             }
         }
-        return if (validator.isValid) Charsets.UTF_8 else fallback
+        return if (validator.isMostlyValid) Charsets.UTF_8 else fallback
     }
 
     private fun readHead(input: InputStream, max: Int): ByteArray {
@@ -129,55 +143,80 @@ internal object TextEncoding {
  * Incremental strict UTF-8 validator (rejects overlong forms and surrogates,
  * accepts 4-byte sequences). A sequence cut off by the end of the input is
  * tolerated, so a truncated file is still recognised as UTF-8.
+ *
+ * Invalid bytes are counted rather than ending the scan, so a UTF-8 text
+ * with a few stray bytes (e.g. two files glued together) can still be told
+ * apart from a legacy single-byte encoding ([isMostlyValid]).
  */
 internal class Utf8Validator {
     private var need = 0
     private var lo = 0x80
     private var hi = 0xBF
 
-    var isValid: Boolean = true
+    /** Bytes that do not fit UTF-8. */
+    var errors: Long = 0L
         private set
 
-    fun update(bytes: ByteArray, offset: Int, length: Int): Boolean {
-        if (!isValid) return false
+    /** Completed multi-byte sequences (non-ASCII characters). */
+    var sequences: Long = 0L
+        private set
+
+    val isValid: Boolean get() = errors == 0L
+
+    /** Valid, or a few stray bytes among plenty of well-formed non-ASCII characters. */
+    val isMostlyValid: Boolean
+        get() = errors == 0L || (sequences >= MIN_SEQUENCES && errors * MAX_ERROR_RATIO <= sequences)
+
+    /** True once the input clearly is not UTF-8, so a caller may stop scanning. */
+    val isHopeless: Boolean
+        get() = errors >= HOPELESS_ERRORS && errors * MAX_ERROR_RATIO > sequences
+
+    fun update(bytes: ByteArray, offset: Int, length: Int) {
         val end = offset + length
         var i = offset
         while (i < end) {
             val x = bytes[i].toInt() and 0xFF
-            if (need == 0) {
-                when {
-                    x < 0x80 -> Unit
-                    x in 0xC2..0xDF -> start(1, 0x80, 0xBF)
-                    x == 0xE0 -> start(2, 0xA0, 0xBF)
-                    x in 0xE1..0xEC -> start(2, 0x80, 0xBF)
-                    x == 0xED -> start(2, 0x80, 0x9F)
-                    x in 0xEE..0xEF -> start(2, 0x80, 0xBF)
-                    x == 0xF0 -> start(3, 0x90, 0xBF)
-                    x in 0xF1..0xF3 -> start(3, 0x80, 0xBF)
-                    x == 0xF4 -> start(3, 0x80, 0x8F)
-                    else -> {
-                        isValid = false
-                        return false
-                    }
+            if (need > 0) {
+                if (x in lo..hi) {
+                    lo = 0x80
+                    hi = 0xBF
+                    need--
+                    if (need == 0) sequences++
+                    i++
+                    continue
                 }
-            } else {
-                if (x < lo || x > hi) {
-                    isValid = false
-                    return false
-                }
+                // Broken sequence: count it and read this byte again as a lead byte.
+                errors++
+                need = 0
                 lo = 0x80
                 hi = 0xBF
-                need--
+            }
+            when {
+                x < 0x80 -> Unit
+                x in 0xC2..0xDF -> start(1, 0x80, 0xBF)
+                x == 0xE0 -> start(2, 0xA0, 0xBF)
+                x in 0xE1..0xEC -> start(2, 0x80, 0xBF)
+                x == 0xED -> start(2, 0x80, 0x9F)
+                x in 0xEE..0xEF -> start(2, 0x80, 0xBF)
+                x == 0xF0 -> start(3, 0x90, 0xBF)
+                x in 0xF1..0xF3 -> start(3, 0x80, 0xBF)
+                x == 0xF4 -> start(3, 0x80, 0x8F)
+                else -> errors++
             }
             i++
         }
-        return true
     }
 
     private fun start(continuation: Int, low: Int, high: Int) {
         need = continuation
         lo = low
         hi = high
+    }
+
+    private companion object {
+        const val MIN_SEQUENCES = 32L
+        const val MAX_ERROR_RATIO = 100L
+        const val HOPELESS_ERRORS = 1024L
     }
 }
 

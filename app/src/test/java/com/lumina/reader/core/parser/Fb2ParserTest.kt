@@ -30,7 +30,10 @@ class Fb2ParserTest {
     private val coverBytes = byteArrayOf(
         0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
     )
-    private val pictureBytes = ByteArray(3000) { (it * 7 % 251).toByte() }
+    private val pngSignature = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+
+    // Starts like a PNG: only raster images the reader can decode are kept.
+    private val pictureBytes = ByteArray(3000) { (it * 7 % 251).toByte() }.also { pngSignature.copyInto(it) }
 
     private fun base64Lines(bytes: ByteArray): String =
         Base64.getEncoder().encodeToString(bytes).chunked(76).joinToString("\n")
@@ -209,6 +212,7 @@ class Fb2ParserTest {
     @Test
     fun largeImagesAreNotTruncated() {
         val big = ByteArray(4 * 1024 * 1024).also { Random(42).nextBytes(it) }
+        coverBytes.copyInto(big) // JPEG header
         val text = """<?xml version="1.0" encoding="UTF-8"?>
             <FictionBook xmlns:xlink="http://www.w3.org/1999/xlink"><body><section><p>Текст</p><image xlink:href="#big"/></section></body>
             <binary id="big" content-type="image/jpeg">${base64Lines(big)}</binary></FictionBook>"""
@@ -240,5 +244,25 @@ class Fb2ParserTest {
         val fromStream = Fb2Parser().parse(ByteArrayInputStream(out.toByteArray()), "book.fb2.zip")
         assertEquals("Двенадцать стульев", fromStream.title)
         assertFalse(fromStream.chapters.isEmpty())
+    }
+
+    @Test
+    fun missingOrUnusableImagesAreDroppedAndTocFollows() {
+        val text = """<?xml version="1.0" encoding="UTF-8"?>
+            <FictionBook xmlns:l="http://www.w3.org/1999/xlink"><body>
+            <section><title><p>Глава 1</p></title><image l:href="#gone"/><p>Начало.</p><image l:href="#svg"/><image l:href="#pic"/>
+              <section><title><p>Подраздел</p></title><p>Текст.</p></section>
+            </section></body>
+            <binary id="svg" content-type="image/svg+xml">${base64Lines("<svg/>".toByteArray())}</binary>
+            <binary id="pic" content-type="image/png">${base64Lines(pictureBytes)}</binary>
+            </FictionBook>"""
+        val book = parse(text)
+        val paragraphs = book.chapters.single().paragraphs
+        assertEquals(listOf("Начало.", "[IMG:pic]", "Подраздел", "Текст."), paragraphs.map { plain(it) })
+        assertFalse(book.images.containsKey("svg"))
+        assertArrayEquals(pictureBytes, book.images["pic"])
+        val sub = book.tableOfContents.single { it.title == "Подраздел" }
+        assertEquals(BlockStyle.HEADING, ParagraphMarkup.blockStyle(paragraphs[sub.paragraphIndex]))
+        assertEquals("Подраздел", plain(paragraphs[sub.paragraphIndex]))
     }
 }
