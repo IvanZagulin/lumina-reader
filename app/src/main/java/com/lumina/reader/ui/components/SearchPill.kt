@@ -23,6 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -49,8 +53,14 @@ fun SearchPill(
     trailing: @Composable RowScope.() -> Unit = {}
 ) {
     val focusRequester = remember { FocusRequester() }
-    if (autoFocus) {
-        LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    // Focus once when the pill appears, not again when the screen comes back
+    // (e.g. returning from a book), which would pop the keyboard up uninvited.
+    var autoFocused by rememberSaveable { mutableStateOf(false) }
+    if (autoFocus && !autoFocused) {
+        LaunchedEffect(Unit) {
+            runCatching { focusRequester.requestFocus() }
+            autoFocused = true
+        }
     }
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant

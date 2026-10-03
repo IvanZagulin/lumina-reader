@@ -66,6 +66,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -129,13 +130,18 @@ fun CatalogScreen(
         }
     }
 
+    // Opened from the library's «Искать в каталогах»: leaving the search results
+    // returns to the library instead of a catalogue home without a back arrow.
+    val searchOnlyEntry = !initialQuery.isNullOrBlank()
+    val closesScreen = searchOnlyEntry && state.selected == null && state.pages.isEmpty()
     BackHandler(enabled = state.selected != null || state.isBrowsing || state.globalSearch != null) {
-        viewModel.goBack()
+        if (closesScreen) onBack() else viewModel.goBack()
     }
 
+    val currentClosesScreen by rememberUpdatedState(closesScreen)
     val actions = remember(viewModel, onOpenBook, onManageCatalogs) {
         CatalogScreenActions(
-            onBack = { if (!viewModel.goBack()) onBack() },
+            onBack = { if (currentClosesScreen || !viewModel.goBack()) onBack() },
             onHome = viewModel::closeCatalog,
             onManageCatalogs = onManageCatalogs,
             onQueryChange = viewModel::onQueryChange,
