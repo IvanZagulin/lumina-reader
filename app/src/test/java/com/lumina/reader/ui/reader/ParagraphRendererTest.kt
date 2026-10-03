@@ -17,6 +17,7 @@ import com.lumina.reader.core.model.ParagraphMarkup
 import com.lumina.reader.core.model.ParagraphMarkup.BlockStyle
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReaderTextAlign
+import com.lumina.reader.ui.theme.HighlightPalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -32,7 +33,7 @@ class ParagraphRendererTest {
     private val typography = ReaderTypography(
         fontSizeSp = 18,
         lineSpacing = 1.5f,
-        fontFamilyName = "Serif",
+        fontFamilyName = "literata",
         justify = true,
         hyphenation = true,
         firstLineIndentEm = 1.5f,
@@ -147,28 +148,82 @@ class ParagraphRendererTest {
     }
 
     @Test
-    fun highlightsAndSearchMatchAreBackgrounds() {
+    fun highlightsAreTapTargetsNotBackgroundSpans() {
+        var clicked: Long? = null
         val rendered = renderParagraph(
             raw = "Найти здесь цитату",
             typography = typography,
             colors = colors,
-            highlights = listOf(HighlightSpan(6, 11, Color.Yellow), HighlightSpan(40, 50, Color.Red)),
-            searchMatch = OffsetRange(12, 18)
+            highlights = listOf(
+                HighlightSpan(6, 11, Color.Yellow, id = 7L),
+                // Outside the text: ignored.
+                HighlightSpan(40, 50, Color.Red, id = 8L),
+                // Unsaved (id 0): drawn, but not clickable.
+                HighlightSpan(0, 5, Color.Red)
+            ),
+            onHighlightClick = { clicked = it }
         )
-        val backgrounds = rendered.text.spanStyles.filter { it.item.background != Color.Unspecified }
-        assertEquals(2, backgrounds.size)
-        val highlight = backgrounds.single { it.start == 6 }
-        assertEquals(11, highlight.end)
-        assertEquals(Color.Yellow.copy(alpha = HIGHLIGHT_ALPHA), highlight.item.background)
-        val match = backgrounds.single { it.start == 12 }
-        assertEquals(Color.Green, match.item.background)
+        // Colours are drawn behind the text from its layout, never as spans.
+        assertTrue(rendered.text.spanStyles.none { it.item.background != Color.Unspecified })
+        val link = rendered.text.getLinkAnnotations(0, rendered.text.length).single()
+        assertEquals(6 to 11, link.start to link.end)
+        val clickable = link.item as LinkAnnotation.Clickable
+        assertEquals(HIGHLIGHT_LINK_TAG_PREFIX + 7, clickable.tag)
+        clickable.linkInteractionListener?.onClick(clickable)
+        assertEquals(7L, clicked)
+
+        // Measuring passes no handler: identical text, no links.
+        val measured = renderParagraph("Найти здесь цитату", typography, colors, highlights = listOf(HighlightSpan(6, 11, Color.Yellow, id = 7L)))
+        assertTrue(measured.text.getLinkAnnotations(0, measured.text.length).isEmpty())
+        assertEquals(rendered.text.text, measured.text.text)
     }
 
     @Test
-    fun highlightColorsAreParsed() {
-        assertEquals(Color(0xFFFFEB3B), parseHighlightColor("#FFEB3B"))
-        assertEquals(Color(0x80112233), parseHighlightColor("#80112233"))
-        assertEquals(DEFAULT_HIGHLIGHT_COLOR, parseHighlightColor("жёлтый"))
+    fun footnoteInsideAHighlightStaysOnTop() {
+        val raw = "Слово" + ParagraphMarkup.noteRef("3", "n3") + " дальше"
+        val rendered = renderParagraph(
+            raw = raw,
+            typography = typography,
+            colors = colors,
+            highlights = listOf(HighlightSpan(0, 12, Color.Yellow, id = 1L)),
+            onNoteClick = {},
+            onHighlightClick = {}
+        )
+        val links = rendered.text.getLinkAnnotations(0, rendered.text.length)
+        assertEquals(2, links.size)
+        // Links added later lie on top: the footnote comes after the highlight.
+        assertEquals(HIGHLIGHT_LINK_TAG_PREFIX + 1, (links[0].item as LinkAnnotation.Clickable).tag)
+        assertEquals(NOTE_LINK_TAG_PREFIX + "n3", (links[1].item as LinkAnnotation.Clickable).tag)
+    }
+
+    @Test
+    fun highlightColorsComeFromThePalette() {
+        // The legacy default and unknown values are drawn as «Жёлтый».
+        assertEquals(HighlightPalette.Yellow, HighlightPalette.fromHex("#FFEB3B"))
+        assertEquals(HighlightPalette.Yellow, HighlightPalette.fromHex("жёлтый"))
+        assertEquals(HighlightPalette.Blue, HighlightPalette.fromHex("#9ad0f5"))
+        val decorations = ChapterDecorations.build(
+            chapterIndex = 0,
+            highlights = listOf(
+                com.lumina.reader.core.model.ReadingHighlight(
+                    id = 9,
+                    bookId = 1,
+                    chapterIndex = 0,
+                    selectedText = "x",
+                    note = "мысль",
+                    colorHex = "#FFEB3B",
+                    paragraphIndex = 2,
+                    startOffset = 1,
+                    endOffset = 4
+                )
+            ),
+            searchMatch = null
+        )
+        val span = decorations.highlightsFor(2).single()
+        assertEquals(HighlightPalette.Yellow.color, span.color)
+        assertEquals(9L, span.id)
+        assertTrue(span.hasNote)
+        assertEquals(HighlightPalette.Yellow.hex, ReaderViewModel.DEFAULT_HIGHLIGHT_HEX)
     }
 
     @Test
@@ -197,9 +252,16 @@ class ParagraphRendererTest {
     }
 
     @Test
-    fun unknownFontsFallBackToSerif() {
-        assertEquals(readerFontFamily("Serif"), readerFontFamily("Cursive"))
-        assertEquals(readerFontFamily("Serif"), readerFontFamily(""))
-        assertTrue(readerFontFamily("SansSerif") != readerFontFamily("Serif"))
+    fun fontIdsResolveThroughTheCatalogue() {
+        // Legacy names and unknown values use the catalogue's default, Literata.
+        assertEquals(readerFontFamily("literata"), readerFontFamily("Serif"))
+        assertEquals(readerFontFamily("literata"), readerFontFamily("Cursive"))
+        assertEquals(readerFontFamily("literata"), readerFontFamily(""))
+        assertEquals(readerFontFamily("golos"), readerFontFamily("SansSerif"))
+        assertEquals(androidx.compose.ui.text.font.FontFamily.Monospace, readerFontFamily("Monospace"))
+        assertTrue(readerFontFamily("golos") != readerFontFamily("literata"))
+        // The same id always gives the same family, so pages and pagination agree.
+        assertTrue(readerFontFamily("ptserif") === readerFontFamily("ptserif"))
+        assertEquals(6, ReaderFonts.all.map { it.id }.distinct().size)
     }
 }

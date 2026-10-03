@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.bionic.BionicReadingHelper
 import com.lumina.reader.core.model.ParagraphMarkup
 import com.lumina.reader.core.model.ParagraphMarkup.BlockStyle
+import com.lumina.reader.core.model.ReaderFontIds
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReaderTextAlign
 
@@ -44,7 +45,7 @@ internal data class ReaderTypography(
 internal fun ReaderSettings.toTypography(localeTag: String?): ReaderTypography = ReaderTypography(
     fontSizeSp = fontSizeSp,
     lineSpacing = lineSpacingMultiplier,
-    fontFamilyName = fontFamily,
+    fontFamilyName = ReaderFontIds.migrate(fontFamily),
     justify = textAlign == ReaderTextAlign.JUSTIFY,
     hyphenation = hyphenation,
     firstLineIndentEm = firstLineIndentEm.coerceAtLeast(0f),
@@ -52,11 +53,16 @@ internal fun ReaderSettings.toTypography(localeTag: String?): ReaderTypography =
     localeTag = localeTag
 )
 
-/** Colours used inside paragraphs. None of them changes the layout. */
+/**
+ * Colours used inside paragraphs. None of them changes the layout.
+ * [searchMatch] and [ttsSentence] tint the backgrounds drawn behind the text
+ * (see HighlightDrawing), [noteRef] colours footnote markers.
+ */
 internal data class ReaderTextColors(
     val text: Color,
     val noteRef: Color,
-    val searchMatch: Color
+    val searchMatch: Color,
+    val ttsSentence: Color = Color.Transparent
 )
 
 /** A range of plain-text offsets: [start] inclusive, [end] exclusive. */
@@ -65,11 +71,16 @@ internal data class OffsetRange(
     val end: Int
 )
 
-/** A highlight drawn behind [start, end) of a paragraph. */
+/**
+ * A highlight drawn behind [start, end) of a paragraph. [id] is the saved
+ * highlight (0 for none); a tap on it opens its actions.
+ */
 internal data class HighlightSpan(
     val start: Int,
     val end: Int,
-    val color: Color
+    val color: Color,
+    val id: Long = 0L,
+    val hasNote: Boolean = false
 )
 
 /**
@@ -86,23 +97,22 @@ internal data class RenderedParagraph(
     val endIndentEm: Float
 )
 
-internal const val HIGHLIGHT_ALPHA = 0.35f
 internal const val NOTE_LINK_TAG_PREFIX = "note:"
-internal val DEFAULT_HIGHLIGHT_COLOR = Color(0xFFFFEB3B)
+internal const val HIGHLIGHT_LINK_TAG_PREFIX = "highlight:"
 
 /**
  * The one function that turns a raw paragraph into styled text. Pagination
- * measures its result and the reader draws it, so both see identical layout:
- * highlights, the search match and footnote links only add backgrounds and
- * click targets, never anything that changes metrics.
+ * measures its result and the reader draws it, so both see identical layout.
+ * Highlights only add click targets (their colour is drawn behind the text
+ * by HighlightDrawing) and footnotes add links: nothing that changes metrics.
  */
 internal fun renderParagraph(
     raw: String,
     typography: ReaderTypography,
     colors: ReaderTextColors,
     highlights: List<HighlightSpan> = emptyList(),
-    searchMatch: OffsetRange? = null,
-    onNoteClick: ((String) -> Unit)? = null
+    onNoteClick: ((String) -> Unit)? = null,
+    onHighlightClick: ((Long) -> Unit)? = null
 ): RenderedParagraph {
     val parsed = ParagraphMarkup.parse(raw)
     val text = parsed.text
@@ -112,6 +122,25 @@ internal fun renderParagraph(
         val from = start.coerceIn(0, text.length)
         val to = end.coerceIn(from, text.length)
         return if (to > from) OffsetRange(from, to) else null
+    }
+
+    // Highlight links go first: links added later lie on top, so a footnote
+    // marker inside a highlight still opens its footnote.
+    if (onHighlightClick != null) {
+        for (highlight in highlights) {
+            if (highlight.id == 0L) continue
+            val range = clamp(highlight.start, highlight.end) ?: continue
+            val id = highlight.id
+            builder.addLink(
+                LinkAnnotation.Clickable(
+                    tag = HIGHLIGHT_LINK_TAG_PREFIX + id,
+                    styles = null,
+                    linkInteractionListener = LinkInteractionListener { onHighlightClick(id) }
+                ),
+                range.start,
+                range.end
+            )
+        }
     }
 
     for (span in parsed.spans) {
@@ -145,21 +174,6 @@ internal fun renderParagraph(
         for (bold in BionicReadingHelper.transform(text).spanStyles) {
             val range = clamp(bold.start, bold.end) ?: continue
             builder.addStyle(bold.item, range.start, range.end)
-        }
-    }
-
-    for (highlight in highlights) {
-        val range = clamp(highlight.start, highlight.end) ?: continue
-        builder.addStyle(
-            SpanStyle(background = highlight.color.copy(alpha = HIGHLIGHT_ALPHA)),
-            range.start,
-            range.end
-        )
-    }
-
-    if (searchMatch != null) {
-        clamp(searchMatch.start, searchMatch.end)?.let { range ->
-            builder.addStyle(SpanStyle(background = colors.searchMatch), range.start, range.end)
         }
     }
 
@@ -254,17 +268,6 @@ internal fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): 
     lineBreak = LineBreak.Paragraph,
     hyphens = Hyphens.None
 )
-
-/** Parses "#RRGGBB" or "#AARRGGBB"; anything else becomes [fallback]. */
-internal fun parseHighlightColor(hex: String, fallback: Color = DEFAULT_HIGHLIGHT_COLOR): Color {
-    val digits = hex.trim().removePrefix("#")
-    val value = digits.toLongOrNull(16) ?: return fallback
-    return when (digits.length) {
-        6 -> Color(0xFF000000L or value)
-        8 -> Color(value)
-        else -> fallback
-    }
-}
 
 /**
  * Language tag for hyphenation: "ru" when the sample is mostly Cyrillic,

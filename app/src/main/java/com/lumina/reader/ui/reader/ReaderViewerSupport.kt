@@ -1,8 +1,12 @@
 package com.lumina.reader.ui.reader
 
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.Immutable
 import com.lumina.reader.core.model.ParsedBook
+import com.lumina.reader.core.model.ReaderTapZones
 import com.lumina.reader.core.model.ReadingHighlight
+import com.lumina.reader.ui.reader.selection.MarkColors
+import com.lumina.reader.ui.theme.HighlightPalette
 
 /**
  * Callbacks shared by the paged and the scrolling viewer. ReaderContent
@@ -18,7 +22,8 @@ internal class ReaderViewerCallbacks(
     val onPageProgressChanged: (chapterIndex: Int, percent: Float) -> Unit,
     val onJumpToPosition: (chapterIndex: Int, paragraphIndex: Int, charOffset: Int) -> Unit,
     val onToggleProgressDisplay: () -> Unit,
-    val onNoteClick: (noteId: String) -> Unit
+    val onNoteClick: (noteId: String) -> Unit,
+    val onHighlightClick: (highlightId: Long) -> Unit = {}
 )
 
 /** Highlights and the search match of the chapter on screen, by paragraph. */
@@ -47,12 +52,63 @@ internal class ChapterDecorations(
                 .groupBy(
                     keySelector = { it.paragraphIndex },
                     valueTransform = {
-                        HighlightSpan(it.startOffset, it.endOffset, parseHighlightColor(it.colorHex))
+                        HighlightSpan(
+                            start = it.startOffset,
+                            end = it.endOffset,
+                            // Palette swatch; the legacy #FFEB3B becomes «Жёлтый».
+                            color = HighlightPalette.fromHex(it.colorHex).color,
+                            id = it.id,
+                            hasNote = !it.note.isNullOrBlank()
+                        )
                     }
                 ),
             searchMatch = searchMatch?.takeIf { it.chapterIndex == chapterIndex }
         )
     }
+}
+
+/** The sentence being read aloud: [start] inclusive, [end] exclusive, plain-text offsets. */
+internal data class TtsSentenceMark(
+    val chapterIndex: Int,
+    val paragraphIndex: Int,
+    val start: Int,
+    val end: Int
+) {
+    fun rangeFor(chapterIndex: Int, paragraphIndex: Int): OffsetRange? =
+        if (chapterIndex == this.chapterIndex && paragraphIndex == this.paragraphIndex && end > start) {
+            OffsetRange(start, end)
+        } else {
+            null
+        }
+}
+
+/**
+ * Whether read-aloud may move the page to its new sentence: only while the
+ * reader still looks at the previously spoken one (or nothing was spoken or
+ * shown yet). Paging away on purpose stops the following until the reader
+ * comes back to the voice.
+ */
+internal fun shouldFollowReadAloud(
+    previousSpoken: Pair<Int, TextAnchor>?,
+    visible: VisibleRange?
+): Boolean = previousSpoken == null || visible == null ||
+    visible.contains(previousSpoken.first, previousSpoken.second.paragraphIndex, previousSpoken.second.charOffset)
+
+/**
+ * Whether the sentence being read aloud can be seen: its first or its last
+ * character lies in [visible]. A sentence that runs over a page break is
+ * visible from both pages, so starting to read at a page whose first
+ * paragraph began on the previous page does not flip back.
+ */
+internal fun isSpokenSentenceVisible(
+    visible: VisibleRange,
+    chapterIndex: Int,
+    paragraphIndex: Int,
+    sentence: IntRange?
+): Boolean {
+    val start = sentence?.first ?: 0
+    if (visible.contains(chapterIndex, paragraphIndex, start)) return true
+    return sentence != null && !sentence.isEmpty() && visible.contains(chapterIndex, paragraphIndex, sentence.last)
 }
 
 /**
@@ -130,4 +186,66 @@ internal fun bookTextSample(book: ParsedBook, maxChars: Int = 4_000): String {
         }
     }
     return builder.toString()
+}
+
+/**
+ * What the viewers draw on top of the text model and need from the screen:
+ * the spoken sentence, the search flash, mark colours and motion settings.
+ */
+@Immutable
+internal data class ReaderPageExtras(
+    val ttsSentence: TtsSentenceMark?,
+    val readAloudDriving: Boolean,
+    val markColors: MarkColors,
+    /** Current alpha of the search-match flash; read while drawing only. */
+    val searchAlpha: () -> Float,
+    val minutesLeft: Int?,
+    val reducedMotion: Boolean,
+    val curlSupported: Boolean
+)
+
+/** What a tap on the page does. */
+internal enum class TapAction {
+    PREVIOUS,
+    NEXT,
+    MENU
+}
+
+/**
+ * Tap zones of the paged reader (§7.1). Classic: left 30 % back, right 30 %
+ * forward, the middle opens the menu. One-handed: only the left 20 % goes
+ * back, a centre box (35–65 % both ways) opens the menu, anything else goes
+ * forward. [inverted] swaps back and forward.
+ */
+internal fun tapZoneAction(
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+    zones: ReaderTapZones,
+    inverted: Boolean
+): TapAction {
+    val w = width.coerceAtLeast(1f)
+    val h = height.coerceAtLeast(1f)
+    val raw = when (zones) {
+        ReaderTapZones.CLASSIC -> when {
+            x < w * 0.30f -> TapAction.PREVIOUS
+            x > w * 0.70f -> TapAction.NEXT
+            else -> TapAction.MENU
+        }
+        ReaderTapZones.ONE_HAND -> when {
+            x < w * 0.20f -> TapAction.PREVIOUS
+            x in (w * 0.35f)..(w * 0.65f) && y in (h * 0.35f)..(h * 0.65f) -> TapAction.MENU
+            else -> TapAction.NEXT
+        }
+    }
+    return if (!inverted) {
+        raw
+    } else {
+        when (raw) {
+            TapAction.PREVIOUS -> TapAction.NEXT
+            TapAction.NEXT -> TapAction.PREVIOUS
+            TapAction.MENU -> TapAction.MENU
+        }
+    }
 }

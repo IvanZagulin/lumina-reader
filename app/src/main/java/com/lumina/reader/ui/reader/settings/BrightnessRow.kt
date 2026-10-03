@@ -1,0 +1,124 @@
+package com.lumina.reader.ui.reader.settings
+
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.lumina.reader.core.preferences.AppDisplayController
+import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
+
+/**
+ * Screen brightness (§7.3): small sun · slider · large sun · «Авто». Uses
+ * the app-wide [AppDisplayController]: the window follows the slider while
+ * dragging and the value is saved when the drag ends.
+ */
+@Composable
+internal fun BrightnessRow(
+    colors: ReaderChromeColors,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    // Inside a ModalBottomSheet LocalContext is the sheet dialog's themed
+    // wrapper, not the activity whose window brightness has to change.
+    val activity = remember(context) { context.findActivity() }
+    var useSystem by remember { mutableStateOf(AppDisplayController.useSystemBrightness(context)) }
+    var brightness by remember { mutableFloatStateOf(AppDisplayController.savedBrightness(context)) }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.LightMode,
+            contentDescription = null,
+            tint = colors.muted,
+            modifier = Modifier.size(16.dp)
+        )
+        Slider(
+            value = brightness,
+            onValueChange = { value ->
+                brightness = value
+                if (useSystem) {
+                    // Moving the slider means the reader wants manual brightness.
+                    useSystem = false
+                }
+                activity?.let {
+                    AppDisplayController.applyBrightness(it, useSystemBrightness = false, brightness = value)
+                }
+            },
+            onValueChangeFinished = {
+                AppDisplayController.saveBrightness(context, useSystemBrightness = useSystem, brightness = brightness)
+            },
+            valueRange = 0.05f..1f,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accent,
+                activeTrackColor = if (useSystem) colors.muted else colors.accent,
+                inactiveTrackColor = colors.content.copy(alpha = 0.16f)
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .semantics { contentDescription = "Яркость экрана" }
+        )
+        Icon(
+            imageVector = Icons.Rounded.LightMode,
+            contentDescription = null,
+            tint = colors.muted,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        FilterChip(
+            selected = useSystem,
+            onClick = {
+                val enabled = !useSystem
+                useSystem = enabled
+                AppDisplayController.saveBrightness(context, useSystemBrightness = enabled, brightness = brightness)
+                activity?.let {
+                    AppDisplayController.applyBrightness(it, useSystemBrightness = enabled, brightness = brightness)
+                }
+            },
+            label = { Text("Авто") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = colors.selectedBg,
+                selectedLabelColor = colors.accent,
+                labelColor = colors.content
+            )
+        )
+    }
+}
+
+/** The activity behind [this] context, unwrapping ContextWrappers (dialogs, themed contexts). */
+internal fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current != null) {
+        if (current is Activity) return current
+        current = (current as? ContextWrapper)?.baseContext
+    }
+    return null
+}

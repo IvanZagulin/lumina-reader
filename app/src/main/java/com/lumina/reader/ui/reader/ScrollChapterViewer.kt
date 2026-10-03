@@ -6,11 +6,14 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,6 +26,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,6 +36,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
@@ -38,10 +53,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Chapter
 import com.lumina.reader.core.model.ParagraphMarkup
 import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReaderSettings
+import com.lumina.reader.ui.reader.chrome.ReaderPageHeader
+import com.lumina.reader.ui.reader.selection.ParagraphMarks
+import com.lumina.reader.ui.reader.selection.paragraphMarks
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -66,6 +85,7 @@ internal fun ScrollChapterViewer(
     imageCache: ReaderImageCache,
     navigationRequest: NavigationRequest?,
     positionProvider: () -> ReaderPosition,
+    extras: ReaderPageExtras,
     selection: ReaderSelectionState,
     navigationOwner: Any,
     callbacks: ReaderViewerCallbacks,
@@ -84,6 +104,7 @@ internal fun ScrollChapterViewer(
             imageCache = imageCache,
             navigationRequest = navigationRequest,
             positionProvider = positionProvider,
+            extras = extras,
             selection = selection,
             navigationOwner = navigationOwner,
             callbacks = callbacks,
@@ -104,6 +125,7 @@ private fun ScrollChapterList(
     imageCache: ReaderImageCache,
     navigationRequest: NavigationRequest?,
     positionProvider: () -> ReaderPosition,
+    extras: ReaderPageExtras,
     selection: ReaderSelectionState,
     navigationOwner: Any,
     callbacks: ReaderViewerCallbacks,
@@ -130,7 +152,7 @@ private fun ScrollChapterList(
     // Layouts of the paragraphs on screen, to turn scroll offsets into characters.
     val layouts = remember { HashMap<Int, TextLayoutResult>() }
     val counting = remember { CountingSwitch(enabled = initialRequest?.countAsReading == true) }
-    val paragraphSpacing = with(density) { settings.paragraphSpacingDp.coerceAtLeast(0).dp.roundToPx().toDp() }
+    val paragraphSpacing = with(density) { paragraphSpacingPx(settings, density).toDp() }
 
     LaunchedEffect(Unit) {
         if (initialAnchor.charOffset > 0) scrollToAnchor(listState, scrollItems, layouts, initialAnchor)
@@ -203,9 +225,22 @@ private fun ScrollChapterList(
         }
     }
 
+    val pageColor = settings.theme.bgComposeColor
+    // The status bar stays visible while reading: an opaque band covers it
+    // and the sticky chapter title, then the text fades in below.
+    val topBandPx = WindowInsets.statusBars.getTop(density) + with(density) { 28.dp.roundToPx() }
+    val topPadding = with(density) { topBandPx.toDp() } + 16.dp
     Box(
         modifier = modifier
             .fillMaxSize()
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("Показать меню") {
+                        callbacks.onToggleControls()
+                        true
+                    }
+                )
+            }
             .trackSelectionGestures(selection)
             .pointerInput(selection) {
                 detectTapGestures { offset ->
@@ -222,8 +257,9 @@ private fun ScrollChapterList(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = settings.horizontalPaddingDp.dp),
-                    contentPadding = PaddingValues(top = 56.dp, bottom = 70.dp)
+                        .padding(horizontal = settings.horizontalPaddingDp.dp)
+                        .edgeFades(pageColor, topBandPx.toFloat()),
+                    contentPadding = PaddingValues(top = topPadding, bottom = 70.dp)
                 ) {
                     if (scrollItems.hasPrevious) {
                         item(key = "previous_chapter") {
@@ -245,7 +281,8 @@ private fun ScrollChapterList(
                     }
                     items(
                         count = chapter.paragraphs.size,
-                        key = { index -> "p_$index" }
+                        key = { index -> "p_$index" },
+                        contentType = { "paragraph" }
                     ) { index ->
                         ScrollParagraph(
                             raw = chapter.paragraphs[index],
@@ -254,26 +291,86 @@ private fun ScrollChapterList(
                             typography = typography,
                             colors = colors,
                             decorations = decorations,
+                            ttsSentence = extras.ttsSentence?.rangeFor(chapterIndex, index),
+                            extras = extras,
                             imageCache = imageCache,
                             paragraphSpacing = paragraphSpacing,
                             onNoteClick = callbacks.onNoteClick,
+                            onHighlightClick = callbacks.onHighlightClick,
                             onLayout = { paragraph, layout -> layouts[paragraph] = layout },
                             onDisposed = { paragraph -> layouts.remove(paragraph) }
                         )
                     }
+                    // The «❦» divider belongs to the end item: ScrollItems
+                    // counts exactly one item after the paragraphs.
                     item(key = "chapter_end") {
-                        ChapterEndItem(
-                            hasNext = scrollItems.hasNext,
-                            nextTitle = parsedBook.chapters.getOrNull(chapterIndex + 1)
-                                ?.let { displayChapterTitle(it.title, chapterIndex + 1) }
-                                .orEmpty(),
-                            settings = settings,
-                            onNextChapter = callbacks.onNextChapter
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ChapterDivider(color = settings.theme.secondaryTextComposeColor)
+                            ChapterEndItem(
+                                hasNext = scrollItems.hasNext,
+                                nextTitle = parsedBook.chapters.getOrNull(chapterIndex + 1)
+                                    ?.let { displayChapterTitle(it.title, chapterIndex + 1) }
+                                    .orEmpty(),
+                                settings = settings,
+                                onNextChapter = callbacks.onNextChapter
+                            )
+                        }
                     }
                 }
             }
         }
+        // §9.5: the chapter title stays readable over the fading top edge.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = settings.horizontalPaddingDp.dp)
+                .height(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            ReaderPageHeader(title = chapterTitle, color = settings.theme.secondaryTextComposeColor)
+        }
+    }
+}
+
+/**
+ * §9.5: 16dp fades in the page colour at the top and bottom edges, plus an
+ * opaque band behind the status bar and the sticky title.
+ */
+private fun Modifier.edgeFades(pageColor: Color, band: Float): Modifier = drawWithCache {
+    val fade = 16.dp.toPx()
+    val top = Brush.verticalGradient(
+        0f to pageColor,
+        (band / (band + fade)) to pageColor,
+        1f to Color.Transparent,
+        startY = 0f,
+        endY = band + fade
+    )
+    val bottom = Brush.verticalGradient(
+        0f to Color.Transparent,
+        1f to pageColor,
+        startY = size.height - fade,
+        endY = size.height
+    )
+    onDrawWithContent {
+        drawContent()
+        drawRect(top, size = Size(size.width, band + fade))
+        drawRect(bottom, topLeft = Offset(0f, size.height - fade), size = Size(size.width, fade))
+    }
+}
+
+/** «❦» between the end of a chapter and the way on (§9.5). */
+@Composable
+private fun ChapterDivider(color: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 32.dp)
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = "❦", color = color.copy(alpha = 0.7f), fontSize = 20.sp)
     }
 }
 
@@ -285,9 +382,12 @@ private fun ScrollParagraph(
     typography: ReaderTypography,
     colors: ReaderTextColors,
     decorations: ChapterDecorations,
+    ttsSentence: OffsetRange?,
+    extras: ReaderPageExtras,
     imageCache: ReaderImageCache,
     paragraphSpacing: Dp,
     onNoteClick: (String) -> Unit,
+    onHighlightClick: (Long) -> Unit,
     onLayout: (Int, TextLayoutResult) -> Unit,
     onDisposed: (Int) -> Unit
 ) {
@@ -309,8 +409,16 @@ private fun ScrollParagraph(
             val density = LocalDensity.current
             val highlights = decorations.highlightsFor(paragraphIndex)
             val searchMatch = decorations.searchMatchFor(paragraphIndex)
-            val rendered = remember(raw, typography, colors, highlights, searchMatch) {
-                renderParagraph(raw, typography, colors, highlights, searchMatch, onNoteClick)
+            val rendered = remember(raw, typography, colors, highlights) {
+                renderParagraph(raw, typography, colors, highlights, onNoteClick, onHighlightClick)
+            }
+            var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+            val marks = remember(highlights, searchMatch, ttsSentence) {
+                if (highlights.isEmpty() && searchMatch == null && ttsSentence == null) {
+                    ParagraphMarks.None
+                } else {
+                    ParagraphMarks(highlights, searchMatch, ttsSentence)
+                }
             }
             val margins = remember(rendered.blockStyle, typography, density) {
                 blockMarginsPx(rendered, typography, density)
@@ -321,7 +429,10 @@ private fun ScrollParagraph(
             BasicText(
                 text = rendered.text,
                 style = rendered.style,
-                onTextLayout = { layout -> onLayout(paragraphIndex, layout) },
+                onTextLayout = { result ->
+                    layout = result
+                    onLayout(paragraphIndex, result)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
@@ -329,6 +440,7 @@ private fun ScrollParagraph(
                         end = with(density) { margins.end.toDp() },
                         bottom = paragraphSpacing
                     )
+                    .paragraphMarks(marks, extras.markColors, { layout }, extras.searchAlpha)
             )
         }
     }

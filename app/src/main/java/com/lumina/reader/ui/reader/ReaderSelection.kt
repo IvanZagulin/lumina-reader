@@ -25,11 +25,20 @@ data class SelectionLocation(
     val endOffset: Int
 )
 
-/** What the reader wants to do with selected text. */
-enum class SelectionIntent {
-    HIGHLIGHT,
-    NOTE
-}
+/**
+ * What the selection menu and the highlight menu do, implemented by the
+ * reader screen. Colours are palette hex values (HighlightPalette).
+ */
+internal class ReaderSelectionActions(
+    val onHighlight: (text: String, location: SelectionLocation, colorHex: String) -> Unit,
+    val onNote: (text: String, location: SelectionLocation, colorHex: String) -> Unit,
+    val onShare: (text: String) -> Unit,
+    val onAskAi: (text: String) -> Unit,
+    val onFind: (text: String) -> Unit,
+    val onRecolorHighlight: (highlightId: Long, colorHex: String) -> Unit,
+    val onEditHighlightNote: (highlightId: Long) -> Unit,
+    val onDeleteHighlight: (highlightId: Long) -> Unit
+)
 
 /** Selected text read back from the selection, and where it is if it was found. */
 internal data class CapturedSelection(

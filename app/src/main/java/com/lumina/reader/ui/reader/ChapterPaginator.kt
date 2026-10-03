@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Chapter
 import com.lumina.reader.core.model.ParagraphMarkup
+import com.lumina.reader.core.model.ReaderSettings
 import kotlin.math.roundToInt
 
 /**
@@ -49,6 +50,14 @@ internal fun blockMarginsPx(
             0
         }
     )
+}
+
+/**
+ * Space after a paragraph in pixels: [ReaderSettings.paragraphSpacingEm] of
+ * the reading font size. Both viewers and the paginator use it.
+ */
+internal fun paragraphSpacingPx(settings: ReaderSettings, density: Density): Int = with(density) {
+    (settings.paragraphSpacingEm.coerceAtLeast(0f) * settings.fontSizeSp).sp.toPx().roundToInt()
 }
 
 /**
