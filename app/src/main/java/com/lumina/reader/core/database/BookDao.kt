@@ -101,4 +101,29 @@ interface BookDao {
 
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteBookById(id: Long)
+
+    // ---- Library, import and download support (added at the end on purpose) ----
+
+    /** One-shot snapshot of the whole library (duplicate checks, AI matching). */
+    @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC")
+    suspend fun getAllBooksOnce(): List<Book>
+
+    @Query("SELECT COUNT(*) FROM books")
+    suspend fun countBooks(): Int
+
+    /** How many books point at [filePath]; a file is only deleted when this drops to zero. */
+    @Query("SELECT COUNT(*) FROM books WHERE filePath = :filePath")
+    suspend fun countBooksWithPath(filePath: String): Int
+
+    /** Moves every book of a shelf to another shelf (rename or delete of a shelf). */
+    @Query("UPDATE books SET collection = :newName WHERE TRIM(collection) = :oldName COLLATE NOCASE")
+    suspend fun renameCollection(oldName: String, newName: String): Int
+
+    /** Bookmarks of a deleted book; mirrors BookmarkDao.deleteBookmarksForBook. */
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId")
+    suspend fun deleteBookmarksOfBook(bookId: Long)
+
+    /** Highlights and notes of a deleted book; mirrors BookmarkDao.deleteHighlightsForBook. */
+    @Query("DELETE FROM highlights WHERE bookId = :bookId")
+    suspend fun deleteHighlightsOfBook(bookId: Long)
 }

@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStatus
-import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,13 +50,7 @@ fun LibraryScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val hasAnyBooks by viewModel.hasAnyBooks.collectAsState()
 
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(Unit) {
-        viewModel.userMessage.collectLatest { message ->
-            snackbarHostState.showSnackbar(message)
-        }
-    }
+    // Results (imports, shelves, downloads) appear in the app-wide snackbar host.
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -73,9 +66,9 @@ fun LibraryScreen(
     val expandedShelves = remember { mutableStateMapOf<String, Boolean>() }
     var newCollectionName by remember { mutableStateOf("") }
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
+    var shelfToEdit by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -278,6 +271,16 @@ fun LibraryScreen(
                                 )
                             }
                         )
+                    }
+                    val editableShelf = selectedCollection?.takeIf { viewModel.isEditableShelf(it) }
+                    if (editableShelf != null) {
+                        item(key = "edit_shelf") {
+                            AssistChip(
+                                onClick = { shelfToEdit = editableShelf },
+                                label = { Text("Изменить полку") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            )
+                        }
                     }
                     item {
                         AssistChip(
@@ -755,7 +758,7 @@ fun LibraryScreen(
                 TextButton(
                     onClick = {
                         if (newCollectionName.isNotBlank()) {
-                            viewModel.onCollectionSelected(newCollectionName.trim())
+                            viewModel.createShelf(newCollectionName)
                             newCollectionName = ""
                             showCreateCollectionDialog = false
                         }
@@ -771,6 +774,73 @@ fun LibraryScreen(
             }
         )
     }
+
+    shelfToEdit?.let { shelf ->
+        EditShelfDialog(
+            shelfName = shelf,
+            onRename = { newName ->
+                viewModel.renameShelf(shelf, newName)
+                shelfToEdit = null
+            },
+            onDelete = {
+                viewModel.deleteShelf(shelf)
+                shelfToEdit = null
+            },
+            onDismiss = { shelfToEdit = null }
+        )
+    }
+}
+
+/** Rename or delete a user shelf; its books move to the main shelf on delete. */
+@Composable
+private fun EditShelfDialog(
+    shelfName: String,
+    onRename: (String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember(shelfName) { mutableStateOf(shelfName) }
+    var confirmDelete by remember(shelfName) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+        title = { Text(if (confirmDelete) "Удалить полку?" else "Полка «$shelfName»") },
+        text = {
+            if (confirmDelete) {
+                Text("Книги с этой полки останутся в библиотеке и переместятся на полку «Основная».")
+            } else {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Название полки") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            if (confirmDelete) {
+                TextButton(onClick = onDelete) {
+                    Text("Удалить", color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                TextButton(
+                    onClick = { onRename(name) },
+                    enabled = name.isNotBlank() && name.trim() != shelfName
+                ) { Text("Переименовать") }
+            }
+        },
+        dismissButton = {
+            Row {
+                if (!confirmDelete) {
+                    TextButton(onClick = { confirmDelete = true }) {
+                        Text("Удалить", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Отмена") }
+            }
+        }
+    )
 }
 
 @Composable

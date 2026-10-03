@@ -1,5 +1,6 @@
 package com.lumina.reader.core.network
 
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -28,12 +29,47 @@ data class AiPlugin(
     @SerializedName("max_results") val maxResults: Int? = null
 )
 
+/**
+ * Message as returned by the API. Gson ignores Kotlin nullability, so every
+ * field is nullable: providers send `"content": null` (tool calls, filtered
+ * answers) or an array of content parts instead of a string.
+ */
+data class AiResponseMessage(
+    @SerializedName("role") val role: String? = null,
+    @SerializedName("content") val content: JsonElement? = null
+) {
+    /** Plain text of [content]: a string, or the text parts of an array. */
+    fun textOrNull(): String? {
+        val element = content ?: return null
+        return try {
+            when {
+                element.isJsonNull -> null
+                element.isJsonPrimitive -> element.asString
+                element.isJsonArray -> element.asJsonArray
+                    .mapNotNull { part ->
+                        when {
+                            part.isJsonPrimitive -> part.asString
+                            part.isJsonObject -> part.asJsonObject.get("text")
+                                ?.takeIf { it.isJsonPrimitive }
+                                ?.asString
+                            else -> null
+                        }
+                    }
+                    .joinToString("")
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
 data class AiChoice(
-    @SerializedName("message") val message: AiMessage? = null
+    @SerializedName("message") val message: AiResponseMessage? = null
 )
 
 data class AiResponse(
-    @SerializedName("choices") val choices: List<AiChoice>?,
+    @SerializedName("choices") val choices: List<AiChoice?>? = null,
     @SerializedName("error") val error: AiError? = null
 )
 
@@ -79,11 +115,11 @@ class AiClient {
             var lastProblem = "Сервис не вернул текст ответа"
             repeat(MAX_EMPTY_RESPONSE_ATTEMPTS) { attempt ->
                 val response = api.getCompletion(request)
-                val message = response.choices
+                val text = response.choices
                     ?.asSequence()
-                    ?.mapNotNull(AiChoice::message)
-                    ?.firstOrNull { it.content.isNotBlank() }
-                if (message != null) return message
+                    ?.mapNotNull { choice -> choice?.message?.textOrNull() }
+                    ?.firstOrNull { it.isNotBlank() }
+                if (text != null) return AiMessage(role = "assistant", content = text)
 
                 lastProblem = response.error?.message
                     ?.takeIf(String::isNotBlank)
