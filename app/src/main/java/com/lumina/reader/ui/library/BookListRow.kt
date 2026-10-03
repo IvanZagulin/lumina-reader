@@ -45,7 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.ui.components.BookCover
+import com.lumina.reader.ui.components.rememberSwipeReleaseGate
 import com.lumina.reader.ui.components.shelfBookDescription
+import com.lumina.reader.ui.components.swipeReleaseGate
 import com.lumina.reader.ui.components.toCoverModel
 import com.lumina.reader.ui.components.toShelfBookUi
 import com.lumina.reader.ui.theme.Lumina
@@ -74,13 +76,19 @@ fun BookListRow(
     val view = LocalView.current
     val cover = remember(book) { book.toCoverModel() }
     val description = remember(book) { shelfBookDescription(book.toShelfBookUi()) }
+    val swipeGate = rememberSwipeReleaseGate()
+    // confirmValueChange is deprecated in Material3 1.4 but still honoured; the
+    // gate keeps the actions on release (see SwipeReleaseGate).
+    @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { distance -> distance * 0.25f },
         confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onMoveToShelf()
-                SwipeToDismissBoxValue.EndToStart -> onDelete()
-                SwipeToDismissBoxValue.Settled -> Unit
+            if (!swipeGate.isPointerDown) {
+                when (value) {
+                    SwipeToDismissBoxValue.StartToEnd -> onMoveToShelf()
+                    SwipeToDismissBoxValue.EndToStart -> onDelete()
+                    SwipeToDismissBoxValue.Settled -> Unit
+                }
             }
             // The row stays; the action is confirmed in the sheet.
             false
@@ -88,7 +96,7 @@ fun BookListRow(
     )
     SwipeToDismissBox(
         state = dismissState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().swipeReleaseGate(swipeGate),
         backgroundContent = { SwipeBackground(dismissState.dismissDirection) }
     ) {
         Row(

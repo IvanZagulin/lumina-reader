@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Bookmark
+import com.lumina.reader.ui.components.rememberSwipeReleaseGate
+import com.lumina.reader.ui.components.swipeReleaseGate
 import com.lumina.reader.ui.reader.ReaderFonts
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 
@@ -65,9 +67,13 @@ internal fun BookmarkList(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(bookmarks, key = { "bookmark_${it.id}" }) { bookmark ->
+            val swipeGate = rememberSwipeReleaseGate()
+            // Deprecated in Material3 1.4 but still honoured; the gate keeps the
+            // delete on release (see SwipeReleaseGate).
+            @Suppress("DEPRECATION")
             val state = rememberSwipeToDismissBoxState(
                 confirmValueChange = { value ->
-                    if (value == SwipeToDismissBoxValue.EndToStart) {
+                    if (value == SwipeToDismissBoxValue.EndToStart && !swipeGate.isPointerDown) {
                         onDelete(bookmark)
                         true
                     } else {
@@ -77,6 +83,7 @@ internal fun BookmarkList(
             )
             SwipeToDismissBox(
                 state = state,
+                modifier = Modifier.swipeReleaseGate(swipeGate),
                 enableDismissFromStartToEnd = false,
                 backgroundContent = { DeleteBackground(colors) }
             ) {
