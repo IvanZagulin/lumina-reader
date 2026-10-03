@@ -14,63 +14,67 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
+/**
+ * PDF "parser": one chapter per page titled "Страница N" with no paragraphs
+ * (pages are rendered as images by the reader via [Chapter.pdfPageNumber]),
+ * plus a cover rendered from the first page.
+ */
 class PdfParser : BookParser {
 
     override fun parse(file: File): ParsedBook {
-        val fileName = file.name
-        val title = fileName.substringBeforeLast(".")
-        val chapters = mutableListOf<Chapter>()
-        val tocList = mutableListOf<TocItem>()
+        val title = file.name.substringBeforeLast(".")
         var coverBytes: ByteArray? = null
+        var pageCount = 0
+        var failed = false
 
+        var descriptor: ParcelFileDescriptor? = null
+        var renderer: PdfRenderer? = null
         try {
-            val fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(fileDescriptor)
-            val pageCount = renderer.pageCount
-
-            // Extract cover from first page
+            val openedDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            descriptor = openedDescriptor
+            val openedRenderer = PdfRenderer(openedDescriptor)
+            renderer = openedRenderer
+            pageCount = openedRenderer.pageCount
             if (pageCount > 0) {
-                val firstPage = renderer.openPage(0)
-                val width = (firstPage.width * 1.5).toInt().coerceAtLeast(300)
-                val height = (firstPage.height * 1.5).toInt().coerceAtLeast(400)
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(Color.WHITE)
-                firstPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                firstPage.close()
-
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
-                coverBytes = stream.toByteArray()
-            }
-
-            for (pageIndex in 0 until pageCount) {
-                val pageNum = pageIndex + 1
-                val pageTitle = "Страница $pageNum"
-                val chapter = Chapter(
-                    index = pageIndex,
-                    title = pageTitle,
-                    content = "PDF Документ — $pageTitle из $pageCount",
-                    paragraphs = listOf("PDF Документ — $pageTitle из $pageCount"),
-                    pdfPageNumber = pageIndex
-                )
-                chapters.add(chapter)
-                if (pageIndex % 5 == 0 || pageIndex == 0 || pageIndex == pageCount - 1) {
-                    tocList.add(TocItem(id = "pdf_page_$pageIndex", title = pageTitle, chapterIndex = pageIndex))
+                coverBytes = try {
+                    renderCover(openedRenderer)
+                } catch (e: Exception) {
+                    null
                 }
             }
-
-            renderer.close()
-            fileDescriptor.close()
         } catch (e: Exception) {
-            e.printStackTrace()
+            failed = true
+        } finally {
+            try {
+                renderer?.close()
+            } catch (e: Exception) {
+                // already closed or never opened
+            }
+            try {
+                descriptor?.close()
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        val chapters = ArrayList<Chapter>(pageCount.coerceAtLeast(1))
+        val toc = ArrayList<TocItem>()
+        if (failed || pageCount == 0) {
             chapters.add(
                 Chapter(
                     index = 0,
                     title = "Страница 1",
-                    content = "Не удалось открыть PDF документ",
-                    paragraphs = listOf("Ошибка чтения PDF файла")
+                    paragraphs = listOf("Не удалось открыть PDF документ")
                 )
             )
+        } else {
+            for (pageIndex in 0 until pageCount) {
+                val pageTitle = "Страница ${pageIndex + 1}"
+                chapters.add(Chapter(index = pageIndex, title = pageTitle, paragraphs = emptyList(), pdfPageNumber = pageIndex))
+                if (pageIndex % 5 == 0 || pageIndex == pageCount - 1) {
+                    toc.add(TocItem(id = "pdf_page_$pageIndex", title = pageTitle, chapterIndex = pageIndex))
+                }
+            }
         }
 
         return ParsedBook(
@@ -79,19 +83,45 @@ class PdfParser : BookParser {
             description = "Файл формата PDF (${chapters.size} стр.)",
             coverBytes = coverBytes,
             chapters = chapters,
-            tableOfContents = tocList,
+            tableOfContents = toc,
             format = BookFormat.PDF
         )
     }
 
+    private fun renderCover(renderer: PdfRenderer): ByteArray {
+        val page = renderer.openPage(0)
+        var bitmap: Bitmap? = null
+        try {
+            val pageWidth = page.width.coerceAtLeast(1)
+            val pageHeight = page.height.coerceAtLeast(1)
+            val scale = minOf(1.5f, MAX_COVER_SIDE.toFloat() / maxOf(pageWidth, pageHeight))
+            val width = (pageWidth * scale).toInt().coerceIn(1, MAX_COVER_SIDE)
+            val height = (pageHeight * scale).toInt().coerceIn(1, MAX_COVER_SIDE)
+            val created = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap = created
+            created.eraseColor(Color.WHITE)
+            page.render(created, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            val stream = ByteArrayOutputStream()
+            created.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            return stream.toByteArray()
+        } finally {
+            page.close()
+            bitmap?.recycle()
+        }
+    }
+
     override fun parse(inputStream: InputStream, fileName: String): ParsedBook {
         val tempFile = File.createTempFile("temp_pdf_", ".pdf")
-        tempFile.deleteOnExit()
-        FileOutputStream(tempFile).use { out ->
-            inputStream.copyTo(out)
+        try {
+            inputStream.use { input -> FileOutputStream(tempFile).use { output -> input.copyTo(output) } }
+            val parsed = parse(tempFile)
+            return parsed.copy(title = fileName.substringBeforeLast("."))
+        } finally {
+            tempFile.delete()
         }
-        val result = parse(tempFile)
-        tempFile.delete()
-        return result
+    }
+
+    private companion object {
+        const val MAX_COVER_SIDE = 1200
     }
 }

@@ -9,8 +9,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ParserTest {
 
     @Test
@@ -78,7 +83,8 @@ class ParserTest {
         )
 
         assertEquals(1, parsed.chapters.size)
-        assertTrue(parsed.chapters.single().title.isNotBlank())
+        assertEquals("Глава 1", parsed.chapters.single().title)
+        assertEquals(listOf("Основной текст."), parsed.chapters.single().paragraphs)
         assertTrue(!parsed.chapters.single().title.contains("Сноска", ignoreCase = true))
         assertTrue(parsed.chapters.single().paragraphs.none { it.contains("сноски") })
     }
