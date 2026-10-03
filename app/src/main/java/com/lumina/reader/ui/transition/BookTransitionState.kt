@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.components.BookCoverModel
 import com.lumina.reader.ui.components.ClothPalette
 import com.lumina.reader.ui.components.CoverPalette
@@ -102,6 +101,9 @@ class BookTransitionState internal constructor(
 
     /** Close without a target slot: the book shrinks to 0.6 and fades. */
     internal val vanish = Animatable(0f)
+
+    /** Closing: 1 shows the reader snapshot, 0 the cover it fades into. */
+    internal val readerFade = Animatable(0f)
 
     /** True while closing (the live library is under the overlay). */
     internal var closing by mutableStateOf(false)
@@ -203,10 +205,8 @@ class BookTransitionState internal constructor(
         return Rect(position.x, position.y, position.x + size.width, position.y + size.height)
     }
 
-    private fun computeStage(): Rect {
-        val maxWidth = with(density) { 260.dp.toPx() }
-        return TransitionGeometry.stageRect(rootSize.width.toFloat(), rootSize.height.toFloat(), maxWidth)
-    }
+    private fun computeStage(): Rect =
+        TransitionGeometry.showcaseRect(rootSize.width.toFloat(), rootSize.height.toFloat())
 
     private fun clothFor(model: BookCoverModel): Color {
         val path = (model.image as? File)?.path
@@ -252,6 +252,7 @@ class BookTransitionState internal constructor(
                 expand.snapTo(0f)
                 libraryBackdrop.snapTo(0f)
                 vanish.snapTo(0f)
+                readerFade.snapTo(0f)
                 overlayAlpha.snapTo(1f)
                 closing = false
                 backdropReady = false
@@ -270,34 +271,15 @@ class BookTransitionState internal constructor(
                 navigated = true
 
                 val fast = mode == OpenAnimation.FAST
+                // The cover grows straight to half the screen while the library dims,
+                // holds a moment with «Приятного чтения», then fades onto the text.
                 coroutineScope {
-                    if (fast) {
-                        launch { flight.animateTo(1f, tween(300, easing = LuminaMotion.Emphasized)) }
-                        launch { libraryBackdrop.animateTo(1f, tween(360, easing = LinearOutSlowInEasing)) }
-                        launch {
-                            delay(200)
-                            hinge.animateTo(1f, tween(520, easing = LuminaMotion.Hinge))
-                        }
-                        launch {
-                            delay(760)
-                            expand.animateTo(1f, tween(360, easing = LuminaMotion.Emphasized))
-                        }
-                    } else {
-                        // The book flies to the centre, the cover swings open slowly while
-                        // the camera moves onto the page, the open book holds for a moment
-                        // with «Приятного чтения», then the page fills the screen.
-                        launch { flight.animateTo(1f, tween(620, easing = LuminaMotion.Emphasized)) }
-                        launch { libraryBackdrop.animateTo(1f, tween(700, easing = LinearOutSlowInEasing)) }
-                        launch {
-                            delay(460)
-                            hinge.animateTo(1f, tween(1050, easing = LuminaMotion.Hinge))
-                        }
-                        launch {
-                            delay(1800)
-                            expand.animateTo(1f, tween(560, easing = LuminaMotion.Emphasized))
-                        }
+                    launch { flight.animateTo(1f, tween(if (fast) 320 else 650, easing = LuminaMotion.Emphasized)) }
+                    launch {
+                        libraryBackdrop.animateTo(1f, tween(if (fast) 360 else 700, easing = LinearOutSlowInEasing))
                     }
                 }
+                delay(if (fast) 120L else 450L)
 
                 phase = Phase.WaitingReader
                 val ready = withTimeoutOrNull(WAIT_BEFORE_INDICATOR_MS) { readerReady.first { it == bookId } }
@@ -307,7 +289,7 @@ class BookTransitionState internal constructor(
                         readerReady.first { it == bookId }
                     }
                 }
-                overlayAlpha.animateTo(0f, tween(if (fast) 200 else 380, easing = LinearOutSlowInEasing))
+                overlayAlpha.animateTo(0f, tween(if (fast) 220 else 420, easing = LinearOutSlowInEasing))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -367,8 +349,9 @@ class BookTransitionState internal constructor(
                 readerShot = runCatching { readerLayer.toImageBitmap() }.getOrNull()
 
                 flight.snapTo(1f)
-                hinge.snapTo(1f)
+                hinge.snapTo(0f)
                 expand.snapTo(1f)
+                readerFade.snapTo(1f)
                 libraryBackdrop.snapTo(1f)
                 vanish.snapTo(0f)
                 overlayAlpha.snapTo(1f)
@@ -396,30 +379,16 @@ class BookTransitionState internal constructor(
                     val measuredScale = librarySourceScale().coerceAtLeast(0.5f)
                     sourceRect = TransitionGeometry.scaleAbout(found.rect, fullRect.center, 1f / measuredScale)
                     sourceFollowsLibraryScale = true
+                    readerFade.animateTo(0f, tween(320, easing = LinearOutSlowInEasing))
                     coroutineScope {
-                        launch { expand.animateTo(0f, tween(300, easing = LuminaMotion.EmphasizedAccelerate)) }
-                        launch {
-                            delay(120)
-                            hinge.animateTo(0f, tween(380, easing = LuminaMotion.Hinge))
-                        }
-                        launch {
-                            delay(460)
-                            flight.animateTo(0f, tween(360, easing = LuminaMotion.Emphasized))
-                        }
-                        launch { libraryBackdrop.animateTo(0f, tween(820, easing = LinearEasing)) }
+                        launch { flight.animateTo(0f, tween(480, easing = LuminaMotion.Emphasized)) }
+                        launch { libraryBackdrop.animateTo(0f, tween(520, easing = LinearEasing)) }
                     }
                 } else {
+                    readerFade.animateTo(0f, tween(320, easing = LinearOutSlowInEasing))
                     coroutineScope {
-                        launch { expand.animateTo(0f, tween(300, easing = LuminaMotion.EmphasizedAccelerate)) }
-                        launch {
-                            delay(120)
-                            hinge.animateTo(0f, tween(380, easing = LuminaMotion.Hinge))
-                        }
-                        launch { libraryBackdrop.animateTo(0f, tween(750, easing = LinearEasing)) }
-                        launch {
-                            delay(500)
-                            vanish.animateTo(1f, tween(250, easing = LuminaMotion.EmphasizedAccelerate))
-                        }
+                        launch { libraryBackdrop.animateTo(0f, tween(450, easing = LinearEasing)) }
+                        launch { vanish.animateTo(1f, tween(300, easing = LuminaMotion.EmphasizedAccelerate)) }
                     }
                 }
             } catch (e: CancellationException) {
@@ -486,10 +455,6 @@ class BookTransitionState internal constructor(
     internal companion object {
         /** The library behind the overlay is scaled down by this much (spec §5.1, §6.5). */
         const val LIBRARY_SCALE_DEPTH = 0.06f
-        /** Hinge progress at which the camera starts moving onto the right-hand page. */
-        const val FOCUS_START = 0.3f
-        /** Size of the open page relative to the closed book once the camera is on it. */
-        const val OPEN_ZOOM = 1.3f
 
         /** «Быстрая» opens the cover to about −110° (h = 0.61). */
         const val WAIT_BEFORE_INDICATOR_MS = 400L

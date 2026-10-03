@@ -30,6 +30,26 @@ internal object TransitionGeometry {
         return Rect(left, top, left + w, top + h)
     }
 
+    /**
+     * The opened cover: half the screen height (2:3 cover, at most 82 % of the
+     * width), horizontally centred, its centre at 46 % of the height so the
+     * «Приятного чтения» line fits underneath.
+     */
+    fun showcaseRect(rootWidth: Float, rootHeight: Float): Rect {
+        var h = 0.5f * rootHeight
+        var w = h / 1.5f
+        val maxW = 0.82f * rootWidth
+        if (w > maxW) {
+            w = maxW
+            h = 1.5f * w
+        }
+        w = w.coerceAtLeast(1f)
+        h = h.coerceAtLeast(1f)
+        val left = rootWidth / 2f - w / 2f
+        val top = 0.46f * rootHeight - h / 2f
+        return Rect(left, top, left + w, top + h)
+    }
+
     /** Where a book without a visible slot starts: a smaller copy of the stage. */
     fun centeredSource(stage: Rect, scale: Float = 0.6f): Rect = scaleAbout(stage, stage.center, scale)
 
@@ -58,24 +78,6 @@ internal object TransitionGeometry {
     fun pageRect(book: Rect, hinge: Float): Rect {
         val spine = book.left + book.width / 2f * hinge
         return Rect(spine, book.top, spine + book.width, book.bottom)
-    }
-
-    /**
-     * The right-hand page once the camera has moved onto it: centred
-     * horizontally on the screen, at the closed book's height, [zoom] times the
-     * closed book's size. The opened cover then lies mostly off the left edge.
-     */
-    fun focusedPageRect(book: Rect, screenCenterX: Float, zoom: Float): Rect {
-        val w = book.width * zoom
-        val h = book.height * zoom
-        val cy = book.center.y
-        return Rect(screenCenterX - w / 2f, cy - h / 2f, screenCenterX + w / 2f, cy + h / 2f)
-    }
-
-    /** Smooth 0..1 ramp with zero slope at both ends. */
-    fun smoothstep(t: Float): Float {
-        val x = t.coerceIn(0f, 1f)
-        return x * x * (3f - 2f * x)
     }
 
     fun scaleAbout(rect: Rect, pivot: Offset, scale: Float): Rect = Rect(

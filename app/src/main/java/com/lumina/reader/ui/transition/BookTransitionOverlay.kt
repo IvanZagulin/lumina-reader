@@ -15,14 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -47,17 +43,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.lumina.reader.ui.theme.LoraFamily
 import com.lumina.reader.ui.components.BookCover
-import com.lumina.reader.ui.components.Endpaper
 import com.lumina.reader.ui.theme.Lumina
-import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.LuminaShape
-import kotlin.math.PI
-import kotlin.math.sin
 
 /** One frame of the transition geometry, derived from the animatables (draw phase only). */
 internal class TransitionFrame(
-    /** The right-hand page; the cover is pinned to its left edge. */
+    /** The cover's bounds. */
     val page: Rect,
+    /** The reader snapshot's bounds while closing. */
+    val readerPage: Rect,
     val cornerPx: Float,
     val coverRotationY: Float,
     val coverShading: Float,
@@ -73,47 +67,40 @@ internal class TransitionFrame(
 
 internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): TransitionFrame {
     val f = flight.value
-    val h = hinge.value
     val e = expand.value
     val v = vanish.value
+    val fade = readerFade.value
     val source = if (sourceFollowsLibraryScale) {
         TransitionGeometry.scaleAbout(sourceRect, fullRect.center, librarySourceScale())
     } else {
         sourceRect
     }
-    val book = TransitionGeometry.lerpRect(source, stageRect, f)
-        .translate(Offset(0f, TransitionGeometry.arcOffset(f, arcPx)))
-    // As the cover swings open the camera moves onto the right-hand page: it
-    // grows and slides to the screen centre while the open cover slips off
-    // the left edge, so the book visibly opens wide before the page fills the screen.
-    val focus = TransitionGeometry.smoothstep(TransitionGeometry.window(h, BookTransitionState.FOCUS_START, 1f))
-    val openPage = TransitionGeometry.lerpRect(
-        TransitionGeometry.pageRect(book, h),
-        TransitionGeometry.focusedPageRect(book, fullRect.center.x, BookTransitionState.OPEN_ZOOM),
-        focus
-    )
-    var page = TransitionGeometry.lerpRect(openPage, endRect, e)
-    if (v > 0f) page = TransitionGeometry.scaleAbout(page, page.center, 1f - 0.4f * v)
-    val sinH = sin(PI * h).toFloat()
+    // The cover grows straight (no arc, no tilt) from its slot to the showcase.
+    var book = TransitionGeometry.lerpRect(source, stageRect, f)
+    if (v > 0f) book = TransitionGeometry.scaleAbout(book, book.center, 1f - 0.4f * v)
+    // Only closing draws a page: the reader snapshot, cross-fading into the cover.
+    val page = TransitionGeometry.lerpRect(book, endRect, e)
     return TransitionFrame(
-        page = page,
+        page = book,
+        readerPage = page,
         cornerPx = TransitionGeometry.lerp(closedCornerPx, endCornerPx, e),
-        coverRotationY = LuminaMotion.HingeSign * 180f * h + TransitionGeometry.flightRotation(f, LuminaMotion.HingeSign),
-        coverShading = 0.35f * sinH,
-        coverAlpha = (1f - TransitionGeometry.window(e, 0.5f, 1f)) * (1f - v),
-        pageAlpha = 1f - v,
-        shadowDp = TransitionGeometry.lerp(4f, 24f, f) * (1f - e) * (1f - v),
-        hinge = h,
+        coverRotationY = 0f,
+        coverShading = 0f,
+        coverAlpha = (if (closing) 1f - fade else 1f) * (1f - v),
+        pageAlpha = if (closing) fade * (1f - v) else 0f,
+        shadowDp = TransitionGeometry.lerp(4f, 24f, f) * (1f - v),
+        hinge = 0f,
         expand = e,
-        greetingAlpha = if (closing) 0f else TransitionGeometry.window(h, 0.55f, 0.9f) * (1f - v)
+        greetingAlpha = if (closing) 0f else TransitionGeometry.window(f, 0.6f, 1f) * (1f - v)
     )
 }
 
 /**
- * The topmost root layer (spec §3.1, §6.4–§6.5). Draws nothing while idle; while
- * a book opens or closes it draws the library backdrop (or only the scrim when
- * the live library is underneath), the page, the hinged cover and the
- * «Открываю книгу…» line, and swallows touches and back presses.
+ * The topmost root layer (spec §3.1, §6.4–§6.5). Draws nothing while idle.
+ * Opening: the library dims behind the cover, which grows straight to half the
+ * screen with «Приятного чтения» under it, then everything fades onto the
+ * reader. Closing: the reader snapshot cross-fades into the cover, which flies
+ * back to its shelf slot. Touches and back presses are swallowed meanwhile.
  */
 @Composable
 fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modifier) {
@@ -130,20 +117,10 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
     val localDensity = LocalDensity.current
     val arcPx = with(localDensity) { 32.dp.toPx() }
     val closedCornerPx = with(localDensity) { 4.dp.toPx() }
+    val greetingGapPx = with(localDensity) { 28.dp.toPx() }
     val stage = state.stageRect
     val stageWidth = with(localDensity) { stage.width.toDp() }
     val stageHeight = with(localDensity) { stage.height.toDp() }
-    val showEndpaper by remember(state) { derivedStateOf { state.hinge.value >= 0.5f } }
-    val breath: State<Float>? = if (state.waitingVisible && !state.reducedMotion) {
-        rememberInfiniteTransition(label = "reader-wait").animateFloat(
-            initialValue = 1f,
-            targetValue = 1.008f,
-            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
-            label = "breath"
-        )
-    } else {
-        null
-    }
 
     Box(
         modifier = modifier
@@ -157,7 +134,7 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                 }
             }
     ) {
-        // Backdrop, scrim, glow and the page.
+        // Backdrop, scrim and glow; while closing also the reader snapshot.
         Spacer(
             modifier = Modifier
                 .fillMaxSize()
@@ -173,7 +150,6 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                         radius = 420.dp.toPx()
                     )
                     val clip = Path()
-                    val hingeShadowMax = 40.dp.toPx()
                     onDrawBehind {
                         val b = state.libraryBackdrop.value
                         if (!state.closing && state.backdropReady) {
@@ -197,31 +173,27 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                         if (!state.closing) drawRect(glow, alpha = b)
 
                         val fr = state.frame(arcPx, closedCornerPx)
-                        drawPageShadow(fr)
-                        val s = breath?.value ?: 1f
-                        scale(s, pivot = fr.page.center) {
-                            drawPage(state, fr, clip, hingeShadowMax)
-                        }
+                        drawReaderSnapshot(state, fr, clip)
                     }
                 }
         )
 
-        // «Приятного чтения» centred on the page, under the swinging cover.
+        // «Приятного чтения» under the cover.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val fr = state.frame(arcPx, closedCornerPx)
                     translationX = fr.page.center.x - size.width / 2f
-                    translationY = fr.page.center.y - size.height / 2f
-                    alpha = fr.greetingAlpha * fr.pageAlpha
+                    translationY = fr.page.bottom + greetingGapPx
+                    alpha = fr.greetingAlpha
                 },
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.TopCenter
         ) {
-            Greeting(ink = state.paperInk, waiting = state.waitingVisible, reducedMotion = state.reducedMotion)
+            Greeting(ink = GreetingInk, waiting = state.waitingVisible, reducedMotion = state.reducedMotion)
         }
 
-        // The cover: placed and scaled onto the page rect, hinged at its left edge.
+        // The cover, scaled uniformly onto its current bounds.
         Box(
             modifier = Modifier
                 .size(stageWidth, stageHeight)
@@ -233,65 +205,26 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
                     scaleX = if (stage.width > 0f) fr.page.width / stage.width else 1f
                     scaleY = if (stage.height > 0f) fr.page.height / stage.height else 1f
                     alpha = fr.coverAlpha
-                    // The closed book casts a real shadow; once it opens the page draws its own.
-                    shadowElevation = fr.shadowDp.dp.toPx() * (1f - fr.hinge)
+                    shadowElevation = fr.shadowDp.dp.toPx()
                     shape = LuminaShape.Book
                     clip = false
                 }
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val fr = state.frame(arcPx, closedCornerPx)
-                        transformOrigin = TransformOrigin(0f, 0.5f)
-                        cameraDistance = 16f * density
-                        rotationY = fr.coverRotationY
-                    }
-                    .drawWithContent {
-                        drawContent()
-                        val shading = 0.35f * sin(PI * state.hinge.value).toFloat()
-                        if (shading > 0f) drawRect(Color.Black, alpha = shading)
-                    }
-            ) {
-                if (showEndpaper) {
-                    Endpaper(cloth = state.cloth, modifier = Modifier.fillMaxSize())
-                } else {
-                    BookCover(model = cover, width = stageWidth, modifier = Modifier.fillMaxSize(), large = true)
-                }
-            }
+            BookCover(model = cover, width = stageWidth, modifier = Modifier.fillMaxSize(), large = true)
         }
-
     }
 }
 
-private fun DrawScope.drawPageShadow(fr: TransitionFrame) {
-    if (fr.shadowDp <= 0f || fr.hinge <= 0f || fr.expand >= 1f) return
-    val radius = fr.shadowDp.dp.toPx()
-    val dy = radius * 0.35f
-    val steps = 4
-    for (i in steps downTo 1) {
-        val grow = radius * i / steps
-        drawRoundRect(
-            color = Color.Black,
-            topLeft = Offset(fr.page.left - grow * 0.5f, fr.page.top + dy - grow * 0.3f),
-            size = Size(fr.page.width + grow, fr.page.height + grow * 0.8f),
-            cornerRadius = CornerRadius(fr.cornerPx + grow),
-            alpha = 0.05f * fr.pageAlpha * fr.hinge
-        )
-    }
-}
-
-private fun DrawScope.drawPage(state: BookTransitionState, fr: TransitionFrame, clip: Path, hingeShadowMax: Float) {
-    // A closed book is all cover: the page only shows once the hinge or the expand starts.
-    if (fr.hinge <= 0f && fr.expand <= 0f) return
-    val page = fr.page
+/** The reader as it was when closing began, cross-fading into the cover. */
+private fun DrawScope.drawReaderSnapshot(state: BookTransitionState, fr: TransitionFrame, clip: Path) {
     val shot = state.readerShot
-    if (state.closing && shot != null) {
-        clip.rewind()
-        clip.addRoundRect(RoundRect(page, CornerRadius(fr.cornerPx)))
-        clipPath(clip) {
-            drawRect(state.paper, topLeft = page.topLeft, size = page.size, alpha = fr.pageAlpha)
+    if (!state.closing || fr.pageAlpha <= 0f) return
+    val page = fr.readerPage
+    clip.rewind()
+    clip.addRoundRect(RoundRect(page, CornerRadius(fr.cornerPx)))
+    clipPath(clip) {
+        drawRect(state.paper, topLeft = page.topLeft, size = page.size, alpha = fr.pageAlpha)
+        if (shot != null) {
             val dst = TransitionGeometry.fitHeightCentered(Size(shot.width.toFloat(), shot.height.toFloat()), page)
             drawImage(
                 image = shot,
@@ -302,47 +235,19 @@ private fun DrawScope.drawPage(state: BookTransitionState, fr: TransitionFrame, 
                 alpha = fr.pageAlpha
             )
         }
-    } else {
-        drawRoundRect(
-            color = state.paper,
-            topLeft = page.topLeft,
-            size = page.size,
-            cornerRadius = CornerRadius(fr.cornerPx),
-            alpha = fr.pageAlpha
-        )
-    }
-    // Shadow of the lifting cover on the page, from the spine.
-    val h = fr.hinge
-    if (h > 0f && h < 1f) {
-        val width = (1f - h) * hingeShadowMax
-        drawRect(
-            brush = Brush.horizontalGradient(
-                0f to Color.Black.copy(alpha = 0.3f),
-                1f to Color.Transparent,
-                startX = page.left,
-                endX = page.left + width
-            ),
-            topLeft = page.topLeft,
-            size = Size(width, page.height),
-            alpha = fr.pageAlpha
-        )
     }
 }
 
+/** Warm white: the line sits on the dimmed library in both app themes. */
+private val GreetingInk = Color(0xFFFFF8EE)
+
 /**
- * «Приятного чтения» with a small ornament. If the reader is still loading
- * when the page has opened, three soft dots breathe under it instead of a
- * progress bar.
+ * «Приятного чтения» under the cover. If the reader is still loading when the
+ * cover has grown, three soft dots breathe under it instead of a progress bar.
  */
 @Composable
 private fun Greeting(ink: Color, waiting: Boolean, reducedMotion: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "❦",
-            color = ink.copy(alpha = 0.45f),
-            fontSize = 20.sp
-        )
-        Spacer(Modifier.height(10.dp))
         Text(
             text = "Приятного чтения",
             color = ink.copy(alpha = 0.82f),
