@@ -1,5 +1,7 @@
 package com.lumina.reader.ui.library
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,10 +17,10 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.ReadingStatus
 import com.lumina.reader.ui.theme.Lumina
@@ -59,22 +61,39 @@ fun LibraryFilterRow(
         ) {
             items(LibraryFilters, key = { it.first.name }) { (status, label) ->
                 val isSelected = status == selected
+                // Selection colours change over 150 ms (spec §8 #6).
+                val container by animateColorAsState(
+                    targetValue = if (isSelected) ink else ink.copy(alpha = 0f),
+                    animationSpec = tween(150),
+                    label = "filter-chip-container"
+                )
+                val content by animateColorAsState(
+                    targetValue = if (isSelected) wall else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = tween(150),
+                    label = "filter-chip-label"
+                )
+                val hairline = MaterialTheme.colorScheme.outlineVariant
+                val outline by animateColorAsState(
+                    targetValue = if (isSelected) hairline.copy(alpha = 0f) else hairline,
+                    animationSpec = tween(150),
+                    label = "filter-chip-border"
+                )
                 FilterChip(
                     selected = isSelected,
                     onClick = { onSelect(status) },
                     label = { Text(label, style = MaterialTheme.typography.labelLarge) },
                     shape = LuminaShape.Pill,
                     colors = FilterChipDefaults.filterChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        selectedContainerColor = ink,
-                        selectedLabelColor = wall
+                        containerColor = container,
+                        labelColor = content,
+                        selectedContainerColor = container,
+                        selectedLabelColor = content
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         enabled = true,
                         selected = isSelected,
-                        borderColor = MaterialTheme.colorScheme.outlineVariant,
-                        selectedBorderColor = Color.Transparent
+                        borderColor = outline,
+                        selectedBorderColor = outline
                     )
                 )
             }

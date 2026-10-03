@@ -4,6 +4,7 @@ import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -155,5 +156,26 @@ class ComponentLogicTest {
         )
         assertEquals(setOf("a", "e"), newlyShelvedKeys(before, after))
         assertEquals(emptySet<String>(), newlyShelvedKeys(after, after))
+    }
+
+    @Test
+    fun onlyBooksAddedLaterDropOntoTheShelf() {
+        val arrivals = ShelfArrivals()
+        // The first look at a row animates nothing.
+        arrivals.update(listOf(1L, 2L), animate = true)
+        assertFalse(arrivals.consume(1L))
+        // A new book drops once; known ones never do.
+        arrivals.update(listOf(3L, 1L, 2L), animate = true)
+        assertTrue(arrivals.consume(3L))
+        assertFalse(arrivals.consume(3L))
+        assertFalse(arrivals.consume(2L))
+        // Reduced motion records the book without queueing the drop.
+        arrivals.update(listOf(4L, 3L, 1L, 2L), animate = false)
+        assertFalse(arrivals.consume(4L))
+        // A row restored from saved state already knows its books.
+        val restored = ShelfArrivals(listOf(1L, 2L))
+        restored.update(listOf(5L, 1L, 2L), animate = true)
+        assertTrue(restored.consume(5L))
+        assertFalse(restored.consume(1L))
     }
 }

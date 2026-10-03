@@ -32,12 +32,17 @@ private class BookTransitionSlotNode(
     private var bookId: Long
 ) : Modifier.Node(), GlobalPositionAwareModifierNode {
 
+    /** Last coordinates, so a changed key or book (e.g. a new hero book) re-registers at once. */
+    private var lastCoordinates: LayoutCoordinates? = null
+
     override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
+        lastCoordinates = coordinates
         state.registerSlot(key, bookId, coordinates, this)
     }
 
     override fun onDetach() {
         state.unregisterSlot(key, this)
+        lastCoordinates = null
     }
 
     fun update(newState: BookTransitionState, newKey: String, newBookId: Long) {
@@ -45,5 +50,9 @@ private class BookTransitionSlotNode(
         state = newState
         key = newKey
         bookId = newBookId
+        val coordinates = lastCoordinates
+        if (isAttached && coordinates != null && coordinates.isAttached) {
+            state.registerSlot(key, bookId, coordinates, this)
+        }
     }
 }

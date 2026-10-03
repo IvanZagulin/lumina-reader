@@ -43,6 +43,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -59,6 +61,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -326,6 +329,7 @@ fun ShelfRow(
     plateText: String? = null,
     showNewDot: Boolean = false,
     dimFinished: Boolean = false,
+    dropNewArrivals: Boolean = false,
     onShowAll: () -> Unit = {}
 ) {
     val colors = Lumina.colors
@@ -360,6 +364,11 @@ fun ShelfRow(
     val visible = if (books.size > SHELF_ROW_MAX_BOOKS) books.take(SHELF_ROW_MAX_BOOKS) else books
     val more = books.size - visible.size
 
+    // Books that arrive while the row is known drop onto the plank (spec §8 #5).
+    val arrivals = rememberSaveable(saver = ShelfArrivals.Saver) { ShelfArrivals() }
+    if (dropNewArrivals) arrivals.update(visible.map(ShelfBookUi::id), animate = !reducedMotion)
+    val dropPx = with(LocalDensity.current) { 40.dp.toPx() }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -383,7 +392,15 @@ fun ShelfRow(
                 val itemKey = "book:${book.id}"
                 val slotKey = "shelf:$sectionKey:${book.id}"
                 val tilt = remember(rowState, itemKey) { ShelfTilt(rowState, itemKey, swayValue) }
-                Column(modifier = Modifier.animateItem()) {
+                val drop = remember(book.id) { Animatable(if (arrivals.consume(book.id)) -dropPx else 0f) }
+                LaunchedEffect(drop) {
+                    if (drop.value != 0f) drop.animateTo(0f, spring(dampingRatio = 0.45f, stiffness = 300f))
+                }
+                Column(
+                    modifier = Modifier
+                        .animateItem()
+                        .graphicsLayer { translationY = drop.value }
+                ) {
                     BookOnShelf(
                         book = book,
                         width = size.width,
@@ -413,6 +430,39 @@ fun ShelfRow(
                 }
             }
         }
+    }
+}
+
+/**
+ * Which books a shelf row has already shown, so only books added later play
+ * the drop-in (the first composition and restored rows animate nothing).
+ * Plain sets, not snapshot state: they never trigger recomposition.
+ */
+internal class ShelfArrivals(known: Collection<Long>? = null) {
+    private val seen = HashSet<Long>(known.orEmpty())
+    private val pending = HashSet<Long>()
+    private var initialized = known != null
+
+    /** Records [ids]; unseen ones are queued for the drop when [animate]. */
+    fun update(ids: List<Long>, animate: Boolean) {
+        if (!initialized) {
+            seen += ids
+            initialized = true
+            return
+        }
+        for (id in ids) {
+            if (seen.add(id) && animate) pending += id
+        }
+    }
+
+    /** True once for a queued book (its item then starts above the plank). */
+    fun consume(id: Long): Boolean = pending.remove(id)
+
+    companion object {
+        val Saver: Saver<ShelfArrivals, LongArray> = Saver(
+            save = { it.seen.toLongArray() },
+            restore = { ShelfArrivals(it.toList()) }
+        )
     }
 }
 

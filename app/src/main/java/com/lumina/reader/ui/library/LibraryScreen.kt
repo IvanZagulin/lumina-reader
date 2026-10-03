@@ -504,6 +504,7 @@ private fun LazyListScope.shelfSections(
                     captions = captions,
                     plateText = section.plateText(),
                     showNewDot = section.kind == ShelfKind.NEW,
+                    dropNewArrivals = section.kind == ShelfKind.NEW,
                     dimFinished = section.kind == ShelfKind.SERIES,
                     onOpen = { book, slot -> callbacks.onOpen(book.id, slot) },
                     onLongPress = { book -> callbacks.onActions(book.id, BookSheetPage.MAIN) },

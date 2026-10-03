@@ -16,6 +16,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.add
@@ -60,6 +61,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.BookImporter
+import com.lumina.reader.core.model.effectiveTheme
 import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.ui.catalog.CatalogScreen
 import com.lumina.reader.ui.catalog.CatalogSourcesScreen
@@ -166,10 +168,13 @@ fun LuminaNavGraph(
     val reducedMotion = rememberReducedMotion()
     val readerSettingsFlow = remember(context) { ReaderPreferences(context.applicationContext).settingsFlow }
     val readerSettings by readerSettingsFlow.collectAsState(initial = null)
+    val systemInDarkMode = isSystemInDarkTheme()
     SideEffect {
         transition.reducedMotion = reducedMotion
         transition.density = density
-        readerSettings?.theme?.let { theme ->
+        // The page the book opens onto has the colour the reader will draw with
+        // (with «Авто» that is the day or night theme, not the stored manual one).
+        readerSettings?.effectiveTheme(systemInDarkMode)?.let { theme ->
             transition.paper = theme.bgComposeColor
             transition.paperInk = theme.textComposeColor
         }

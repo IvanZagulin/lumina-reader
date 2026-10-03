@@ -167,6 +167,11 @@ class BookTransitionState internal constructor(
         readerReady.value = bookId
     }
 
+    /** Back pressed while the page waits for a slow reader: fade onto it now. */
+    internal fun skipWaiting() {
+        if (phase == Phase.WaitingReader) hiddenBookId?.let { readerReady.value = it }
+    }
+
     internal fun registerSlot(key: String, bookId: Long, coordinates: LayoutCoordinates, owner: Any) {
         slots[key] = SlotEntry(bookId, coordinates, owner)
     }

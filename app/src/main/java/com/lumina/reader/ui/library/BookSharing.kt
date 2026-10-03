@@ -14,7 +14,9 @@ import java.io.File
 /** MIME type and extension of a stored book file. */
 internal fun BookFormat.shareMime(): Pair<String, String> = when (this) {
     BookFormat.EPUB -> "application/epub+zip" to "epub"
-    BookFormat.FB2, BookFormat.FB2_ZIP -> "application/x-fictionbook+xml" to "fb2"
+    BookFormat.FB2 -> "application/x-fictionbook+xml" to "fb2"
+    // Stored as the original archive (BookFileNames: "fb2.zip"), so it is sent as one.
+    BookFormat.FB2_ZIP -> "application/zip" to "fb2.zip"
     BookFormat.PDF -> "application/pdf" to "pdf"
     BookFormat.TXT -> "text/plain" to "txt"
 }

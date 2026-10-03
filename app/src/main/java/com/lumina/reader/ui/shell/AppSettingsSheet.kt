@@ -51,7 +51,9 @@ import com.lumina.reader.core.reminder.ReadingReminder
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import com.lumina.reader.ui.transition.OpenAnimation
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /** «20:00» */
@@ -132,7 +134,10 @@ fun AppSettingsSheet(
                 subtitle = "Уведомление, если сегодня вы ещё не читали",
                 checked = current.enabled,
                 enabled = reminder != null,
-                onCheckedChange = { enabled -> scope.launch { ReadingReminder.setEnabled(context, enabled) } }
+                onCheckedChange = { enabled ->
+                    // Finishes (save + reschedule) even if the sheet is closed right away.
+                    scope.launch { withContext(NonCancellable) { ReadingReminder.setEnabled(context, enabled) } }
+                }
             )
             Row(
                 modifier = Modifier
@@ -210,7 +215,9 @@ fun AppSettingsSheet(
                 TextButton(
                     onClick = {
                         pickingTime = false
-                        scope.launch { ReadingReminder.setTime(context, state.hour, state.minute) }
+                        scope.launch {
+                            withContext(NonCancellable) { ReadingReminder.setTime(context, state.hour, state.minute) }
+                        }
                     }
                 ) { Text("Готово") }
             },

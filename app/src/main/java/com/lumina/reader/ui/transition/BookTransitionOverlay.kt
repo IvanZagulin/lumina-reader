@@ -106,8 +106,11 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
     if (state.phase == BookTransitionState.Phase.Idle) return
     val cover = state.cover ?: return
 
-    // The animation is short; back is ignored until it ends.
-    BackHandler(enabled = true) { }
+    // The animation is short; back is ignored until it ends. While only waiting for a
+    // slow reader, back stops waiting: the overlay fades and the next back closes the reader.
+    BackHandler(enabled = true) {
+        if (state.phase == BookTransitionState.Phase.WaitingReader) state.skipWaiting()
+    }
 
     val colors = Lumina.colors
     val localDensity = LocalDensity.current

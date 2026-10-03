@@ -201,6 +201,9 @@ class ShelfGroupingTest {
         assertEquals("a b c.fb2", shareFileName("a/b:c", "fb2"))
         assertEquals("book.txt", shareFileName("  ", "txt"))
         assertEquals("application/pdf" to "pdf", BookFormat.PDF.shareMime())
-        assertEquals("fb2", BookFormat.FB2_ZIP.shareMime().second)
+        assertEquals("application/x-fictionbook+xml" to "fb2", BookFormat.FB2.shareMime())
+        // A zipped FB2 is stored as the archive, so it is shared as one.
+        assertEquals("application/zip" to "fb2.zip", BookFormat.FB2_ZIP.shareMime())
+        assertEquals("Дюна.fb2.zip", shareFileName("Дюна", BookFormat.FB2_ZIP.shareMime().second))
     }
 }
