@@ -102,6 +102,7 @@ jobs:
       - name: Build the unsigned device app
         shell: bash
         run: |
+          set -euo pipefail
           xcodebuild \
             -project iosApp/LuminaReader.xcodeproj \
             -scheme LuminaReader \
@@ -118,6 +119,7 @@ jobs:
       - name: Package and check the IPA
         shell: bash
         run: |
+          set -euo pipefail
           APP=build/ios/Build/Products/Release-iphoneos/LuminaReader.app
           PLIST="$APP/Info.plist"
           test -d "$APP"
@@ -162,6 +164,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           TAG="ios-v$IOS_VERSION"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "$IPA" --repo "$GITHUB_REPOSITORY" --clobber
@@ -183,6 +186,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           SIZE="$(stat -f%z "$IPA")"
           SHA256="$(shasum -a 256 "$IPA" | cut -d' ' -f1)"
           REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"

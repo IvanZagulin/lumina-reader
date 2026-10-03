@@ -162,13 +162,21 @@ jobs:
       - name: Pick an iPhone simulator
         shell: bash
         run: |
+          set -euo pipefail
+          # Prefer the newest iOS runtime that the selected Xcode's SDK supports
+          # (the image also carries runtimes of newer Xcodes); otherwise take the
+          # newest available one. Any iPhone works: the app is built for the
+          # generic simulator destination and installed with simctl.
+          SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          echo "iPhone simulator SDK: $SDK_VERSION"
           xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
-          SIM_UDID="$(python3 - "$RUNNER_TEMP/devices.json" <<'PY'
+          SIM_UDID="$(python3 - "$RUNNER_TEMP/devices.json" "$SDK_VERSION" <<'PY'
           import json
           import re
           import sys
 
           devices = json.load(open(sys.argv[1]))["devices"]
+          sdk = tuple(int(part) for part in (sys.argv[2].split(".") + ["0"])[:2])
           candidates = []
           for runtime, entries in devices.items():
               match = re.search(r"iOS-(\d+)-(\d+)", runtime)
@@ -177,15 +185,17 @@ jobs:
               version = (int(match.group(1)), int(match.group(2)))
               for device in entries:
                   if device.get("isAvailable", True) and device["name"].startswith("iPhone"):
-                      # Newest runtime first, then the plainest name ("iPhone 17").
-                      candidates.append((version, -len(device["name"]), device["udid"], device["name"], runtime))
+                      # Supported by this SDK first, then the newest runtime, then
+                      # the plainest name ("iPhone 17" before "iPhone 17 Pro Max").
+                      candidates.append((version <= sdk, version, -len(device["name"]), device["udid"], device["name"], runtime))
           if not candidates:
               sys.exit("No available iPhone simulator")
           best = max(candidates)
-          print(f"Simulator: {best[3]} ({best[4]})", file=sys.stderr)
-          print(best[2])
+          print(f"Simulator: {best[4]} ({best[5]})", file=sys.stderr)
+          print(best[3])
           PY
           )"
+          test -n "$SIM_UDID"
           echo "SIM_UDID=$SIM_UDID" >> "$GITHUB_ENV"
 
       - name: Link the Kotlin framework for the simulator
@@ -197,22 +207,26 @@ jobs:
       - name: Build the app for the simulator
         shell: bash
         run: |
+          set -euo pipefail
           # arm64 only: Kotlin/Native and Compose Multiplatform have no x86_64
           # simulator slice. The Xcode build phase reuses the linked framework.
+          # Generic destination: the build does not depend on which simulator
+          # runtimes this Xcode accepts; the next step installs it with simctl.
           xcodebuild \
             -project iosApp/LuminaReader.xcodeproj \
             -scheme LuminaReader \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/sim \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Launch on the simulator and take screenshots
         shell: bash
         run: |
+          set -euo pipefail
           APP=build/sim/Build/Products/Debug-iphonesimulator/LuminaReader.app
           plutil -p "$APP/Info.plist"
           mkdir -p shots
