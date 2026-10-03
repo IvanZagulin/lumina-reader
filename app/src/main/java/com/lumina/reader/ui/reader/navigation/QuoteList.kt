@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.ReadingHighlight
+import com.lumina.reader.ui.components.rememberSwipeReleaseGate
+import com.lumina.reader.ui.components.swipeReleaseGate
 import com.lumina.reader.ui.reader.ReaderFonts
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.HighlightPalette
@@ -118,9 +120,13 @@ internal fun QuoteList(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(shown, key = { "quote_${it.id}" }) { highlight ->
+                val swipeGate = rememberSwipeReleaseGate()
+                // Deprecated in Material3 1.4 but still honoured; the gate keeps the
+                // delete on release (see SwipeReleaseGate).
+                @Suppress("DEPRECATION")
                 val state = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart) {
+                        if (value == SwipeToDismissBoxValue.EndToStart && !swipeGate.isPointerDown) {
                             onDelete(highlight)
                             true
                         } else {
@@ -130,6 +136,7 @@ internal fun QuoteList(
                 )
                 SwipeToDismissBox(
                     state = state,
+                    modifier = Modifier.swipeReleaseGate(swipeGate),
                     enableDismissFromStartToEnd = false,
                     backgroundContent = { DeleteBackground(colors) }
                 ) {

@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
@@ -386,7 +387,12 @@ internal fun CatalogMessageCard(
             )
             if (actionLabel != null && onAction != null) {
                 Spacer(Modifier.height(4.dp))
-                OutlinedButton(onClick = onAction, shape = LuminaShape.Pill) { Text(actionLabel) }
+                OutlinedButton(
+                    onClick = onAction,
+                    shape = LuminaShape.Pill,
+                    colors = LegacyM3Defaults.outlinedButtonColors(),
+                    border = LegacyM3Defaults.outlinedButtonBorder()
+                ) { Text(actionLabel) }
             }
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.KeyboardType
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /** Jump to a book-wide page number, or to a percentage when [byPages] is false. */
 @Composable
@@ -74,7 +75,8 @@ internal fun BookJumpDialog(
         confirmButton = {
             TextButton(
                 enabled = targetPageIndex != null,
-                onClick = { targetPageIndex?.let(onJump) }
+                onClick = { targetPageIndex?.let(onJump) },
+                colors = LegacyM3Defaults.textButtonColors()
             ) {
                 Text("Перейти")
             }

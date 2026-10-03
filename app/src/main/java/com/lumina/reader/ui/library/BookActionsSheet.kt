@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.ui.components.BookOnShelf
 import com.lumina.reader.ui.components.toShelfBookUi
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaShape
 import kotlinx.coroutines.launch
@@ -317,7 +318,12 @@ private fun DeleteConfirmation(title: String, onConfirm: () -> Unit, onCancel: (
         )
         Spacer(Modifier.height(20.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отмена") }
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+                colors = LegacyM3Defaults.outlinedButtonColors(),
+                border = LegacyM3Defaults.outlinedButtonBorder()
+            ) { Text("Отмена") }
             Button(
                 onClick = onConfirm,
                 modifier = Modifier.weight(1f),

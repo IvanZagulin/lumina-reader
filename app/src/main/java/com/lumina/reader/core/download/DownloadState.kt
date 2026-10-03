@@ -1,6 +1,6 @@
 package com.lumina.reader.core.download
 
-import java.util.Locale
+import com.lumina.reader.core.text.formatDecimal
 
 /** State of one book download, keyed by its URL in [DownloadStates]. */
 sealed interface DownloadState {
@@ -136,16 +136,14 @@ class ProgressThrottle(
     }
 }
 
-private val RUSSIAN: Locale = Locale.forLanguageTag("ru")
-
 /** "850 КБ", "12,4 МБ" — sizes for progress texts. */
 fun formatByteSize(bytes: Long): String {
     if (bytes < 1024) return "$bytes Б"
     val kb = bytes / 1024.0
-    if (kb < 1024) return String.format(RUSSIAN, "%.0f КБ", kb)
+    if (kb < 1024) return formatDecimal(kb, 0) + " КБ"
     val mb = kb / 1024.0
-    if (mb < 1024) return String.format(RUSSIAN, "%.1f МБ", mb)
-    return String.format(RUSSIAN, "%.2f ГБ", mb / 1024.0)
+    if (mb < 1024) return formatDecimal(mb, 1, decimalSeparator = ',') + " МБ"
+    return formatDecimal(mb / 1024.0, 2, decimalSeparator = ',') + " ГБ"
 }
 
 /** "1,2 из 3,4 МБ · 35%" or "1,2 МБ" when the total is unknown. */

@@ -61,6 +61,7 @@ import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.ui.reader.chrome.ReaderPageHeader
 import com.lumina.reader.ui.reader.selection.ParagraphMarks
 import com.lumina.reader.ui.reader.selection.paragraphMarks
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -480,7 +481,8 @@ private fun ChapterEndItem(
         if (hasNext) {
             OutlinedButton(
                 onClick = onNextChapter,
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(14.dp),
+                border = LegacyM3Defaults.outlinedButtonBorder()
             ) {
                 Text(
                     text = "Следующая глава →",

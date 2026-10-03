@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.components.GhostBooksRow
 import com.lumina.reader.ui.components.rememberShelfBookSize
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /** Which empty state to show (spec §4.1 `EmptyShelf`). */
 enum class EmptyShelfVariant { NO_BOOKS, ALL_READ, NO_RESULTS, EMPTY_FILTER }
@@ -91,7 +92,11 @@ fun EmptyShelf(
                         Spacer(Modifier.width(6.dp))
                         Text("Добавить файл")
                     }
-                    OutlinedButton(onClick = onOpenCatalogs) {
+                    OutlinedButton(
+                        onClick = onOpenCatalogs,
+                        colors = LegacyM3Defaults.outlinedButtonColors(),
+                        border = LegacyM3Defaults.outlinedButtonBorder()
+                    ) {
                         Text("Открыть каталоги")
                     }
                 }
@@ -104,7 +109,11 @@ fun EmptyShelf(
                 }
             }
             EmptyShelfVariant.EMPTY_FILTER -> {
-                OutlinedButton(onClick = onResetFilter) {
+                OutlinedButton(
+                    onClick = onResetFilter,
+                    colors = LegacyM3Defaults.outlinedButtonColors(),
+                    border = LegacyM3Defaults.outlinedButtonBorder()
+                ) {
                     Icon(Icons.Rounded.FilterListOff, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Сбросить фильтр")

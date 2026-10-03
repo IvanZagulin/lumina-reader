@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.preferences.LibrarySort
 import com.lumina.reader.core.preferences.LibraryViewMode
+import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaShape
 
 private val SortLabels = listOf(
@@ -114,7 +115,8 @@ fun LibraryViewSheet(
                         selected = sort == value,
                         onClick = { onSortSelected(value) },
                         label = { Text(label) },
-                        shape = LuminaShape.Pill
+                        shape = LuminaShape.Pill,
+                        border = LegacyM3Defaults.filterChipBorder(selected = sort == value)
                     )
                 }
             }
@@ -132,7 +134,8 @@ fun LibraryViewSheet(
                         selected = format == value,
                         onClick = { onFormatSelected(value) },
                         label = { Text(label) },
-                        shape = LuminaShape.Pill
+                        shape = LuminaShape.Pill,
+                        border = LegacyM3Defaults.filterChipBorder(selected = format == value)
                     )
                 }
             }
