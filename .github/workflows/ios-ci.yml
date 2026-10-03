@@ -1,0 +1,99 @@
+# Compiles and tests the Kotlin Multiplatform code for iOS on a macOS runner.
+# Android is verified by ci.yml (Linux); nothing here publishes anything.
+name: iOS CI
+
+on:
+  push:
+    branches-ignore: [automation/**]
+    paths:
+      - 'shared/**'
+      - 'sharedUi/**'
+      - 'iosApp/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/ios-*.yml'
+  pull_request:
+    paths:
+      - 'shared/**'
+      - 'sharedUi/**'
+      - 'iosApp/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/ios-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared:
+    name: Kotlin/Native compile and simulator tests
+    runs-on: macos-15
+    # The first run downloads the Kotlin/Native toolchain (~1 GB); later runs
+    # restore it from the ~/.konan cache.
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          # Kotlin 2.3.21 is tested against Xcode 26.0; prefer it, then any
+          # Xcode 26, and fall back to the runner's default Xcode.
+          shopt -s nullglob
+          candidates=(/Applications/Xcode_26.0*.app)
+          if [ "${#candidates[@]}" -eq 0 ]; then candidates=(/Applications/Xcode_26*.app); fi
+          XCODE=""
+          if [ "${#candidates[@]}" -gt 0 ]; then
+            XCODE="$(printf '%s\n' "${candidates[@]}" | sort | tail -n 1)"
+          fi
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE/Contents/Developer"
+            echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Xcode 26 is not installed on this runner; using $(xcode-select -p)"
+          fi
+          xcodebuild -version
+          xcrun simctl list runtimes available
+
+      - name: Compile, link and test for iOS
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :shared:compileKotlinIosArm64 \
+            :shared:linkReleaseFrameworkIosArm64 \
+            :shared:iosSimulatorArm64Test \
+            --no-daemon --stacktrace --continue
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-reports
+          path: |
+            shared/build/reports/tests
+            shared/build/test-results
+          if-no-files-found: ignore

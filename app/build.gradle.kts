@@ -74,6 +74,9 @@ android {
 }
 
 dependencies {
+    // Platform-neutral core shared with the iPhone app (same packages as before).
+    implementation(project(":shared"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

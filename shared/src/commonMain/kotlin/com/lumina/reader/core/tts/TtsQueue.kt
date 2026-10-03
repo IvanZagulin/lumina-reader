@@ -138,7 +138,7 @@ class TtsQueue(
             for (span in notes) {
                 for (k in span.start.coerceAtLeast(0) until span.end.coerceAtMost(chars.size)) chars[k] = ' '
             }
-            return String(chars)
+            return chars.concatToString()
         }
     }
 }
