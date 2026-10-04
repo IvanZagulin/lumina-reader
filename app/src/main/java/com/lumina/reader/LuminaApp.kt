@@ -30,7 +30,9 @@ class LuminaApp : Application() {
         AppDatabase.getDatabase(this)
         // The shared library screen reads its services from here; on Android
         // every one of them needs a Context, and the importer lives in :app.
-        AppServices.install(
+        // Built on first use, not now: the importer and the preference files
+        // must not be opened before a screen asks for them.
+        AppServices.install {
             LibraryServices(
                 bookDao = AppDatabase.getDatabase(this).bookDao(),
                 repository = LibraryRepository(this),
@@ -38,6 +40,6 @@ class LuminaApp : Application() {
                 uiPreferences = AppUiPreferences.get(this),
                 imports = AndroidLibraryImports(BookImporter.get(this))
             )
-        )
+        }
     }
 }

@@ -46,14 +46,21 @@ class LibraryServices(
  * owns the importer.
  */
 object AppServices {
+    private var factory: (() -> LibraryServices)? = null
     private var installed: LibraryServices? = null
 
-    fun install(services: LibraryServices) {
-        installed = services
+    /**
+     * Registers how to build the services; [factory] runs on first use, not
+     * here. Nothing may be built eagerly: opening the database and the
+     * preference files at start-up would slow it down and would bind DataStore
+     * to the files before anything else could touch them.
+     */
+    fun install(factory: () -> LibraryServices) {
+        this.factory = factory
     }
 
     val library: LibraryServices
-        get() = installed ?: defaultLibraryServices().also { installed = it }
+        get() = installed ?: (factory?.invoke() ?: defaultLibraryServices()).also { installed = it }
 }
 
 internal expect fun defaultLibraryServices(): LibraryServices
