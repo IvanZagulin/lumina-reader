@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -35,6 +36,7 @@ class ShippedDatabaseCompatibilityTest {
     @After
     fun tearDown() {
         context.deleteDatabase(databaseName)
+        context.deleteDatabase(AppDatabase.DATABASE_NAME)
     }
 
     @Test
@@ -44,10 +46,13 @@ class ShippedDatabaseCompatibilityTest {
 
     @Test
     fun shippedVersion8DatabaseOpensWithoutMigration() {
-        createShippedDatabase(withRoomMasterTable = true)
+        // The app's own file, opened by the builder getDatabase(context) uses
+        // with its default name.
+        createShippedDatabase(withRoomMasterTable = true, name = AppDatabase.DATABASE_NAME)
         runBlocking {
-            val database = open()
+            val database = AppDatabase.databaseBuilder(context).allowMainThreadQueries().build()
             try {
+                assertEquals(AppDatabase.DATABASE_NAME, database.openHelper.databaseName)
                 assertShippedRows(database)
                 // The identity row is left alone: the hash matched.
                 assertEquals(SHIPPED_IDENTITY_HASH, storedIdentityHash(database))
@@ -102,6 +107,43 @@ class ShippedDatabaseCompatibilityTest {
         }
     }
 
+    @Test
+    fun migrationsAreTheShippedOnesInTheShippedOrder() {
+        assertEquals(
+            listOf(1 to 5, 2 to 5, 3 to 5, 4 to 5, 5 to 6, 6 to 7, 7 to 8),
+            AppDatabase.ALL_MIGRATIONS.map { it.startVersion to it.endVersion }
+        )
+    }
+
+    @Test
+    fun aDatabaseFromANewerVersionIsRefusedNotWiped() {
+        // No destructive fallback is configured: a file Room cannot migrate
+        // (here a downgrade from 9) makes the open fail and keeps the data.
+        createShippedDatabase(withRoomMasterTable = true, version = 9)
+        runBlocking {
+            val database = open()
+            try {
+                database.bookDao().countBooks()
+                fail("Room opened a database of version 9 without a migration")
+            } catch (expected: Exception) {
+                // "A migration from 9 to 8 was required but not found."
+            } finally {
+                database.close()
+            }
+        }
+        // Opened read-write: Room may have switched the file to WAL already.
+        val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(databaseName), null)
+        try {
+            assertEquals(9, raw.version)
+            raw.rawQuery("SELECT title FROM books WHERE id = 1", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Книга", cursor.getString(0))
+            }
+        } finally {
+            raw.close()
+        }
+    }
+
     private fun open(): AppDatabase =
         AppDatabase.databaseBuilder(context, databaseName)
             .allowMainThreadQueries()
@@ -145,9 +187,13 @@ class ShippedDatabaseCompatibilityTest {
         assertEquals(listOf("Учёба"), database.bookDao().getCollections().first())
     }
 
-    private fun createShippedDatabase(withRoomMasterTable: Boolean) {
-        context.deleteDatabase(databaseName)
-        val file = context.getDatabasePath(databaseName)
+    private fun createShippedDatabase(
+        withRoomMasterTable: Boolean,
+        name: String = databaseName,
+        version: Int = 8
+    ) {
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name)
         file.parentFile?.mkdirs()
         val database = SQLiteDatabase.openOrCreateDatabase(file, null)
         try {
@@ -162,7 +208,7 @@ class ShippedDatabaseCompatibilityTest {
                 )
             }
             SAMPLE_ROWS.forEach { database.execSQL(it) }
-            database.version = 8
+            database.version = version
         } finally {
             database.close()
         }
