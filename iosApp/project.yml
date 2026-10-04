@@ -21,6 +21,9 @@ targets:
       # LuminaUI is a static framework, so the system frameworks its Kotlin code
       # uses must be linked by the app: the reading reminder is a local notification.
       - sdk: UserNotifications.framework
+      # Read-aloud (AVFAudio) and the volume-button page turns (MediaPlayer's MPVolumeView).
+      - sdk: AVFAudio.framework
+      - sdk: MediaPlayer.framework
     settings:
       base:
         PRODUCT_NAME: LuminaReader
