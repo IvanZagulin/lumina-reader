@@ -35,13 +35,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -90,7 +90,8 @@ internal fun DownloadCover(
             )
         }
         if (coverUrl != null) {
-            val context = LocalContext.current
+            // Coil's platform context: the Android Context, as before; a placeholder on iOS.
+            val context = LocalPlatformContext.current
             val request = remember(coverUrl, coverHeaders) {
                 ImageRequest.Builder(context)
                     .data(coverUrl)
@@ -141,8 +142,8 @@ internal fun DownloadRing(
     }
 }
 
-/** What a row's buttons do. */
-internal class DownloadRowActions(
+/** What a row's buttons do. Public: the AI assistant's chat in :app shows download rows too. */
+class DownloadRowActions(
     val onCancel: (String) -> Unit,
     val onRetry: (String) -> Unit,
     val onDismiss: (String) -> Unit,
@@ -150,11 +151,12 @@ internal class DownloadRowActions(
 )
 
 /**
- * One task in the downloads sheet or the catalogue home: cover, title,
- * status and progress, with cancel / retry / open.
+ * One task in the downloads sheet, the catalogue home or the AI assistant's
+ * chat: cover, title, status and progress, with cancel / retry / open.
+ * Public because that chat stays in :app for now.
  */
 @Composable
-internal fun DownloadTaskRow(
+fun DownloadTaskRow(
     row: DownloadRowUi,
     actions: DownloadRowActions,
     reducedMotion: Boolean,

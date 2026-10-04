@@ -18,12 +18,10 @@ import com.lumina.reader.core.database.AppDatabase
 import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.preferences.ReminderPreferences
 import com.lumina.reader.core.preferences.ReminderSettings
-import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,59 +29,81 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
 /**
- * Public entry point for the daily reading reminder.
+ * Android entry point for the daily reading reminder, kept with its `Context`
+ * signatures for the settings sheet and `MainActivity`. The logic is the
+ * common [DailyReadingReminder] (shared with iOS); this object installs
+ * Android's side of it — the "reminders" DataStore and the AlarmManager alarm
+ * of [ReadingReminderScheduler] — on first use.
  *
  * - [reschedule] — call on app start and after anything that may affect the
  *   alarm; it reads [ReminderSettings] and schedules or cancels the alarm.
  * - [setEnabled] / [setTime] — for the settings UI: persist and reschedule.
  * - [settings] — observe the current settings.
+ *
+ * Stays in :app: the alarm opens [MainActivity] and shows the app's icon.
  */
 object ReadingReminder {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    fun settings(context: Context): Flow<ReminderSettings> =
-        ReminderPreferences(context.applicationContext).settingsFlow
+    fun settings(context: Context): Flow<ReminderSettings> {
+        install(context)
+        return DailyReadingReminder.settings()
+    }
 
     /** Fire-and-forget: reads the saved settings and (re)schedules or cancels the alarm. */
     fun reschedule(context: Context) {
-        val appContext = context.applicationContext
-        scope.launch {
-            try {
-                rescheduleNow(appContext)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (error: Exception) {
-                // A reminder that could not be scheduled must never crash the app.
-            }
-        }
+        install(context)
+        DailyReadingReminder.reschedule()
     }
 
     /** Suspending variant of [reschedule]; returns once the alarm has been updated. */
     suspend fun rescheduleNow(context: Context) {
-        val appContext = context.applicationContext
-        ReadingReminderScheduler.applySettings(appContext, readSettings(appContext))
+        install(context)
+        DailyReadingReminder.rescheduleNow()
     }
 
     suspend fun setEnabled(context: Context, enabled: Boolean) {
-        val appContext = context.applicationContext
-        ReminderPreferences(appContext).setEnabled(enabled)
-        rescheduleNow(appContext)
+        install(context)
+        DailyReadingReminder.setEnabled(enabled)
     }
 
     /** [hour] 0..23, [minute] 0..59 (clamped). */
     suspend fun setTime(context: Context, hour: Int, minute: Int) {
-        val appContext = context.applicationContext
-        ReminderPreferences(appContext).setTime(hour, minute)
-        rescheduleNow(appContext)
+        install(context)
+        DailyReadingReminder.setTime(hour, minute)
     }
 
-    internal suspend fun readSettings(context: Context): ReminderSettings =
-        try {
-            ReminderPreferences(context).current()
-        } catch (error: IOException) {
-            ReminderSettings()
-        }
+    internal suspend fun readSettings(context: Context): ReminderSettings {
+        install(context)
+        return DailyReadingReminder.readSettings()
+    }
+
+    /**
+     * Android's [ReminderEnvironment]: the settings in the "reminders"
+     * DataStore and the alarm. `LuminaApp` may install it up front with
+     * `DailyReadingReminder.install { ReadingReminder.environment(this) }`.
+     */
+    fun environment(context: Context): ReminderEnvironment {
+        val appContext = context.applicationContext
+        return ReminderEnvironment(
+            preferences = ReminderPreferences(appContext),
+            scheduler = AndroidReminderScheduler(appContext)
+        )
+    }
+
+    private fun install(context: Context) {
+        val appContext = context.applicationContext
+        DailyReadingReminder.installIfAbsent { environment(appContext) }
+    }
+}
+
+/**
+ * [ReminderScheduler] over AlarmManager. It schedules unconditionally:
+ * [ReadingReminderReceiver] checks at fire time whether the user has read today.
+ */
+class AndroidReminderScheduler(private val context: Context) : ReminderScheduler {
+    override suspend fun apply(settings: ReminderSettings) {
+        ReadingReminderScheduler.applySettings(context, settings)
+    }
 }
 
 object ReadingReminderScheduler {

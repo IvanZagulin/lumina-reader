@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.catalog
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -85,6 +84,7 @@ import com.lumina.reader.core.opds.OpdsCatalogConfig
 import com.lumina.reader.core.opds.OpdsEntry
 import com.lumina.reader.core.opds.OpdsFormats
 import com.lumina.reader.core.opds.OpdsLink
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import com.lumina.reader.ui.downloads.DownloadRowActions
 import com.lumina.reader.ui.downloads.DownloadTaskRow
@@ -102,7 +102,12 @@ import com.lumina.reader.ui.theme.rememberReducedMotion
  *
  * [initialQuery] starts a search in all catalogues once (the library's
  * «Искать в каталогах»). The catalogue editor and the card menus use
- * [sourcesViewModel].
+ * [sourcesViewModel], created with an initializer because iOS has no
+ * reflective view model factory (on Android the key and scope are the same
+ * as `viewModel()`'s).
+ *
+ * The system back (Android) steps back inside the screen first; the iPhone
+ * has none and uses the screen's own back arrows.
  */
 @Composable
 fun CatalogScreen(
@@ -111,7 +116,8 @@ fun CatalogScreen(
     onOpenBook: (Long) -> Unit,
     onManageCatalogs: () -> Unit,
     initialQuery: String? = null,
-    sourcesViewModel: CatalogSourcesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    // Qualified: the parameter `viewModel` above shadows the function.
+    sourcesViewModel: CatalogSourcesViewModel = androidx.lifecycle.viewmodel.compose.viewModel { CatalogSourcesViewModel() }
 ) {
     val state by viewModel.uiState.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
@@ -134,7 +140,7 @@ fun CatalogScreen(
     // returns to the library instead of a catalogue home without a back arrow.
     val searchOnlyEntry = !initialQuery.isNullOrBlank()
     val closesScreen = searchOnlyEntry && state.selected == null && state.pages.isEmpty()
-    BackHandler(enabled = state.selected != null || state.isBrowsing || state.globalSearch != null) {
+    PlatformBackHandler(enabled = state.selected != null || state.isBrowsing || state.globalSearch != null) {
         if (closesScreen) onBack() else viewModel.goBack()
     }
 

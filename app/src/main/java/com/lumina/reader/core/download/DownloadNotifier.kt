@@ -19,8 +19,11 @@ import com.lumina.reader.MainActivity
  * System notifications for book downloads: an ongoing progress notification
  * while transferring, then "Книга добавлена" (tap opens the book) or an error.
  * Without the POST_NOTIFICATIONS permission everything is skipped silently.
+ *
+ * Android's [DownloadNotifications]; it stays in :app because it needs the
+ * Context, the notification channel and MainActivity for the tap.
  */
-class DownloadNotifier(context: Context) {
+class DownloadNotifier(context: Context) : DownloadNotifications {
     private val appContext = context.applicationContext
     private val manager = NotificationManagerCompat.from(appContext)
 
@@ -28,7 +31,7 @@ class DownloadNotifier(context: Context) {
         ensureChannel()
     }
 
-    fun showProgress(key: String, title: String, bytesRead: Long, totalBytes: Long?) {
+    override fun showProgress(key: String, title: String, bytesRead: Long, totalBytes: Long?) {
         val builder = baseBuilder(title)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentText(
@@ -48,7 +51,7 @@ class DownloadNotifier(context: Context) {
         notify(notificationId(key), builder.build())
     }
 
-    fun showImporting(key: String, title: String) {
+    override fun showImporting(key: String, title: String) {
         val builder = baseBuilder(title)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentText("Добавляем в библиотеку…")
@@ -60,7 +63,7 @@ class DownloadNotifier(context: Context) {
         notify(notificationId(key), builder.build())
     }
 
-    fun showCompleted(key: String, title: String, bookId: Long, alreadyInLibrary: Boolean) {
+    override fun showCompleted(key: String, title: String, bookId: Long, alreadyInLibrary: Boolean) {
         val id = notificationId(key)
         val builder = baseBuilder(if (alreadyInLibrary) "Книга уже в библиотеке" else "Книга добавлена: $title")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -73,7 +76,7 @@ class DownloadNotifier(context: Context) {
         notify(id, builder.build())
     }
 
-    fun showFailed(key: String, title: String, message: String) {
+    override fun showFailed(key: String, title: String, message: String) {
         val builder = baseBuilder("Не удалось скачать «$title»")
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentText(message)
@@ -86,7 +89,7 @@ class DownloadNotifier(context: Context) {
         notify(notificationId(key), builder.build())
     }
 
-    fun cancel(key: String) {
+    override fun cancel(key: String) {
         try {
             manager.cancel(notificationId(key))
         } catch (e: Exception) {
@@ -98,7 +101,7 @@ class DownloadNotifier(context: Context) {
      * Removes progress notifications left behind by a process that died in the
      * middle of a download. Finished «Книга добавлена» notifications stay.
      */
-    fun clearStaleProgress() {
+    override fun clearStaleProgress() {
         val system = appContext.getSystemService(NotificationManager::class.java) ?: return
         runCatching {
             system.activeNotifications

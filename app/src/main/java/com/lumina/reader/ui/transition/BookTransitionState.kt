@@ -157,8 +157,15 @@ class BookTransitionState internal constructor(
     var readerShot: ImageBitmap? = null
         private set
 
-    internal var rootSize: IntSize = IntSize.Zero
-    internal var density: Density = Density(1f)
+    /**
+     * Size of the shell's root box in px (its `onSizeChanged`); the stage and
+     * the page are laid out in it. Public because the Android root,
+     * `LuminaNavGraph`, stays in :app and writes it from there.
+     */
+    var rootSize: IntSize = IntSize.Zero
+
+    /** The root's density, kept current by the shell like [rootSize]; it records the downscaled snapshot. */
+    var density: Density = Density(1f)
 
     internal val slots = HashMap<String, SlotEntry>()
     private val readerReady = MutableStateFlow<Long?>(null)
@@ -467,7 +474,7 @@ class BookTransitionState internal constructor(
     }
 }
 
-/** Provided by the root (`LuminaNavGraph`); null outside the app shell (previews, tests). */
+/** Provided by the app shell's root (`LuminaNavGraph` on Android); null outside it (previews, tests). */
 val LocalBookTransition = staticCompositionLocalOf<BookTransitionState?> { null }
 
 /** The transition state of the root; [navLayer] must record the NavHost (and dock). */

@@ -2,8 +2,18 @@ package com.lumina.reader.core.opds
 
 import com.lumina.reader.core.download.HttpStatusException
 import com.lumina.reader.core.download.describeNetworkError
+import com.lumina.reader.core.network.finalUrl
+import com.lumina.reader.core.network.readBodyBytes
+import com.lumina.reader.platform.PlatformLock
+import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.prepareGet
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLParserException
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -11,11 +21,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.xmlpull.v1.XmlPullParserException
-import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
+import okio.IOException
 
 /** Search result of one catalogue: a feed, or a readable error. */
 data class CatalogSearchResult(
@@ -32,14 +38,17 @@ data class FoundPublication(
 
 /** Loads, searches and pages OPDS catalogues. */
 class OpdsRepository(
-    private val client: OkHttpClient = OpdsHttp.feedClient,
+    private val client: HttpClient = OpdsHttp.feedClient,
     private val parser: OpdsFeedParser = OpdsFeedParser()
 ) {
+    /** Guards both caches: searches of several catalogues run in parallel. */
+    private val cacheLock = PlatformLock()
+
     /** Search template per catalogue id ("" = the catalogue has none). */
-    private val templateCache = ConcurrentHashMap<String, String>()
+    private val templateCache = HashMap<String, String>()
 
     /** Search template per search link href (OpenSearch descriptions are fetched once). */
-    private val linkTemplateCache = ConcurrentHashMap<String, String>()
+    private val linkTemplateCache = HashMap<String, String>()
 
     /**
      * Loads and parses a feed. Mirrors of [catalog] are tried in turn when the
@@ -56,7 +65,7 @@ class OpdsRepository(
                 if (e.code == 401 || e.code == 403) throw e
                 lastError = e
             } catch (e: Exception) {
-                // A cancelled call fails with an IOException: stop instead of trying mirrors.
+                // A cancelled call fails with an I/O error: stop instead of trying mirrors.
                 ensureActive()
                 lastError = e
             }
@@ -64,55 +73,48 @@ class OpdsRepository(
         throw lastError ?: IOException("Не удалось открыть каталог")
     }
 
-    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed {
-        val request = buildRequest(url, catalog)
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) throw HttpStatusException(response.code)
-            val body = response.body ?: throw IOException("Пустой ответ сервера")
-            val finalUrl = response.request.url.toString()
-            return body.byteStream().use { stream -> parser.parseFeed(stream, finalUrl) }
+    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed =
+        client.prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+            if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
+            val body = response.readBodyBytes(MAX_FEED_BYTES)
+                ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
+            parser.parseFeed(body, response.finalUrl)
         }
-    }
 
-    private suspend fun fetchOpenSearchTemplate(url: String, catalog: OpdsCatalogConfig?): String? {
-        val request = buildRequest(url, catalog)
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) throw HttpStatusException(response.code)
-            val body = response.body ?: return null
-            val finalUrl = response.request.url.toString()
-            return body.byteStream().use { stream -> parser.parseOpenSearchTemplate(stream, finalUrl) }
+    private suspend fun fetchOpenSearchTemplate(url: String, catalog: OpdsCatalogConfig?): String? =
+        client.prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+            if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
+            val body = response.readBodyBytes(MAX_FEED_BYTES) ?: return@execute null
+            parser.parseOpenSearchTemplate(body, response.finalUrl)
         }
-    }
 
-    private fun buildRequest(url: String, catalog: OpdsCatalogConfig?): Request {
-        val builder = Request.Builder()
-            .url(url)
-            .header("Accept", OpdsHttp.ACCEPT_FEED)
-            .header("User-Agent", OpdsHttp.USER_AGENT)
+    /** The headers of every feed request; set, not appended, like OkHttp's Request.Builder.header. */
+    private fun HttpRequestBuilder.feedHeaders(url: String, catalog: OpdsCatalogConfig?) {
+        headers[HttpHeaders.Accept] = OpdsHttp.ACCEPT_FEED
+        headers[HttpHeaders.UserAgent] = OpdsHttp.USER_AGENT
         // Credentials only go to the catalogue's own hosts.
         if (catalog != null && catalog.owns(url)) {
-            catalog.authHeaders().forEach { (name, value) -> builder.header(name, value) }
+            catalog.authHeaders().forEach { (name, value) -> headers[name] = value }
         }
-        return builder.build()
     }
 
     /** Turns a feed's search link into a `{searchTerms}` template (fetching OpenSearch if needed). */
     suspend fun templateForLink(link: OpdsLink, catalog: OpdsCatalogConfig?): String? = withContext(Dispatchers.IO) {
         if (link.isSearchTemplate) return@withContext link.href
-        linkTemplateCache[link.href]?.let { cached -> return@withContext cached.ifEmpty { null } }
+        cacheLock.withLock { linkTemplateCache[link.href] }?.let { cached -> return@withContext cached.ifEmpty { null } }
         if (!link.isOpenSearchDescription && link.type?.contains("atom", ignoreCase = true) == true) {
             return@withContext null
         }
         val template = runCatching { fetchOpenSearchTemplate(link.href, catalog) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
-        linkTemplateCache[link.href] = template.orEmpty()
+        cacheLock.withLock { linkTemplateCache[link.href] = template.orEmpty() }
         template
     }
 
     /** The catalogue's search template from its root feed, cached per catalogue. */
     suspend fun searchTemplate(catalog: OpdsCatalogConfig): String? {
-        templateCache[catalog.id]?.let { return it.ifEmpty { null } }
+        cacheLock.withLock { templateCache[catalog.id] }?.let { return it.ifEmpty { null } }
         val root = try {
             fetchFeed(catalog.url, catalog)
         } catch (e: CancellationException) {
@@ -121,7 +123,7 @@ class OpdsRepository(
             return null // not cached: the catalogue may be reachable later
         }
         val template = root.searchLink?.let { templateForLink(it, catalog) }
-        templateCache[catalog.id] = template.orEmpty()
+        cacheLock.withLock { templateCache[catalog.id] = template.orEmpty() }
         return template
     }
 
@@ -255,13 +257,22 @@ class OpdsRepository(
     companion object {
         const val SEARCH_TIMEOUT_MS = 20_000L
         private const val MAX_NAVIGATION_FEEDS = 8
+
+        /**
+         * Feeds are parsed from memory (the shared parser takes bytes); a page
+         * of a real catalogue is far below this, a "feed" above it is not one.
+         */
+        private const val MAX_FEED_BYTES = 16L * 1024 * 1024
+        private const val FEED_TOO_LARGE_MESSAGE = "Ответ сервера слишком большой для OPDS-каталога"
     }
 }
 
-/** Readable message for a failed catalogue request. */
+/**
+ * Readable message for a failed catalogue request. A malformed address fails
+ * in OkHttp (IllegalArgumentException) or in Ktor's URL parser.
+ */
 fun describeOpdsError(error: Throwable): String = when (error) {
     is OpdsFormatException -> error.message ?: "Ответ сервера не является OPDS-каталогом"
-    is XmlPullParserException -> "Каталог вернул повреждённые данные"
-    is IllegalArgumentException -> "Некорректный адрес каталога"
+    is IllegalArgumentException, is URLParserException -> "Некорректный адрес каталога"
     else -> describeNetworkError(error)
 }

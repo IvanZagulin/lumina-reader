@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -55,17 +54,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lumina.reader.ui.navigation.Screen
 import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.LuminaShape
 import kotlin.math.roundToInt
 
-/** The four top-level destinations of the dock (spec §3.3). */
+/**
+ * The four top-level destinations of the dock (spec §3.3). The routes are
+ * the Android NavHost's (`Screen.Library.route` and so on, also listed in
+ * `Screen.TopLevelRoutes`), spelled out so the dock does not depend on the
+ * Android navigation graph.
+ */
 enum class DockDestination(val route: String, val label: String, val icon: ImageVector) {
-    LIBRARY(Screen.Library.route, "Полка", Icons.Rounded.AutoStories),
-    CATALOG(Screen.Catalog.route, "Каталоги", Icons.Rounded.TravelExplore),
-    ASSISTANT(Screen.AiChat.route, "Помощник", Icons.Rounded.AutoAwesome),
-    STATS(Screen.Stats.route, "Статистика", Icons.Rounded.Insights);
+    LIBRARY("library", "Полка", Icons.Rounded.AutoStories),
+    CATALOG("catalog", "Каталоги", Icons.Rounded.TravelExplore),
+    ASSISTANT("ai_chat", "Помощник", Icons.Rounded.AutoAwesome),
+    STATS("stats", "Статистика", Icons.Rounded.Insights);
 
     companion object {
         fun forRoute(route: String?): DockDestination? = entries.firstOrNull { it.route == route }
@@ -79,10 +82,10 @@ private val DockFixedWidth = 24.dp + 8.dp + 56.dp
 
 /** Item width that fills a phone's width so the labels never touch each other. */
 @Composable
-private fun rememberDockItemWidth(): Dp {
-    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    return remember(screenWidth) {
-        ((screenWidth - DockFixedWidth) / DockDestination.entries.size).coerceIn(MinItemWidth, MaxItemWidth)
+private fun rememberDockItemWidth(itemCount: Int): Dp {
+    val screenWidth = shellScreenWidthDp().dp
+    return remember(screenWidth, itemCount) {
+        ((screenWidth - DockFixedWidth) / itemCount.coerceAtLeast(1)).coerceIn(MinItemWidth, MaxItemWidth)
     }
 }
 private val ExpandedHeight = 64.dp
@@ -97,6 +100,9 @@ private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
  * selected item sits on a `primaryContainer` pill that slides with
  * `snappy()`. [collapse] (0..1, from [DockScrollState]) shrinks the capsule
  * to 52 dp and fades the labels; it is read only in layout/draw lambdas.
+ * [destinations] are the items shown, in order: all four on Android; a
+ * platform whose catalogue, assistant or statistics screens are not there
+ * yet shows only the ones it has.
  */
 @Composable
 fun LuminaDock(
@@ -105,24 +111,26 @@ fun LuminaDock(
     onAddBook: () -> Unit,
     collapse: () -> Float,
     libraryBadge: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    destinations: List<DockDestination> = DockDestination.entries
 ) {
     val scheme = MaterialTheme.colorScheme
+    val selectedIndex = if (selected == null) -1 else destinations.indexOf(selected)
     val indicatorIndex by animateFloatAsState(
-        targetValue = (selected?.ordinal ?: 0).toFloat(),
+        targetValue = selectedIndex.coerceAtLeast(0).toFloat(),
         animationSpec = LuminaMotion.snappy(),
         label = "dock-indicator"
     )
     val indicatorColor = scheme.primaryContainer
-    val showIndicator = selected != null
-    val itemWidth = rememberDockItemWidth()
+    val showIndicator = selectedIndex >= 0
+    val itemWidth = rememberDockItemWidth(destinations.size)
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
                 .layout { measurable, _ ->
                     val height = lerp(ExpandedHeight.toPx(), CollapsedHeight.toPx(), collapse()).roundToInt()
-                    val width = (itemWidth * DockDestination.entries.size).roundToPx()
+                    val width = (itemWidth * destinations.size).roundToPx()
                     val placeable = measurable.measure(Constraints.fixed(width, height))
                     layout(width, height) { placeable.place(0, 0) }
                 }
@@ -146,7 +154,7 @@ fun LuminaDock(
                 .selectableGroup()
         ) {
             Row {
-                DockDestination.entries.forEach { destination ->
+                destinations.forEach { destination ->
                     DockItem(
                         destination = destination,
                         width = itemWidth,

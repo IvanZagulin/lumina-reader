@@ -1,7 +1,6 @@
 package com.lumina.reader.ui.catalog
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.opds.CatalogSettingsCodec
@@ -9,9 +8,9 @@ import com.lumina.reader.core.opds.OpdsCatalogConfig
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.OpdsUrls
 import com.lumina.reader.core.opds.describeOpdsError
-import com.lumina.reader.core.preferences.CatalogPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -44,9 +43,18 @@ data class CatalogForm(
         get() = normalizedUrl != null
 }
 
-class CatalogSourcesViewModel(application: Application) : AndroidViewModel(application) {
+/**
+ * «Все каталоги» and the catalogue editor: show/hide, add, edit, delete and
+ * test the connection of OPDS catalogues.
+ *
+ * The defaulted [services] keeps Android's `viewModel()` working (a
+ * no-argument constructor); iOS creates it with `viewModel { CatalogSourcesViewModel() }`.
+ */
+class CatalogSourcesViewModel(
+    services: CatalogServices = CatalogServicesHolder.services
+) : ViewModel() {
 
-    private val preferences = CatalogPreferences(application)
+    private val preferences = services.catalogPreferences
     private val repository = OpdsRepository()
 
     /** Every catalogue, built-ins first, including disabled ones. */
@@ -156,7 +164,7 @@ class CatalogSourcesViewModel(application: Application) : AndroidViewModel(appli
         val title = feed.title.ifBlank { catalog.name }
         ConnectionCheck.Success("Каталог «$title» доступен: разделов $folders, книг $books")
     } catch (e: CancellationException) {
-        if (e is kotlinx.coroutines.TimeoutCancellationException) {
+        if (e is TimeoutCancellationException) {
             ConnectionCheck.Failure("Каталог не ответил вовремя")
         } else {
             throw e

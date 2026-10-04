@@ -22,8 +22,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.DayOfWeek
-import java.time.YearMonth
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+import kotlinx.datetime.yearMonth
 
 private enum class BadgeRarity(val title: String, val xp: Int) {
     COMMON("Обычная", 50),
@@ -357,19 +358,19 @@ private fun hasPerfectGoalWeek(base: ReadingStatsUiState): Boolean {
     val items = base.dailyActivity.sortedBy { it.date }
     if (items.size < 7) return false
     return items.windowed(7).any { week ->
-        week.zipWithNext().all { (a, b) -> b.date == a.date.plusDays(1) } && week.all { goalMet(it, base.goalSettings) }
+        week.zipWithNext().all { (a, b) -> b.date == a.date.plus(1, DateTimeUnit.DAY) } && week.all { goalMet(it, base.goalSettings) }
     }
 }
 
 private fun hasPerfectGoalMonth(base: ReadingStatsUiState): Boolean {
-    return base.dailyActivity.groupBy { YearMonth.from(it.date) }.any { (month, days) ->
-        days.size == month.lengthOfMonth() && days.all { goalMet(it, base.goalSettings) }
+    return base.dailyActivity.groupBy { it.date.yearMonth }.any { (month, days) ->
+        days.size == month.numberOfDays && days.all { goalMet(it, base.goalSettings) }
     }
 }
 
 private fun hasPerfectReadingMonth(base: ReadingStatsUiState): Boolean {
-    return base.dailyActivity.groupBy { YearMonth.from(it.date) }.any { (month, days) ->
-        days.size == month.lengthOfMonth() && days.all { it.sessionCount > 0 }
+    return base.dailyActivity.groupBy { it.date.yearMonth }.any { (month, days) ->
+        days.size == month.numberOfDays && days.all { it.sessionCount > 0 }
     }
 }
 

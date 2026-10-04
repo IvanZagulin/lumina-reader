@@ -41,18 +41,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.lumina.reader.BuildConfig
-import com.lumina.reader.core.preferences.AppUiPreferences
+import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.preferences.ReminderSettings
-import com.lumina.reader.core.preferences.get
-import com.lumina.reader.core.reminder.ReadingReminder
+import com.lumina.reader.platform.AppInfo
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import com.lumina.reader.ui.transition.OpenAnimation
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -64,19 +62,25 @@ internal fun formatReminderTime(hour: Int, minute: Int): String =
  * App settings (spec §3, §4.1 `AppSettingsSheet`): the book-open animation,
  * shelf captions, the daily reading reminder, the update check and the
  * version.
+ *
+ * @param onCheckForUpdates «Проверить обновления». The update is Android's APK
+ *   self-update; an iPhone gets new versions through its store, so the iOS
+ *   shell passes null and the row is not shown.
+ * @param reminders the daily reading reminder; null hides its section
+ *   (previews). By default the platform's own, from [ShellServices].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSettingsSheet(
     onDismiss: () -> Unit,
-    onCheckForUpdates: () -> Unit,
-    isCheckingForUpdates: Boolean
+    onCheckForUpdates: (() -> Unit)?,
+    isCheckingForUpdates: Boolean,
+    reminders: ReminderControl? = ShellServices.reminders
 ) {
-    val context = LocalContext.current
-    val preferences = remember(context) { AppUiPreferences.get(context) }
+    val preferences = remember { AppServices.library.uiPreferences }
     val openAnimation by preferences.openAnimation.collectAsState()
     val captions by preferences.shelfCaptions.collectAsState()
-    val reminderFlow = remember(context) { ReadingReminder.settings(context) }
+    val reminderFlow = remember(reminders) { reminders?.settings ?: emptyFlow() }
     val reminder by reminderFlow.collectAsState(initial = null)
     val reducedMotion = rememberReducedMotion()
     val scope = rememberCoroutineScope()
@@ -125,62 +129,66 @@ fun AppSettingsSheet(
                 onCheckedChange = preferences::setShelfCaptions
             )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            if (reminders != null) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
-            SectionLabel("Напоминание о чтении")
-            val current = reminder ?: ReminderSettings()
-            SwitchRow(
-                title = "Ежедневное напоминание",
-                subtitle = "Уведомление, если сегодня вы ещё не читали",
-                checked = current.enabled,
-                enabled = reminder != null,
-                onCheckedChange = { enabled ->
-                    // Finishes (save + reschedule) even if the sheet is closed right away.
-                    scope.launch { withContext(NonCancellable) { ReadingReminder.setEnabled(context, enabled) } }
-                }
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .clickable(
-                        enabled = reminder != null && current.enabled,
-                        role = Role.Button,
-                        onClickLabel = "Изменить время напоминания"
-                    ) { pickingTime = true },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Время",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                    color = if (current.enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                SectionLabel("Напоминание о чтении")
+                val current = reminder ?: ReminderSettings()
+                SwitchRow(
+                    title = "Ежедневное напоминание",
+                    subtitle = "Уведомление, если сегодня вы ещё не читали",
+                    checked = current.enabled,
+                    enabled = reminder != null,
+                    onCheckedChange = { enabled ->
+                        // Finishes (save + reschedule) even if the sheet is closed right away.
+                        scope.launch { withContext(NonCancellable) { reminders.setEnabled(enabled) } }
                     }
                 )
-                Text(
-                    text = formatReminderTime(current.hour, current.minute),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (current.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .clickable(
+                            enabled = reminder != null && current.enabled,
+                            role = Role.Button,
+                            onClickLabel = "Изменить время напоминания"
+                        ) { pickingTime = true },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Время",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                        color = if (current.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Text(
+                        text = formatReminderTime(current.hour, current.minute),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (current.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .clickable(enabled = !isCheckingForUpdates, role = Role.Button, onClick = onCheckForUpdates),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(16.dp))
-                Text("Проверить обновления", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                if (isCheckingForUpdates) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            if (onCheckForUpdates != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .clickable(enabled = !isCheckingForUpdates, role = Role.Button, onClick = onCheckForUpdates),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(16.dp))
+                    Text("Проверить обновления", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    if (isCheckingForUpdates) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
                 }
             }
             Row(
@@ -192,7 +200,7 @@ fun AppSettingsSheet(
                 Icon(Icons.Rounded.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
                 Text(
-                    text = "О приложении · версия ${BuildConfig.VERSION_NAME}",
+                    text = "О приложении · версия ${AppInfo.versionName}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -200,7 +208,7 @@ fun AppSettingsSheet(
         }
     }
 
-    if (pickingTime) {
+    if (pickingTime && reminders != null) {
         val current = reminder ?: ReminderSettings()
         val state = rememberTimePickerState(
             initialHour = current.hour,
@@ -216,7 +224,7 @@ fun AppSettingsSheet(
                     onClick = {
                         pickingTime = false
                         scope.launch {
-                            withContext(NonCancellable) { ReadingReminder.setTime(context, state.hour, state.minute) }
+                            withContext(NonCancellable) { reminders.setTime(state.hour, state.minute) }
                         }
                     }
                 ) { Text("Готово") }

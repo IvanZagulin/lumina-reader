@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.transition
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -41,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.theme.LoraFamily
 import com.lumina.reader.ui.components.BookCover
 import com.lumina.reader.ui.theme.Lumina
@@ -109,7 +109,8 @@ fun BookTransitionOverlay(state: BookTransitionState, modifier: Modifier = Modif
 
     // The animation is short; back is ignored until it ends. While only waiting for a
     // slow reader, back stops waiting: the overlay fades and the next back closes the reader.
-    BackHandler(enabled = true) {
+    // (iPhone has no system back; there the overlay simply ends on its own.)
+    PlatformBackHandler(enabled = true) {
         if (state.phase == BookTransitionState.Phase.WaitingReader) state.skipWaiting()
     }
 

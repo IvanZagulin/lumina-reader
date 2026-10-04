@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.lumina.reader.core.library.resolveStoredLibraryPath
 import com.lumina.reader.core.text.formatGrouped
 import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaDimens
@@ -44,15 +45,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import java.io.File
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.YearMonth
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
-import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.YearMonth
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import okio.FileSystem
+import okio.SYSTEM
 
 // Chart palette (spec §1.1); names kept from the old hard-coded colours.
 private val StatsBlue: Color
@@ -67,7 +71,6 @@ private val StatsPurple: Color
     @Composable @ReadOnlyComposable get() = statsPalette().plum
 private val StatsOrange: Color
     @Composable @ReadOnlyComposable get() = statsPalette().ochre
-private val RussianLocale = Locale("ru", "RU")
 
 private enum class TrendRange(val days: Int, val title: String) {
     WEEK(7, "7 дней"),
@@ -547,7 +550,7 @@ private fun GoalsCard(
                     modifier = Modifier.weight(1f)
                 )
                 GoalTile(
-                    title = "${LocalDate.now().year}",
+                    title = "${statsToday().year}",
                     value = "${state.completedBooksThisYear} / ${state.goalSettings.yearlyBooksTarget}",
                     subtitle = if (state.projectedBooksThisYear > 0) {
                         "Прогноз: ${state.projectedBooksThisYear} книг"
@@ -770,7 +773,7 @@ private fun ActivityTrendCard(state: ReadingStatsUiState) {
 private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
     var monthsBack by rememberSaveable { mutableIntStateOf(12) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
-    val today = allActivity.lastOrNull()?.date ?: LocalDate.now()
+    val today = allActivity.lastOrNull()?.date ?: statsToday()
     val days = when (monthsBack) {
         3 -> 92
         6 -> 183
@@ -779,8 +782,8 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
     val visible = allActivity.takeLast(days)
     val byDate = remember(visible) { visible.associateBy(DailyReadingActivity::date) }
     val firstDate = visible.firstOrNull()?.date ?: today
-    val startMonday = firstDate.minusDays((firstDate.dayOfWeek.value - 1).toLong())
-    val totalDays = ChronoUnit.DAYS.between(startMonday, today).toInt() + 1
+    val startMonday = firstDate.minus(firstDate.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+    val totalDays = startMonday.daysUntil(today) + 1
     val weeks = ceil(totalDays / 7.0).toInt().coerceAtLeast(1)
     val maxSeconds = visible.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1L) ?: 1L
     val palette = statsPalette()
@@ -820,8 +823,8 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
                             val cellHeight = size.height / 7f
                             val week = (offset.x / cellWidth).toInt().coerceIn(0, weeks - 1)
                             val day = (offset.y / cellHeight).toInt().coerceIn(0, 6)
-                            val date = startMonday.plusDays((week * 7L) + day)
-                            if (!date.isAfter(today) && date in byDate.keys) {
+                            val date = startMonday.plus(week * 7 + day, DateTimeUnit.DAY)
+                            if (date <= today && date in byDate.keys) {
                                 selectedDate = date
                             }
                         }
@@ -833,8 +836,8 @@ private fun HeatmapCard(allActivity: List<DailyReadingActivity>) {
 
                 repeat(weeks) { week ->
                     repeat(7) { day ->
-                        val date = startMonday.plusDays(week * 7L + day)
-                        if (!date.isAfter(today)) {
+                        val date = startMonday.plus(week * 7 + day, DateTimeUnit.DAY)
+                        if (date <= today) {
                             val activity = byDate[date]
                             val ratio = activity?.durationSeconds
                                 ?.toFloat()
@@ -1145,7 +1148,7 @@ private fun WeekdayRhythmCard(activity: List<WeekdayReadingActivity>) {
 
 @Composable
 private fun RecordsCard(records: PersonalRecords) {
-    val dateText = records.bestDayDate?.let(::formatDateShort) ?: "—"
+    val dateText = records.bestDayDate?.let(RussianDates::dayMonthShort) ?: "—"
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         RecordRow(
             RecordValue(
@@ -1310,8 +1313,15 @@ private fun EquivalentTag(text: String) {
 
 @Composable
 private fun BookOfMonthCard(book: BookReadingSummary) {
+    // The cover only when its file is really there, else the book icon. The
+    // stored path is resolved first: iOS keeps it relative to the app container.
     val coverFile = remember(book.coverPath) {
-        book.coverPath?.let(::File)?.takeIf(File::isFile)
+        book.coverPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::resolveStoredLibraryPath)
+            ?.takeIf { path ->
+                runCatching { FileSystem.SYSTEM.metadataOrNull(path)?.isRegularFile == true }.getOrDefault(false)
+            }
     }
 
     Card(
@@ -1475,7 +1485,7 @@ private fun CompletedBooksByMonthCard(state: ReadingStatsUiState) {
                         style = statsNumeralStyle()
                     )
                     Text(
-                        "книг завершено в ${LocalDate.now().year}",
+                        "книг завершено в ${statsToday().year}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2024,17 +2034,9 @@ private fun formatDurationShort(seconds: Long): String {
 
 private fun formatNumber(value: Long): String = formatGrouped(value)
 
-private fun formatDate(date: LocalDate): String =
-    date.format(DateTimeFormatter.ofPattern("d MMMM yyyy", RussianLocale))
+private fun formatDate(date: LocalDate): String = RussianDates.dayMonthYear(date)
 
-private fun formatDateShort(date: LocalDate): String =
-    date.format(DateTimeFormatter.ofPattern("d MMM", RussianLocale))
-
-private fun monthLabel(month: YearMonth): String =
-    month.atDay(1)
-        .format(DateTimeFormatter.ofPattern("LLL", RussianLocale))
-        .replace(".", "")
-        .replaceFirstChar { it.uppercase() }
+private fun monthLabel(month: YearMonth): String = RussianDates.monthShortCapitalized(month)
 
 private fun weekdayShort(day: DayOfWeek): String = when (day) {
     DayOfWeek.MONDAY -> "Пн"

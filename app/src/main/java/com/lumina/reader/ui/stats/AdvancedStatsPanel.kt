@@ -29,12 +29,10 @@ import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.text.formatDecimal
 import com.lumina.reader.core.text.formatGrouped
 import com.lumina.reader.ui.theme.LegacyM3Defaults
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.YearMonth
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.YearMonth
 
 // Chart palette (spec §1.1); names kept from the old hard-coded colours.
 private val AdvBlue: Color
@@ -49,7 +47,6 @@ private val AdvPurple: Color
     @Composable @ReadOnlyComposable get() = statsPalette().plum
 private val AdvOrange: Color
     @Composable @ReadOnlyComposable get() = statsPalette().ochre
-private val RuLocale = Locale("ru", "RU")
 
 @Composable
 fun AdvancedStatsPanel(
@@ -664,9 +661,9 @@ private fun EmptyInside(text: String) {
 }
 
 private fun monthWithValue(month: YearMonth?, value: String): String = month?.let { "${formatMonth(it)} · $value" } ?: "—"
-private fun formatMonth(month: YearMonth): String = month.atDay(1).format(DateTimeFormatter.ofPattern("LLL yy", RuLocale)).replace(".", "")
-private fun formatMonthLong(month: YearMonth): String = month.atDay(1).format(DateTimeFormatter.ofPattern("LLLL yyyy", RuLocale)).replaceFirstChar { it.uppercase() }
-private fun formatDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMM", RuLocale))
+private fun formatMonth(month: YearMonth): String = RussianDates.monthShortYear(month)
+private fun formatMonthLong(month: YearMonth): String = RussianDates.monthLongYear(month)
+private fun formatDate(date: LocalDate): String = RussianDates.dayMonthShort(date)
 private fun formatNumber(value: Long): String = formatGrouped(value)
 private fun formatDuration(seconds: Long): String {
     if (seconds <= 0) return "0 мин"

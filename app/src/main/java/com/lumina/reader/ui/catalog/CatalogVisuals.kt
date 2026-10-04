@@ -46,7 +46,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -58,6 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -292,7 +292,8 @@ internal fun CatalogCover(
                 }
             }
             if (url != null) {
-                val context = LocalContext.current
+                // Coil's platform context: the Android Context, as before; a placeholder on iOS.
+                val context = LocalPlatformContext.current
                 val request = remember(url, authHeaders, large) {
                     ImageRequest.Builder(context)
                         .data(url)

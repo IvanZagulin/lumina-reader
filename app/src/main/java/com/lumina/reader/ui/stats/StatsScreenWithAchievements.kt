@@ -21,8 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.lumina.reader.ui.theme.LuminaShape
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.ui.theme.LuminaShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,7 +31,10 @@ fun StatsScreenWithAchievements(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val advancedViewModel: AdvancedStatsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    // An explicit initializer: iOS has no reflective ViewModel factory. Fully
+    // qualified because the `viewModel` parameter above shadows the function.
+    val advancedViewModel: AdvancedStatsViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel { AdvancedStatsViewModel() }
     val advanced by advancedViewModel.uiState.collectAsState()
     var showAchievements by remember { mutableStateOf(false) }
     var showAnalytics by remember { mutableStateOf(false) }

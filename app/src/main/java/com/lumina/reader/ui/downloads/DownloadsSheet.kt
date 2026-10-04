@@ -29,19 +29,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.lumina.reader.core.library.BookImporter
+import com.lumina.reader.ui.catalog.CatalogServicesHolder
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 
 /**
  * Every download task (spec §7.10): progress, cancel, retry, open, and
- * «Очистить готовые» to forget finished ones. Reads [BookImporter.downloads].
+ * «Очистить готовые» to forget finished ones. Reads the app-wide
+ * [com.lumina.reader.ui.catalog.CatalogDownloads] (Android's BookImporter).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,18 +49,17 @@ fun DownloadsSheet(
     onDismiss: () -> Unit,
     onOpenBook: (Long) -> Unit
 ) {
-    val context = LocalContext.current
-    val importer = remember(context) { BookImporter.get(context) }
-    val downloads by importer.downloads.collectAsState()
+    val bookDownloads = remember { CatalogServicesHolder.services.downloads }
+    val downloads by bookDownloads.downloads.collectAsState()
     val meta by DownloadMetaRegistry.meta.collectAsState()
     val rows = remember(downloads, meta) { DownloadUiMapper.rows(downloads, meta) }
     val reducedMotion = rememberReducedMotion()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val actions = remember(importer, onOpenBook, onDismiss) {
+    val actions = remember(bookDownloads, onOpenBook, onDismiss) {
         DownloadRowActions(
-            onCancel = importer::cancel,
-            onRetry = { key -> importer.retry(key) },
-            onDismiss = importer::dismiss,
+            onCancel = bookDownloads::cancel,
+            onRetry = { key -> bookDownloads.retry(key) },
+            onDismiss = bookDownloads::dismiss,
             onOpen = { bookId ->
                 onOpenBook(bookId)
                 onDismiss()
@@ -93,7 +92,7 @@ fun DownloadsSheet(
                 )
                 if (rows.any { it.isFinished && it.bookId != null }) {
                     TextButton(onClick = {
-                        rows.filter { it.isFinished && it.bookId != null }.forEach { importer.dismiss(it.key) }
+                        rows.filter { it.isFinished && it.bookId != null }.forEach { bookDownloads.dismiss(it.key) }
                     }) {
                         Text("Очистить готовые")
                     }

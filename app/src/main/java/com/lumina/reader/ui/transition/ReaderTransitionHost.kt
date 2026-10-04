@@ -1,7 +1,5 @@
 package com.lumina.reader.ui.transition
 
-import androidx.activity.BackEventCompat
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -24,24 +22,18 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
-import com.lumina.reader.core.preferences.AppUiPreferences
-import com.lumina.reader.core.preferences.get
+import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.ui.components.BookCoverModel
 import com.lumina.reader.ui.components.toCoverModel
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Wraps the reader (spec §6.3). It records the reader into a layer so the
@@ -50,6 +42,8 @@ import kotlinx.coroutines.withContext
  * shrinks to 0.9 with rounded corners over the quarter-resolution library.
  * Only seams S1–S3 of the reader are used: the reader's own BackHandlers
  * (composed later, inside [content]) win while its overlays are open.
+ * iPhone has no back preview ([PlatformPredictiveBackHandler] is a no-op
+ * there); its reader closes through `requestClose` with the same animation.
  */
 @Composable
 fun ReaderTransitionHost(
@@ -58,18 +52,17 @@ fun ReaderTransitionHost(
     content: @Composable (requestClose: () -> Unit) -> Unit
 ) {
     val transition = LocalBookTransition.current
-    val context = LocalContext.current
-    val uiPreferences = remember(context) { AppUiPreferences.get(context) }
+    val uiPreferences = remember { AppServices.library.uiPreferences }
     val openAnimation by uiPreferences.openAnimation.collectAsState()
     val reducedMotion = rememberReducedMotion()
     val mode = if (reducedMotion) OpenAnimation.OFF else openAnimation
 
     // Title, author and cover for the closing book; independent of reader internals.
+    // A suspend Room query runs on Room's own executor on both platforms, so no
+    // dispatcher switch is needed (Dispatchers.IO is not visible in common UI code).
     val cover by produceState<BookCoverModel?>(initialValue = null, bookId) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { AppDatabase.getDatabase(context).bookDao().getBookById(bookId)?.toCoverModel() }
-                .getOrNull()
-        }
+        value = runCatching { AppServices.library.bookDao.getBookById(bookId)?.toCoverModel() }
+            .getOrNull()
     }
 
     val layer = rememberGraphicsLayer()
@@ -95,10 +88,10 @@ fun ReaderTransitionHost(
     val predictiveEnabled = transition != null &&
         mode != OpenAnimation.OFF &&
         transition.phase == BookTransitionState.Phase.Idle
-    PredictiveBackHandler(enabled = predictiveEnabled) { events ->
+    PlatformPredictiveBackHandler(enabled = predictiveEnabled) { events ->
         try {
             events.collect { event ->
-                swipeFromLeft = event.swipeEdge == BackEventCompat.EDGE_LEFT
+                swipeFromLeft = event.fromLeftEdge
                 back.snapTo(event.progress)
             }
             val p = back.value

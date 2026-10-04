@@ -1,14 +1,12 @@
 package com.lumina.reader.ui.chat
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
-import com.lumina.reader.core.download.DownloadRequest
 import com.lumina.reader.core.download.DownloadState
-import com.lumina.reader.core.library.BookImporter
-import com.lumina.reader.core.library.LibraryRepository
+import com.lumina.reader.core.library.AppServices
+import com.lumina.reader.core.library.ChatServices
+import com.lumina.reader.core.library.ChatServicesHolder
+import com.lumina.reader.core.library.LibraryServices
 import com.lumina.reader.core.library.matchSeriesBooks
 import com.lumina.reader.core.library.normalizeTitleForMatch
 import com.lumina.reader.core.model.Book
@@ -18,7 +16,6 @@ import com.lumina.reader.core.network.AiMessage
 import com.lumina.reader.core.opds.FoundPublication
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
-import com.lumina.reader.core.preferences.CatalogPreferences
 import com.lumina.reader.ui.downloads.DownloadMeta
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
@@ -36,9 +33,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 sealed class AiAction {
     data class DownloadBook(val query: String) : AiAction()
@@ -47,20 +46,30 @@ sealed class AiAction {
 
 /**
  * Chat with the assistant. Commands in the answers ([DOWNLOAD], [ORGANIZE])
- * are executed here, in the app scope of [BookImporter], so leaving the chat
- * does not cancel a search or download; downloads show the usual per-book
- * progress, notifications and snackbars.
+ * are executed here, in the app scope of the library's imports
+ * ([com.lumina.reader.core.library.LibraryImports.launchInBackground]), so
+ * leaving the chat does not cancel a search or download; downloads show the
+ * usual per-book progress, notifications and snackbars.
+ *
+ * Every collaborator has a default, so Android's `viewModel()` can still
+ * create it without a factory; iOS uses `viewModel { AiChatViewModel() }`.
+ * The library and the chat services come from the per-platform holders
+ * because a shared view model cannot open the database or the preference
+ * files itself (Android needs a `Context` for them).
  */
-class AiChatViewModel(application: Application) : AndroidViewModel(application) {
+class AiChatViewModel(
+    library: LibraryServices = AppServices.library,
+    chat: ChatServices = ChatServicesHolder.services,
+    private val aiClient: AiClient = AiClient(),
+    private val opdsRepository: OpdsRepository = OpdsRepository()
+) : ViewModel() {
 
-    private val aiClient = AiClient()
-    private val database = AppDatabase.getDatabase(application)
-    private val bookDao = database.bookDao()
-    private val statsDao = database.readingStatsDao()
-    private val importer = BookImporter.get(application)
-    private val libraryRepository = LibraryRepository(application)
-    private val catalogPreferences = CatalogPreferences(application)
-    private val opdsRepository = OpdsRepository()
+    private val bookDao = library.bookDao
+    private val statsDao = chat.readingStatsDao
+    private val imports = library.imports
+    private val libraryRepository = library.repository
+    private val catalogPreferences = chat.catalogPreferences
+    private val chatDownloads = chat.downloads
 
     private val defaultSystemMessage = "Ты полезный ИИ-ассистент в приложении-читалке Lumina Reader. Ты можешь выполнять команды. ДАННЫЕ БИБЛИОТЕКИ в системном сообщении — единственный источник о том, какие книги уже скачаны: никогда не утверждай, что книга есть у пользователя, если её точного названия нет в этом списке. Для вопросов о числе книг, названиях, порядке серии, авторе, а также перед созданием команды скачивания используй результаты веб-поиска. Если поиск не подтвердил факт, честно скажи, что не можешь его проверить; не дополняй ответ догадками. Если пользователь просит найти или скачать книгу/серию, напиши в самом конце ответа команду [DOWNLOAD:название книги] только для проверенного названия. Ты можешь написать несколько команд [DOWNLOAD] подряд, чтобы скачать несколько книг сразу. Не создавай [DOWNLOAD] для уже скачанных книг. Если пользователь просит серию, перечисляй её в порядке книг и добавляй [ORGANIZE:Название серии:Книга1|Книга2] со всеми подтверждёнными томами серии в правильном порядке — приложение дождётся загрузки и расставит номера. Служебные команды не видны пользователю и выполняются приложением: не называй их «командами», не объясняй их синтаксис и не оставляй перед ними пустые заголовки. В обычном тексте кратко сообщи, что начинаешь поиск или загрузку. Строго отвечай ТОЛЬКО на русском языке! Никогда не используй китайский язык (No Chinese)."
 
@@ -82,9 +91,31 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Download cards of the chat (spec §7.11): index of the status message
      * «Найдена «…». Начинаю загрузку…» in [messages] → the download key
-     * (acquisition URL) in [BookImporter.downloads]. UI state only.
+     * (acquisition URL) in [downloads]. UI state only.
      */
     val downloadCards: StateFlow<Map<Int, String>> = _downloadCards.asStateFlow()
+
+    /**
+     * Live state of all downloads, keyed by URL; the chat shows the ones in
+     * [downloadCards]. The screen reads it here instead of asking the platform
+     * for the importer.
+     */
+    val downloads: StateFlow<Map<String, DownloadState>> = chatDownloads.downloads
+
+    /** Cancels the download behind a card; its state disappears. */
+    fun cancelDownload(key: String) {
+        chatDownloads.cancel(key)
+    }
+
+    /** Starts a failed download of a card again. */
+    fun retryDownload(key: String) {
+        chatDownloads.retry(key)
+    }
+
+    /** Forgets a finished download (for example after the user opened the book). */
+    fun dismissDownload(key: String) {
+        chatDownloads.dismiss(key)
+    }
 
     /** Limits parallel catalogue searches when the assistant asks for many books. */
     private val searchSlots = Semaphore(2)
@@ -133,7 +164,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                reportExecutionResult("Произошла ошибка: ${e.localizedMessage ?: "нет ответа от сервиса"}")
+                // message, not the JVM-only localizedMessage: on the JVM that is
+                // the same text unless a subclass overrides it, and the client's
+                // network and API exceptions do not.
+                reportExecutionResult("Произошла ошибка: ${e.message ?: "нет ответа от сервиса"}")
             } finally {
                 _isLoading.value = false
             }
@@ -158,13 +192,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun executeActions(actions: List<AiAction>) {
         if (actions.isEmpty()) return
-        val downloads = actions.filterIsInstance<AiAction.DownloadBook>()
+        val downloadActions = actions.filterIsInstance<AiAction.DownloadBook>()
         val organizes = actions.filterIsInstance<AiAction.OrganizeSeries>()
 
-        importer.launchInBackground {
+        imports.launchInBackground {
             // Downloads first: the series is organised once its books are in the library.
             val downloaded: Map<String, Long> = coroutineScope {
-                downloads.map { action ->
+                downloadActions.map { action ->
                     async { action.query to findAndDownload(action.query) }
                 }.awaitAll()
             }.mapNotNull { (query, bookId) -> bookId?.let { normalizeTitleForMatch(query) to it } }
@@ -212,15 +246,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 formatLabel = acquisition.label
             )
         )
-        val outcome = importer.downloadAndAwait(
-            DownloadRequest(
-                url = acquisition.url,
-                title = title,
-                author = best.publication.authorLine,
-                formatHint = acquisition.format,
-                headers = best.catalog.authHeaders(),
-                mirrorBaseUrls = best.catalog.mirrorBaseUrls
-            )
+        val outcome = chatDownloads.downloadAndAwait(
+            url = acquisition.url,
+            title = title,
+            author = best.publication.authorLine,
+            formatHint = acquisition.format,
+            headers = best.catalog.authHeaders(),
+            mirrorBaseUrls = best.catalog.mirrorBaseUrls
         )
         return when (outcome) {
             is DownloadState.Completed -> {
@@ -320,8 +352,12 @@ internal fun buildLibraryContext(books: List<Book>): String =
         "- ${book.title} (${book.author}) [Полка: ${book.collection}, Серия: $series, $progress]"
     }
 
-/** The four numbers the assistant gets, computed like the statistics screen does. */
-internal fun buildStatsContext(stats: List<ReadingStats>, zoneId: ZoneId = ZoneId.systemDefault()): String {
+/**
+ * The four numbers the assistant gets, computed like the statistics screen does.
+ * Active days are calendar days in [timeZone] (the device's zone, as before).
+ */
+@OptIn(ExperimentalTime::class)
+internal fun buildStatsContext(stats: List<ReadingStats>, timeZone: TimeZone = TimeZone.currentSystemDefault()): String {
     val wordsRead = stats.sumOf { it.wordsReadCount.toLong() }
     val pages = if (wordsRead == 0L) 0L else (wordsRead + WORDS_PER_PAGE - 1) / WORDS_PER_PAGE
     val measured = stats.filter { it.wordsReadCount > 0 && it.sessionDurationSeconds > 0 }
@@ -330,7 +366,7 @@ internal fun buildStatsContext(stats: List<ReadingStats>, zoneId: ZoneId = ZoneI
     val wordsPerMinute = if (measuredSeconds == 0L) 0 else (measuredWords * 60.0 / measuredSeconds).roundToInt()
     val activeDays = stats
         .filter { it.sessionDurationSeconds > 0 || it.wordsReadCount > 0 }
-        .map { Instant.ofEpochMilli(it.timestamp).atZone(zoneId).toLocalDate() }
+        .map { Instant.fromEpochMilliseconds(it.timestamp).toLocalDateTime(timeZone).date }
         .distinct()
         .size
     return """

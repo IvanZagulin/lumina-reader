@@ -1,6 +1,6 @@
 package com.lumina.reader.ui.stats
 
-import java.time.DayOfWeek
+import kotlinx.datetime.DayOfWeek
 
 /**
  * A few achievement counters are presentation-only derivatives of the already

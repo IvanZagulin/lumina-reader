@@ -1,14 +1,12 @@
 package com.lumina.reader.ui.catalog
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
+import com.lumina.reader.core.database.BookDao
 import com.lumina.reader.core.download.DownloadRequest
 import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.library.AppMessages
-import com.lumina.reader.core.library.BookImporter
+import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.opds.OpdsAcquisition
 import com.lumina.reader.core.opds.OpdsCatalogConfig
 import com.lumina.reader.core.opds.OpdsEntry
@@ -16,7 +14,6 @@ import com.lumina.reader.core.opds.OpdsFeed
 import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
-import com.lumina.reader.core.preferences.CatalogPreferences
 import com.lumina.reader.ui.downloads.DownloadMeta
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
@@ -37,26 +34,32 @@ import kotlinx.coroutines.launch
  * OPDS browsing: a start screen with the enabled catalogues, a stack of
  * feeds per catalogue (folders open sub-feeds, back returns), pagination via
  * the feed's "next" link, search inside the current catalogue and across all
- * of them. Downloads run in the app-scoped [BookImporter], so they continue
- * after the screen is closed.
+ * of them. Downloads run in the app-scoped [CatalogDownloads] (Android's
+ * BookImporter), so they continue after the screen is closed.
+ *
+ * Every parameter has a default, so Android's `viewModel()` still finds a
+ * no-argument constructor; iOS creates it with `viewModel { CatalogViewModel() }`.
  */
-class CatalogViewModel(application: Application) : AndroidViewModel(application) {
+class CatalogViewModel(
+    services: CatalogServices = CatalogServicesHolder.services,
+    bookDao: BookDao = AppServices.library.bookDao
+) : ViewModel() {
 
     private val repository = OpdsRepository()
-    private val importer = BookImporter.get(application)
-    private val catalogPreferences = CatalogPreferences(application)
+    private val bookDownloads = services.downloads
+    private val catalogPreferences = services.catalogPreferences
 
     private val mutableState = MutableStateFlow(CatalogUiState())
     val uiState: StateFlow<CatalogUiState> = mutableState.asStateFlow()
 
     /** Download state per acquisition URL. */
-    val downloads: StateFlow<Map<String, DownloadState>> = importer.downloads
+    val downloads: StateFlow<Map<String, DownloadState>> = bookDownloads.downloads
 
     /**
      * Books already on the shelf by title and author, so catalogue rows can
      * offer «В библиотеке · Открыть» instead of a second download (UI state only).
      */
-    val libraryIndex: StateFlow<LibraryIndex> = AppDatabase.getDatabase(application).bookDao().getAllBooks()
+    val libraryIndex: StateFlow<LibraryIndex> = bookDao.getAllBooks()
         .map { books -> LibraryIndex.build(books.map { LibraryIndex.Entry(it.id, it.title, it.author) }) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryIndex.Empty)
@@ -362,7 +365,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
     fun download(catalog: OpdsCatalogConfig, publication: OpdsEntry.Publication, acquisition: OpdsAcquisition) {
         rememberMeta(catalog, publication, acquisition)
-        importer.download(requestFor(catalog, publication, acquisition))
+        bookDownloads.download(requestFor(catalog, publication, acquisition))
     }
 
     /** Downloads the preferred format of every given book ("Скачать все"). */
@@ -371,7 +374,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         items.forEach { (catalog, publication) ->
             val acquisition = publication.preferredAcquisition ?: return@forEach
             rememberMeta(catalog, publication, acquisition)
-            if (importer.download(requestFor(catalog, publication, acquisition))) started++
+            if (bookDownloads.download(requestFor(catalog, publication, acquisition))) started++
         }
         AppMessages.post(
             if (started > 0) "Скачивание начато: $started ${bookWord(started)}" else "Все книги уже скачиваются или скачаны"
@@ -379,18 +382,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun retryDownload(url: String) {
-        importer.retry(url)
+        bookDownloads.retry(url)
     }
 
     fun cancelDownload(url: String) {
-        if (importer.downloads.value[url]?.isActive != true) return
-        importer.cancel(url)
+        if (bookDownloads.downloads.value[url]?.isActive != true) return
+        bookDownloads.cancel(url)
         AppMessages.post("Загрузка отменена")
     }
 
     /** Removes a finished or failed download from the lists (the catalogue home's «✕»). */
     fun dismissDownload(url: String) {
-        importer.dismiss(url)
+        bookDownloads.dismiss(url)
     }
 
     /** Title, author and cover for the download island and sheet (UI labels only). */

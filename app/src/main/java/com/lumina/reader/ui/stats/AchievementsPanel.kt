@@ -60,8 +60,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.DayOfWeek
 import kotlin.math.roundToInt
+import kotlinx.datetime.DayOfWeek
 
 // Chart palette (spec §1.1, light values; this legacy panel builds its badges outside composition).
 private val AchievementGold = StatsPalette.Light.brass

@@ -1,20 +1,12 @@
 package com.lumina.reader.ui.stats
 
-import android.app.Application
-import android.content.Context
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStats
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.LocalDate
-import java.time.YearMonth
-import java.time.ZoneId
-import java.time.temporal.ChronoUnit
+import com.lumina.reader.platform.AppClock
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,8 +14,18 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.YearMonth
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlinx.datetime.yearMonth
 
 enum class StatsPeriod {
     TODAY,
@@ -187,22 +189,29 @@ data class ReadingStatsUiState(
         comparisons[period] ?: PeriodComparison()
 }
 
-class StatsViewModel(application: Application) : AndroidViewModel(application) {
+/**
+ * The statistics tab. [services] come from [StatsServicesHolder] (installed by
+ * `LuminaApp` on Android, built from the app's database on iOS); the default
+ * argument also gives the class the no-argument constructor that Android's
+ * reflective `viewModel()` factory needs.
+ */
+class StatsViewModel(
+    services: StatsServices = StatsServicesHolder.services
+) : ViewModel() {
 
-    private val database = AppDatabase.getDatabase(application)
-    private val goalPreferences = StatsGoalPreferences(application)
+    private val goalPreferences = StatsGoalPreferences(services.goalStore)
     private val goals = MutableStateFlow(goalPreferences.load())
 
     private val clock = flow {
         while (currentCoroutineContext().isActive) {
-            emit(System.currentTimeMillis())
+            emit(AppClock.nowMillis())
             delay(CLOCK_REFRESH_MILLIS)
         }
     }
 
     val uiState: StateFlow<ReadingStatsUiState> = combine(
-        database.readingStatsDao().getAllStats(),
-        database.bookDao().getAllBooks(),
+        services.readingStatsDao.getAllStats(),
+        services.bookDao.getAllBooks(),
         clock,
         goals
     ) { stats, books, nowMillis, goalSettings ->
@@ -210,14 +219,18 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             stats = stats,
             books = books,
             nowMillis = nowMillis,
-            zoneId = ZoneId.systemDefault(),
+            timeZone = TimeZone.currentSystemDefault(),
             goalSettings = goalSettings
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = ReadingStatsUiState()
-    )
+    }
+        // A year of daily history over every session, once a minute: off the
+        // main thread, where it would stutter scrolling (above all on iPhone).
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            initialValue = ReadingStatsUiState()
+        )
 
     fun updateDailyGoal(type: DailyGoalType, target: Int) {
         val safeTarget = when (type) {
@@ -242,14 +255,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-private class StatsGoalPreferences(context: Context) {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+/**
+ * The reading goals in [store]: on Android the SharedPreferences file
+ * "reading_stats_goals" with the keys it has always had, so users keep their
+ * goals. A broken type value falls back to minutes.
+ */
+private class StatsGoalPreferences(private val store: StatsGoalStore) {
 
     fun load(): StatsGoalSettings {
         val type = runCatching {
             DailyGoalType.valueOf(
-                prefs.getString(KEY_DAILY_TYPE, DailyGoalType.MINUTES.name)
-                    ?: DailyGoalType.MINUTES.name
+                store.getString(KEY_DAILY_TYPE) ?: DailyGoalType.MINUTES.name
             )
         }.getOrDefault(DailyGoalType.MINUTES)
 
@@ -260,21 +276,22 @@ private class StatsGoalPreferences(context: Context) {
         }
         return StatsGoalSettings(
             dailyType = type,
-            dailyTarget = prefs.getInt(KEY_DAILY_TARGET, defaultTarget),
-            yearlyBooksTarget = prefs.getInt(KEY_YEAR_TARGET, 24)
+            dailyTarget = store.getInt(KEY_DAILY_TARGET, defaultTarget),
+            yearlyBooksTarget = store.getInt(KEY_YEAR_TARGET, 24)
         )
     }
 
     fun save(settings: StatsGoalSettings) {
-        prefs.edit()
-            .putString(KEY_DAILY_TYPE, settings.dailyType.name)
-            .putInt(KEY_DAILY_TARGET, settings.dailyTarget)
-            .putInt(KEY_YEAR_TARGET, settings.yearlyBooksTarget)
-            .apply()
+        store.putAll(
+            strings = mapOf(KEY_DAILY_TYPE to settings.dailyType.name),
+            ints = mapOf(
+                KEY_DAILY_TARGET to settings.dailyTarget,
+                KEY_YEAR_TARGET to settings.yearlyBooksTarget
+            )
+        )
     }
 
     private companion object {
-        const val PREFS_NAME = "reading_stats_goals"
         const val KEY_DAILY_TYPE = "daily_goal_type"
         const val KEY_DAILY_TARGET = "daily_goal_target"
         const val KEY_YEAR_TARGET = "yearly_books_target"
@@ -288,14 +305,18 @@ internal object ReadingStatsCalculator {
     private const val TOP_BOOK_LIMIT = 5
     private const val HISTORY_DAYS = 370L
 
+    /** 2000-01-01T00:00:00Z: older timestamps come from a broken clock, not from reading. */
+    private const val OLDEST_ACCEPTED_TIMESTAMP = 946_684_800_000L
+
     fun calculate(
         stats: List<ReadingStats>,
         books: List<Book>,
         nowMillis: Long,
-        zoneId: ZoneId,
+        timeZone: TimeZone,
         goalSettings: StatsGoalSettings = StatsGoalSettings()
     ): ReadingStatsUiState {
-        val oldestAcceptedTimestamp = Instant.parse("2000-01-01T00:00:00Z").toEpochMilli()
+        val times = LocalTimes(timeZone)
+        val oldestAcceptedTimestamp = OLDEST_ACCEPTED_TIMESTAMP
         val newestAcceptedTimestamp = nowMillis + MAX_FUTURE_SKEW_MILLIS
         val validStats = stats.asSequence()
             .filter {
@@ -306,16 +327,16 @@ internal object ReadingStatsCalculator {
             .sortedByDescending(ReadingStats::timestamp)
             .toList()
 
-        val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
-        val currentMonth = YearMonth.from(today)
-        val currentYearStart = today.withDayOfYear(1)
-        val sevenDayStart = today.minusDays(6)
-        val thirtyDayStart = today.minusDays(29)
-        val sessionsByDate = validStats.groupBy { it.localDate(zoneId) }
+        val today = times.date(nowMillis)
+        val currentMonth: YearMonth = today.yearMonth
+        val currentYearStart = LocalDate(today.year, 1, 1)
+        val sevenDayStart = today.minus(6, DateTimeUnit.DAY)
+        val thirtyDayStart = today.minus(29, DateTimeUnit.DAY)
+        val sessionsByDate = validStats.groupBy { it.localDate(times) }
         val readingDates = sessionsByDate.keys.sorted()
 
         val dailyActivity = (HISTORY_DAYS - 1 downTo 0L).map { daysAgo ->
-            val date = today.minusDays(daysAgo)
+            val date = today.minus(daysAgo, DateTimeUnit.DAY)
             val sessions = sessionsByDate[date].orEmpty()
             DailyReadingActivity(
                 date = date,
@@ -326,26 +347,26 @@ internal object ReadingStatsCalculator {
         }
 
         val todayStats = sessionsByDate[today].orEmpty()
-        val sevenDayStats = validStats.filter { it.localDate(zoneId) in sevenDayStart..today }
-        val thirtyDayStats = validStats.filter { it.localDate(zoneId) in thirtyDayStart..today }
-        val yearStats = validStats.filter { it.localDate(zoneId) in currentYearStart..today }
+        val sevenDayStats = validStats.filter { it.localDate(times) in sevenDayStart..today }
+        val thirtyDayStats = validStats.filter { it.localDate(times) in thirtyDayStart..today }
+        val yearStats = validStats.filter { it.localDate(times) in currentYearStart..today }
 
-        val previousDayStats = sessionsByDate[today.minusDays(1)].orEmpty()
-        val previousSevenStart = sevenDayStart.minusDays(7)
-        val previousSevenEnd = sevenDayStart.minusDays(1)
+        val previousDayStats = sessionsByDate[today.minus(1, DateTimeUnit.DAY)].orEmpty()
+        val previousSevenStart = sevenDayStart.minus(7, DateTimeUnit.DAY)
+        val previousSevenEnd = sevenDayStart.minus(1, DateTimeUnit.DAY)
         val previousSevenStats = validStats.filter {
-            it.localDate(zoneId) in previousSevenStart..previousSevenEnd
+            it.localDate(times) in previousSevenStart..previousSevenEnd
         }
-        val previousThirtyStart = thirtyDayStart.minusDays(30)
-        val previousThirtyEnd = thirtyDayStart.minusDays(1)
+        val previousThirtyStart = thirtyDayStart.minus(30, DateTimeUnit.DAY)
+        val previousThirtyEnd = thirtyDayStart.minus(1, DateTimeUnit.DAY)
         val previousThirtyStats = validStats.filter {
-            it.localDate(zoneId) in previousThirtyStart..previousThirtyEnd
+            it.localDate(times) in previousThirtyStart..previousThirtyEnd
         }
-        val previousYearStart = currentYearStart.minusYears(1)
-        val elapsedYearDays = ChronoUnit.DAYS.between(currentYearStart, today)
-        val previousYearEnd = previousYearStart.plusDays(elapsedYearDays)
+        val previousYearStart = currentYearStart.minus(1, DateTimeUnit.YEAR)
+        val elapsedYearDays = currentYearStart.daysUntil(today)
+        val previousYearEnd = previousYearStart.plus(elapsedYearDays, DateTimeUnit.DAY)
         val previousYearStats = validStats.filter {
-            it.localDate(zoneId) in previousYearStart..previousYearEnd
+            it.localDate(times) in previousYearStart..previousYearEnd
         }
 
         val summaries = mapOf(
@@ -388,7 +409,7 @@ internal object ReadingStatsCalculator {
             .take(TOP_BOOK_LIMIT)
 
         val monthStats = validStats.filter {
-            YearMonth.from(it.localDate(zoneId)) == currentMonth
+            it.localDate(times).yearMonth == currentMonth
         }
         val bookOfMonth = monthStats
             .groupBy(ReadingStats::bookId)
@@ -419,16 +440,16 @@ internal object ReadingStatsCalculator {
         }
 
         val monthlyActivity = (11 downTo 0).map { monthsAgo ->
-            val month = currentMonth.minusMonths(monthsAgo.toLong())
+            val month = currentMonth.minus(monthsAgo, DateTimeUnit.MONTH)
             val sessions = validStats.filter {
-                YearMonth.from(it.localDate(zoneId)) == month
+                it.localDate(times).yearMonth == month
             }
             val measured = sessions.filter { it.wordsReadCount > 0 && it.sessionDurationSeconds > 0 }
             val measuredSeconds = measured.sumOf { it.sessionDurationSeconds }
             val measuredWords = measured.sumOf { it.wordsReadCount.toLong() }
             val completed = books.count { book ->
                 book.completedAt?.let { timestamp ->
-                    YearMonth.from(Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()) == month
+                    times.date(timestamp).yearMonth == month
                 } == true
             }
             MonthlyReadingActivity(
@@ -448,7 +469,7 @@ internal object ReadingStatsCalculator {
             HourlyReadingActivity(
                 hour = hour,
                 durationSeconds = validStats
-                    .filter { it.hour(zoneId) == hour }
+                    .filter { it.hour(times) == hour }
                     .sumOf { it.sessionDurationSeconds }
             )
         }
@@ -456,7 +477,7 @@ internal object ReadingStatsCalculator {
             WeekdayReadingActivity(
                 dayOfWeek = day,
                 durationSeconds = validStats
-                    .filter { it.localDate(zoneId).dayOfWeek == day }
+                    .filter { it.localDate(times).dayOfWeek == day }
                     .sumOf { it.sessionDurationSeconds }
             )
         }
@@ -470,7 +491,7 @@ internal object ReadingStatsCalculator {
             (measuredWords * 60.0 / measuredSeconds).roundToInt().coerceAtLeast(0)
 
         val favoritePart = validStats
-            .groupBy { it.partOfDay(zoneId) }
+            .groupBy { it.partOfDay(times) }
             .maxByOrNull { (_, sessions) -> sessions.sumOf { it.sessionDurationSeconds } }
             ?.key
         val favoriteWeekday = weekdayActivity.maxByOrNull { it.durationSeconds }
@@ -493,7 +514,7 @@ internal object ReadingStatsCalculator {
 
         val completedThisYear = books.count { book ->
             book.completedAt?.let {
-                Instant.ofEpochMilli(it).atZone(zoneId).year == today.year
+                times.of(it).year == today.year
             } == true
         }
         val elapsedDaysInYear = today.dayOfYear.coerceAtLeast(1)
@@ -528,7 +549,7 @@ internal object ReadingStatsCalculator {
             averageSessionSeconds = averageSession,
             averageWpm = averageWordsPerMinute,
             currentStreak = currentStreak,
-            zoneId = zoneId
+            times = times
         )
 
         val readingRhythm = listOfNotNull(
@@ -649,13 +670,13 @@ internal object ReadingStatsCalculator {
     private fun currentStreak(readingDates: Set<LocalDate>, today: LocalDate): Int {
         var cursor = when {
             today in readingDates -> today
-            today.minusDays(1) in readingDates -> today.minusDays(1)
+            today.minus(1, DateTimeUnit.DAY) in readingDates -> today.minus(1, DateTimeUnit.DAY)
             else -> return 0
         }
         var result = 0
         while (cursor in readingDates) {
             result++
-            cursor = cursor.minusDays(1)
+            cursor = cursor.minus(1, DateTimeUnit.DAY)
         }
         return result
     }
@@ -665,7 +686,7 @@ internal object ReadingStatsCalculator {
         var best = 1
         var current = 1
         readingDates.zipWithNext().forEach { (previous, next) ->
-            if (next == previous.plusDays(1)) {
+            if (next == previous.plus(1, DateTimeUnit.DAY)) {
                 current++
                 best = maxOf(best, current)
             } else if (next != previous) {
@@ -688,13 +709,13 @@ internal object ReadingStatsCalculator {
 
         var cursor = when {
             met(today) -> today
-            met(today.minusDays(1)) -> today.minusDays(1)
+            met(today.minus(1, DateTimeUnit.DAY)) -> today.minus(1, DateTimeUnit.DAY)
             else -> return 0
         }
         var streak = 0
         while (met(cursor)) {
             streak++
-            cursor = cursor.minusDays(1)
+            cursor = cursor.minus(1, DateTimeUnit.DAY)
         }
         return streak
     }
@@ -719,14 +740,14 @@ internal object ReadingStatsCalculator {
         averageSessionSeconds: Long,
         averageWpm: Int,
         currentStreak: Int,
-        zoneId: ZoneId
+        times: LocalTimes
     ): ReaderProfile {
         if (validStats.isEmpty()) return ReaderProfile()
 
         val totalDuration = validStats.sumOf { it.sessionDurationSeconds }.coerceAtLeast(1)
         val weekendDuration = validStats
             .filter {
-                val day = it.localDate(zoneId).dayOfWeek
+                val day = it.localDate(times).dayOfWeek
                 day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY
             }
             .sumOf { it.sessionDurationSeconds }
@@ -763,14 +784,12 @@ internal object ReadingStatsCalculator {
         )
     }
 
-    private fun ReadingStats.localDate(zoneId: ZoneId): LocalDate =
-        Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+    private fun ReadingStats.localDate(times: LocalTimes): LocalDate = times.date(timestamp)
 
-    private fun ReadingStats.hour(zoneId: ZoneId): Int =
-        Instant.ofEpochMilli(timestamp).atZone(zoneId).hour
+    private fun ReadingStats.hour(times: LocalTimes): Int = times.of(timestamp).hour
 
-    private fun ReadingStats.partOfDay(zoneId: ZoneId): PartOfDay {
-        val hour = hour(zoneId)
+    private fun ReadingStats.partOfDay(times: LocalTimes): PartOfDay {
+        val hour = hour(times)
         return when (hour) {
             in 5..11 -> PartOfDay.MORNING
             in 12..17 -> PartOfDay.DAY

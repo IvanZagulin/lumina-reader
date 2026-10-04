@@ -1,67 +1,43 @@
 package com.lumina.reader.core.opds
 
-import kotlinx.coroutines.suspendCancellableCoroutine
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.OkHttpClient
-import okhttp3.Response
-import java.io.IOException
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import com.lumina.reader.core.network.HttpTimeouts
+import com.lumina.reader.core.network.luminaHttpClient
+import com.lumina.reader.platform.AppInfo
+import com.lumina.reader.platform.PlatformKind
+import io.ktor.client.HttpClient
 
 /**
- * Shared HTTP clients. Both share one connection pool and dispatcher; the
- * download client has no overall call timeout so large books are not cut off,
- * only connect/read timeouts that detect a stalled connection.
+ * Shared HTTP clients of the catalogues. The download client has no overall
+ * call timeout so large books are not cut off, only connect/read timeouts that
+ * detect a stalled connection. On Android both run on OkHttp with the same
+ * connection pool and dispatcher, as before Ktor (see [luminaHttpClient]).
  */
 object OpdsHttp {
-    const val USER_AGENT = "LuminaReader/1.2 (Android; OPDS)"
+    /** "LuminaReader/1.2 (Android; OPDS)" as always on Android; "(iOS; OPDS)" on the iPhone. */
+    val USER_AGENT: String =
+        "LuminaReader/1.2 (" + (if (AppInfo.platform == PlatformKind.IOS) "iOS" else "Android") + "; OPDS)"
+
     const val ACCEPT_FEED = "application/atom+xml;profile=opds-catalog, application/atom+xml, application/xml;q=0.9, */*;q=0.8"
 
-    val feedClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
+    val feedClient: HttpClient by lazy {
+        luminaHttpClient(
+            HttpTimeouts(
+                connectMillis = 10_000,
+                readMillis = 20_000,
+                writeMillis = 20_000,
+                callMillis = 30_000
+            )
+        )
     }
 
-    val downloadClient: OkHttpClient by lazy {
-        feedClient.newBuilder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(0, TimeUnit.SECONDS)
-            .build()
+    val downloadClient: HttpClient by lazy {
+        luminaHttpClient(
+            HttpTimeouts(
+                connectMillis = 15_000,
+                readMillis = 60_000,
+                writeMillis = 60_000,
+                callMillis = 0
+            )
+        )
     }
-}
-
-/**
- * Executes the call asynchronously; cancelling the coroutine cancels the HTTP
- * call. The caller must close the returned response.
- */
-suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
-    continuation.invokeOnCancellation {
-        try {
-            cancel()
-        } catch (ignored: Throwable) {
-        }
-    }
-    enqueue(object : Callback {
-        override fun onResponse(call: Call, response: Response) {
-            if (continuation.isActive) {
-                continuation.resume(response)
-            } else {
-                response.close()
-            }
-        }
-
-        override fun onFailure(call: Call, e: IOException) {
-            if (continuation.isActive) continuation.resumeWithException(e)
-        }
-    })
 }

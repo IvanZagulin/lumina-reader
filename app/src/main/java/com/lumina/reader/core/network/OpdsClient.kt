@@ -20,8 +20,9 @@ data class OpdsBook(
 
 /**
  * Compatibility facade over [OpdsRepository]: global book search across the
- * given catalogues (the built-in ones by default). Downloads go through
- * [com.lumina.reader.core.library.BookImporter], which streams to disk.
+ * given catalogues (the built-in ones by default). Downloads go through the
+ * app's download queue and [com.lumina.reader.core.download.BookDownloader],
+ * which streams to disk.
  */
 class OpdsClient(
     private val catalogs: List<OpdsCatalogConfig> = BuiltInCatalogs.all,

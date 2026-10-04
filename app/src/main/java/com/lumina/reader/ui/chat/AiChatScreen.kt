@@ -59,7 +59,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -72,7 +71,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.library.AppMessages
-import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.network.AiMessage
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import com.lumina.reader.ui.downloads.DownloadRowActions
@@ -132,21 +130,20 @@ fun AiChatScreen(
     var inputText by rememberSaveable { mutableStateOf("") }
     val lines = remember(messages, downloadCards) { toChatLines(messages, downloadCards).asReversed() }
 
-    // Download cards (spec §7.11): the live state of the books the assistant downloads.
-    val context = LocalContext.current
-    val importer = remember(context) { BookImporter.get(context) }
-    val downloads by importer.downloads.collectAsState()
+    // Download cards (spec §7.11): the live state of the books the assistant downloads,
+    // from the view model's downloads (the app's importer on Android).
+    val downloads by viewModel.downloads.collectAsState()
     val downloadMeta by DownloadMetaRegistry.meta.collectAsState()
     val downloadRows = remember(downloadCards, downloads, downloadMeta) {
         downloadCards.values.mapNotNull { key ->
             downloads[key]?.let { state -> key to DownloadUiMapper.row(key, state, downloadMeta[key]) }
         }.toMap()
     }
-    val downloadActions = remember(importer) {
+    val downloadActions = remember(viewModel) {
         DownloadRowActions(
-            onCancel = importer::cancel,
-            onRetry = { key -> importer.retry(key) },
-            onDismiss = importer::dismiss,
+            onCancel = viewModel::cancelDownload,
+            onRetry = viewModel::retryDownload,
+            onDismiss = viewModel::dismissDownload,
             // The navigation host opens the reader for these requests.
             onOpen = AppMessages::requestOpenBook
         )

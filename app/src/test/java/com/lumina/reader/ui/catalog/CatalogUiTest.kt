@@ -75,6 +75,22 @@ class CatalogUiTest {
         assertTrue(index in 0 until CatalogUi.CLOTH_COUNT)
     }
 
+    /**
+     * Golden values computed with the JVM's String.hashCode: the iPhone must
+     * colour catalogues and generated covers exactly like Android, so this
+     * also has to pass on Kotlin/Native once the test is common.
+     */
+    @Test
+    fun clothIndexMatchesTheJvmGoldenValues() {
+        assertEquals(1839310442, "flibusta".hashCode())
+        assertEquals(1451419324, "флибуста".hashCode())
+        assertEquals(2, CatalogUi.clothIndex("Flibusta"))
+        assertEquals(4, CatalogUi.clothIndex("Флибуста"))
+        assertEquals(4, CatalogUi.clothIndex("CoolLib"))
+        // A generated cover's seed is "title|author".
+        assertEquals(3, CatalogUi.clothIndex("Дюна|Фрэнк Герберт"))
+    }
+
     @Test
     fun breadcrumbsFollowThePageStack() {
         val catalog = OpdsCatalogConfig(id = "c", name = "Флибуста", url = "https://flibusta.is/opds")

@@ -3,14 +3,14 @@ package com.lumina.reader.ui.downloads
 import androidx.compose.runtime.Immutable
 import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.download.describeProgress
+import com.lumina.reader.core.library.decodeUrlComponent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import java.net.URLDecoder
 
 /**
- * What the download UI shows about a task besides its state. The importer's
+ * What the download UI shows about a task besides its state. The download
  * state map is keyed by URL only, so screens that start a download register
  * the title, author and cover here (in memory, UI only).
  */
@@ -24,7 +24,7 @@ data class DownloadMeta(
     val formatLabel: String? = null
 )
 
-/** In-memory labels of downloads, keyed like [com.lumina.reader.core.library.BookImporter.downloads]. */
+/** In-memory labels of downloads, keyed like [com.lumina.reader.ui.catalog.CatalogDownloads.downloads]. */
 object DownloadMetaRegistry {
     private val state = MutableStateFlow<Map<String, DownloadMeta>>(emptyMap())
 
@@ -106,7 +106,7 @@ sealed interface IslandAnnouncement {
     data class Failure(override val row: DownloadRowUi) : IslandAnnouncement
 }
 
-/** Pure mapping from the importer's state map to UI rows (no Android, unit tested). */
+/** Pure mapping from the download state map to UI rows (no platform code, unit tested). */
 object DownloadUiMapper {
 
     fun row(key: String, state: DownloadState, meta: DownloadMeta?): DownloadRowUi {
@@ -236,7 +236,9 @@ object DownloadUiMapper {
 
     /**
      * A readable title from a download URL ("…/Dune.fb2.zip" -> "Dune"), or
-     * null for opaque URLs ("/b/123/fb2").
+     * null for opaque URLs ("/b/123/fb2"). The segment is decoded like
+     * `java.net.URLDecoder` ("+" is a space): the JDK class itself on
+     * Android, its common port on iOS.
      */
     fun titleFromUrl(url: String): String? {
         val path = url.substringAfter("://", url)
@@ -246,7 +248,7 @@ object DownloadUiMapper {
             .trimEnd('/')
         val segment = path.substringAfterLast('/')
         if (segment.isBlank()) return null
-        val decoded = runCatching { URLDecoder.decode(segment, "UTF-8") }.getOrDefault(segment)
+        val decoded = runCatching { decodeUrlComponent(segment, "UTF-8") }.getOrDefault(segment)
         var name = decoded
         repeat(2) {
             val ext = name.substringAfterLast('.', "").lowercase()

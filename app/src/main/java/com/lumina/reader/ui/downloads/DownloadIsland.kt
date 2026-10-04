@@ -49,9 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -59,10 +57,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lumina.reader.core.library.BookImporter
+import com.lumina.reader.ui.catalog.CatalogServicesHolder
 import com.lumina.reader.ui.theme.Lumina
-import com.lumina.reader.ui.theme.LuminaHaptics
 import com.lumina.reader.ui.theme.LuminaMotion
+import com.lumina.reader.ui.theme.rememberLuminaHaptics
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import kotlinx.coroutines.delay
 
@@ -102,7 +100,8 @@ private val IslandContent?.kind: IslandKind?
  * Global download feedback (spec §7.10): a compact inverse capsule while
  * books download, a «✓ На полке · Открыть» card when one finishes and an error
  * card on failure. Tapping it opens the downloads sheet ([onOpenDownloads]).
- * Reads its state from [BookImporter.downloads], so it works on every screen.
+ * Reads its state from the app-wide [com.lumina.reader.ui.catalog.CatalogDownloads]
+ * (Android's BookImporter), so it works on every screen.
  * It applies the status-bar inset itself (+64dp, below the screen header); the caller only aligns it.
  */
 @Composable
@@ -111,10 +110,9 @@ fun DownloadIsland(
     onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val view = LocalView.current
-    val importer = remember(context) { BookImporter.get(context) }
-    val downloads by importer.downloads.collectAsState()
+    val haptics = rememberLuminaHaptics()
+    val bookDownloads = remember { CatalogServicesHolder.services.downloads }
+    val downloads by bookDownloads.downloads.collectAsState()
     val meta by DownloadMetaRegistry.meta.collectAsState()
     val reducedMotion = rememberReducedMotion()
     val compact = LocalDownloadIslandCompact.current
@@ -129,7 +127,7 @@ fun DownloadIsland(
         batch = DownloadUiMapper.nextBatch(batch, downloads)
         if (next == null) return@LaunchedEffect
         announcement = next
-        if (next is IslandAnnouncement.Failure) LuminaHaptics.reject(view) else LuminaHaptics.confirm(view)
+        if (next is IslandAnnouncement.Failure) haptics.reject() else haptics.confirm()
     }
     LaunchedEffect(announcement, compact) {
         val shown = announcement ?: return@LaunchedEffect
@@ -215,7 +213,7 @@ fun DownloadIsland(
                     onClick = onOpenDownloads,
                     onRetry = {
                         announcement = null
-                        importer.retry(shown.row.key)
+                        bookDownloads.retry(shown.row.key)
                     }
                 )
             }

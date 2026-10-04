@@ -8,6 +8,7 @@ import com.lumina.reader.core.database.AppDatabase
 import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.download.BookDownloader
 import com.lumina.reader.core.download.DownloadEvent
+import com.lumina.reader.core.download.DownloadNotifications
 import com.lumina.reader.core.download.DownloadNotifier
 import com.lumina.reader.core.download.DownloadRequest
 import com.lumina.reader.core.download.DownloadState
@@ -31,7 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import okio.Path.Companion.toOkioPath
+import okio.Path
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -57,7 +58,7 @@ class BookImporter private constructor(context: Context) {
         files = AndroidLibraryFiles(appContext)
     )
     private val downloader = BookDownloader()
-    private val notifier = DownloadNotifier(appContext)
+    private val notifier: DownloadNotifications = DownloadNotifier(appContext)
 
     private val downloadSlots = Semaphore(MAX_PARALLEL_DOWNLOADS)
 
@@ -161,7 +162,7 @@ class BookImporter private constructor(context: Context) {
             downloadSlots.withPermit {
                 dispatch(DownloadEvent.Progress(key, 0, null))
                 notifier.showProgress(key, title, 0, null)
-                val temp = pipeline.newIncomingFile("download-", ".part").toFile()
+                val temp = pipeline.newIncomingFile("download-", ".part")
                 try {
                     val uiThrottle = ProgressThrottle(minIntervalMillis = 200, minPercentStep = 1)
                     val notificationThrottle = ProgressThrottle(minIntervalMillis = 1000, minPercentStep = 100)
@@ -180,7 +181,7 @@ class BookImporter private constructor(context: Context) {
 
                     val result = pipeline.importFile(
                         IncomingFile(
-                            path = downloaded.file.toOkioPath(),
+                            path = downloaded.file,
                             bytes = downloaded.bytes,
                             sha256 = downloaded.sha256,
                             displayName = downloaded.fileName,
@@ -204,7 +205,7 @@ class BookImporter private constructor(context: Context) {
                         is ImportResult.Failed -> reportFailure(key, title, result.message)
                     }
                 } finally {
-                    temp.delete()
+                    deleteQuietly(temp)
                 }
             }
         } catch (e: Exception) {
@@ -228,6 +229,18 @@ class BookImporter private constructor(context: Context) {
 
     private fun dispatch(event: DownloadEvent) {
         mutableDownloads.update { DownloadStates.reduce(it, event) }
+    }
+
+    /**
+     * Removes the partial file, or the received one the pipeline did not move
+     * into the library; never throws, like java.io.File.delete before.
+     */
+    private fun deleteQuietly(path: Path) {
+        try {
+            pipeline.files.fileSystem.delete(path, mustExist = false)
+        } catch (e: Exception) {
+            // Left for clearIncoming at the next start.
+        }
     }
 
     // ---- Background helpers ----------------------------------------------------
