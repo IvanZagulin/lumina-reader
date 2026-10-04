@@ -8,6 +8,10 @@ import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
@@ -43,7 +47,24 @@ actual fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient = HttpClient(OkH
     }
 }
 
-private val sharedDispatcher: Dispatcher by lazy { Dispatcher() }
+/**
+ * The pool is OkHttp's own default (no core threads, unbounded, 60 s idle), but
+ * closing one client must not end it for the rest: Ktor's engine shuts down the
+ * dispatcher's executor on close, and with one dispatcher for every client the
+ * next request of any other client would then be rejected.
+ */
+private val sharedDispatcher: Dispatcher by lazy {
+    val pool = ThreadPoolExecutor(
+        0, Int.MAX_VALUE, 60L, TimeUnit.SECONDS, SynchronousQueue(),
+        ThreadFactory { task -> Thread(task, "OkHttp Dispatcher").apply { isDaemon = false } }
+    )
+    Dispatcher(SurvivingExecutor(pool))
+}
+
+private class SurvivingExecutor(private val delegate: ExecutorService) : ExecutorService by delegate {
+    override fun shutdown() = Unit
+    override fun shutdownNow(): MutableList<Runnable> = mutableListOf()
+}
 
 /**
  * Stands in for "no User-Agent" between Ktor and OkHttp. Ktor's engine fills
