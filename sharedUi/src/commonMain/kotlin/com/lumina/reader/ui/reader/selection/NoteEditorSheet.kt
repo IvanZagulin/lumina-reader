@@ -48,7 +48,7 @@ import com.lumina.reader.ui.theme.HighlightPalette
  * выделение».
  */
 @Composable
-internal fun NoteEditorSheet(
+fun NoteEditorSheet(
     quote: String,
     initialNote: String,
     initialColorHex: String,

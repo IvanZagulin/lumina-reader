@@ -24,7 +24,7 @@ import com.lumina.reader.ui.theme.LuminaShape
  * name. Faces load lazily when the card is first drawn.
  */
 @Composable
-internal fun FontPreviewChip(
+fun FontPreviewChip(
     font: ReaderFont,
     selected: Boolean,
     colors: ReaderChromeColors,

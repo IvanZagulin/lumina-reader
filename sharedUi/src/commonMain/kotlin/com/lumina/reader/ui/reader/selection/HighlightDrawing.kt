@@ -18,7 +18,7 @@ import com.lumina.reader.ui.theme.HighlightPalette
  * reader jumped to and the sentence being read aloud.
  */
 @Immutable
-internal data class ParagraphMarks(
+data class ParagraphMarks(
     val highlights: List<HighlightSpan> = emptyList(),
     val searchMatch: OffsetRange? = null,
     val ttsSentence: OffsetRange? = null
@@ -32,7 +32,7 @@ internal data class ParagraphMarks(
 
 /** Colours of the marks for the current reading theme. */
 @Immutable
-internal data class MarkColors(
+data class MarkColors(
     val isDarkTheme: Boolean,
     val accent: Color
 ) {
@@ -45,7 +45,7 @@ internal data class MarkColors(
  * Line boxes covering [start, end) of [layout], one per line, slightly
  * narrower than the line height so neighbouring lines do not merge.
  */
-internal fun markRects(layout: TextLayoutResult, start: Int, end: Int): List<Rect> {
+fun markRects(layout: TextLayoutResult, start: Int, end: Int): List<Rect> {
     val length = layout.layoutInput.text.length
     val from = start.coerceIn(0, length)
     val to = end.coerceIn(from, length)
@@ -79,7 +79,7 @@ internal fun markRects(layout: TextLayoutResult, start: Int, end: Int): List<Rec
  * [searchAlpha] is read only while drawing, so the search flash does not
  * recompose anything.
  */
-internal fun Modifier.paragraphMarks(
+fun Modifier.paragraphMarks(
     marks: ParagraphMarks,
     colors: MarkColors,
     layout: () -> TextLayoutResult?,

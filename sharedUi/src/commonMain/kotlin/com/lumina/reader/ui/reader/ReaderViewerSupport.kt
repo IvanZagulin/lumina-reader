@@ -13,7 +13,7 @@ import com.lumina.reader.ui.theme.HighlightPalette
  * creates one stable instance whose lambdas always call the latest handlers.
  */
 @Stable
-internal class ReaderViewerCallbacks(
+class ReaderViewerCallbacks(
     val onToggleControls: () -> Unit,
     val onNextChapter: () -> Unit,
     val onPreviousChapter: () -> Unit,
@@ -27,7 +27,7 @@ internal class ReaderViewerCallbacks(
 )
 
 /** Highlights and the search match of the chapter on screen, by paragraph. */
-internal class ChapterDecorations(
+class ChapterDecorations(
     private val chapterIndex: Int,
     private val highlights: Map<Int, List<HighlightSpan>>,
     private val searchMatch: SearchMatch?
@@ -68,7 +68,7 @@ internal class ChapterDecorations(
 }
 
 /** The sentence being read aloud: [start] inclusive, [end] exclusive, plain-text offsets. */
-internal data class TtsSentenceMark(
+data class TtsSentenceMark(
     val chapterIndex: Int,
     val paragraphIndex: Int,
     val start: Int,
@@ -88,7 +88,7 @@ internal data class TtsSentenceMark(
  * shown yet). Paging away on purpose stops the following until the reader
  * comes back to the voice.
  */
-internal fun shouldFollowReadAloud(
+fun shouldFollowReadAloud(
     previousSpoken: Pair<Int, TextAnchor>?,
     visible: VisibleRange?
 ): Boolean = previousSpoken == null || visible == null ||
@@ -100,7 +100,7 @@ internal fun shouldFollowReadAloud(
  * visible from both pages, so starting to read at a page whose first
  * paragraph began on the previous page does not flip back.
  */
-internal fun isSpokenSentenceVisible(
+fun isSpokenSentenceVisible(
     visible: VisibleRange,
     chapterIndex: Int,
     paragraphIndex: Int,
@@ -117,7 +117,7 @@ internal fun isSpokenSentenceVisible(
  * into the next chapter does); any other settled page was turned by the
  * reader and counts.
  */
-internal class PageReportGate {
+class PageReportGate {
     private var expectedPage: Int? = null
     private var expectedCounts = false
 
@@ -142,7 +142,7 @@ internal class PageReportGate {
  * Item layout of the scrolling reader: an optional "previous chapter"
  * button, the title, one item per paragraph and a closing item.
  */
-internal class ScrollItems(
+class ScrollItems(
     val hasPrevious: Boolean,
     val paragraphCount: Int,
     val hasNext: Boolean
@@ -171,13 +171,13 @@ internal class ScrollItems(
  * Facts about the whole book text that the reader needs on every page:
  * the plain-text length of each chapter and the language for hyphenation.
  */
-internal class BookTextInfo(
+class BookTextInfo(
     val chapterLengths: IntArray,
     val localeTag: String?
 )
 
 /** A sample of the book text, enough to tell its script. */
-internal fun bookTextSample(book: ParsedBook, maxChars: Int = 4_000): String {
+fun bookTextSample(book: ParsedBook, maxChars: Int = 4_000): String {
     val builder = StringBuilder()
     for (chapter in book.chapters) {
         for (paragraph in chapter.paragraphs) {
@@ -193,7 +193,7 @@ internal fun bookTextSample(book: ParsedBook, maxChars: Int = 4_000): String {
  * the spoken sentence, the search flash, mark colours and motion settings.
  */
 @Immutable
-internal data class ReaderPageExtras(
+data class ReaderPageExtras(
     val ttsSentence: TtsSentenceMark?,
     val readAloudDriving: Boolean,
     val markColors: MarkColors,
@@ -205,7 +205,7 @@ internal data class ReaderPageExtras(
 )
 
 /** What a tap on the page does. */
-internal enum class TapAction {
+enum class TapAction {
     PREVIOUS,
     NEXT,
     MENU
@@ -217,7 +217,7 @@ internal enum class TapAction {
  * back, a centre box (35–65 % both ways) opens the menu, anything else goes
  * forward. [inverted] swaps back and forward.
  */
-internal fun tapZoneAction(
+fun tapZoneAction(
     x: Float,
     y: Float,
     width: Float,

@@ -31,7 +31,7 @@ import com.lumina.reader.core.model.ReaderTextAlign
  * Everything about the text that changes its layout. Pages measured with one
  * typography are only valid for exactly the same typography.
  */
-internal data class ReaderTypography(
+data class ReaderTypography(
     val fontSizeSp: Int,
     val lineSpacing: Float,
     val fontFamilyName: String,
@@ -49,7 +49,7 @@ internal data class ReaderTypography(
     val localeTag: String?
 )
 
-internal fun ReaderSettings.toTypography(localeTag: String?, fonts: ReaderFontCatalog): ReaderTypography = ReaderTypography(
+fun ReaderSettings.toTypography(localeTag: String?, fonts: ReaderFontCatalog): ReaderTypography = ReaderTypography(
     fontSizeSp = fontSizeSp,
     lineSpacing = lineSpacingMultiplier,
     fontFamilyName = ReaderFontIds.migrate(fontFamily),
@@ -66,7 +66,7 @@ internal fun ReaderSettings.toTypography(localeTag: String?, fonts: ReaderFontCa
  * [searchMatch] and [ttsSentence] tint the backgrounds drawn behind the text
  * (see HighlightDrawing), [noteRef] colours footnote markers.
  */
-internal data class ReaderTextColors(
+data class ReaderTextColors(
     val text: Color,
     val noteRef: Color,
     val searchMatch: Color,
@@ -74,7 +74,7 @@ internal data class ReaderTextColors(
 )
 
 /** A range of plain-text offsets: [start] inclusive, [end] exclusive. */
-internal data class OffsetRange(
+data class OffsetRange(
     val start: Int,
     val end: Int
 )
@@ -83,7 +83,7 @@ internal data class OffsetRange(
  * A highlight drawn behind [start, end) of a paragraph. [id] is the saved
  * highlight (0 for none); a tap on it opens its actions.
  */
-internal data class HighlightSpan(
+data class HighlightSpan(
     val start: Int,
     val end: Int,
     val color: Color,
@@ -97,7 +97,7 @@ internal data class HighlightSpan(
  * [startIndentEm]/[endIndentEm] are block margins relative to the reader font
  * size; the caller turns them into padding and narrows the layout width.
  */
-internal data class RenderedParagraph(
+data class RenderedParagraph(
     val text: AnnotatedString,
     val style: TextStyle,
     val blockStyle: BlockStyle,
@@ -105,8 +105,8 @@ internal data class RenderedParagraph(
     val endIndentEm: Float
 )
 
-internal const val NOTE_LINK_TAG_PREFIX = "note:"
-internal const val HIGHLIGHT_LINK_TAG_PREFIX = "highlight:"
+const val NOTE_LINK_TAG_PREFIX = "note:"
+const val HIGHLIGHT_LINK_TAG_PREFIX = "highlight:"
 
 /**
  * The one function that turns a raw paragraph into styled text. Pagination
@@ -114,7 +114,7 @@ internal const val HIGHLIGHT_LINK_TAG_PREFIX = "highlight:"
  * Highlights only add click targets (their colour is drawn behind the text
  * by HighlightDrawing) and footnotes add links: nothing that changes metrics.
  */
-internal fun renderParagraph(
+fun renderParagraph(
     raw: String,
     typography: ReaderTypography,
     colors: ReaderTextColors,
@@ -195,27 +195,27 @@ internal fun renderParagraph(
 }
 
 /** Superscript footnote label. Part of the measured text, so it is a plain span. */
-internal fun noteRefStyle(color: Color): SpanStyle = SpanStyle(
+fun noteRefStyle(color: Color): SpanStyle = SpanStyle(
     color = color,
     fontSize = 0.7.em,
     fontWeight = FontWeight.SemiBold,
     baselineShift = BaselineShift.Superscript
 )
 
-internal fun startIndentEm(style: BlockStyle): Float = when (style) {
+fun startIndentEm(style: BlockStyle): Float = when (style) {
     BlockStyle.VERSE -> 1f
     BlockStyle.EPIGRAPH -> 2f
     BlockStyle.NORMAL, BlockStyle.SUBTITLE, BlockStyle.TEXT_AUTHOR, BlockStyle.HEADING -> 0f
 }
 
-internal fun endIndentEm(style: BlockStyle): Float = when (style) {
+fun endIndentEm(style: BlockStyle): Float = when (style) {
     BlockStyle.EPIGRAPH -> 1f
     BlockStyle.NORMAL, BlockStyle.SUBTITLE, BlockStyle.VERSE,
     BlockStyle.TEXT_AUTHOR, BlockStyle.HEADING -> 0f
 }
 
 /** Text and paragraph style of one block style. */
-internal fun paragraphTextStyle(
+fun paragraphTextStyle(
     blockStyle: BlockStyle,
     typography: ReaderTypography,
     textColor: Color
@@ -265,7 +265,7 @@ internal fun paragraphTextStyle(
 }
 
 /** Style of the chapter title at the top of a chapter's first page. */
-internal fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): TextStyle = TextStyle(
+fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): TextStyle = TextStyle(
     color = textColor,
     fontSize = (typography.fontSizeSp + 3).sp,
     fontWeight = FontWeight.Bold,
@@ -281,7 +281,7 @@ internal fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): 
  * Language tag for hyphenation: "ru" when the sample is mostly Cyrillic,
  * otherwise null (the system language is used).
  */
-internal fun detectTextLocaleTag(sample: String): String? {
+fun detectTextLocaleTag(sample: String): String? {
     var cyrillic = 0
     var latin = 0
     for (c in sample) {

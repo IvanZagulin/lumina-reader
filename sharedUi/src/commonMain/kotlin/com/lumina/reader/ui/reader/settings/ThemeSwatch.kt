@@ -47,7 +47,7 @@ import com.lumina.reader.ui.theme.LuminaShape
  * and the tile is split diagonally into the day and night themes.
  */
 @Composable
-internal fun ThemeSwatch(
+fun ThemeSwatch(
     label: String,
     theme: ReadingTheme,
     selected: Boolean,
@@ -154,4 +154,4 @@ internal fun ThemeSwatch(
 private val LineWidths = floatArrayOf(0.70f, 0.82f, 0.56f)
 
 /** Horizontal gap between theme tiles. */
-internal val ThemeSwatchSpacing = Arrangement.spacedBy(6.dp)
+val ThemeSwatchSpacing = Arrangement.spacedBy(6.dp)
