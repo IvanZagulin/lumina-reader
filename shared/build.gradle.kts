@@ -20,15 +20,17 @@ plugins {
 // The catalogues' own proxy, put in at build time from the LUMINA_FLIBUSTA_PROXY environment
 // variable ("login:password@host:port", an HTTP proxy). It is never in git: without the variable
 // the generated file holds nothing and the app has no built-in proxy.
-val embeddedProxy = providers.environmentVariable("LUMINA_FLIBUSTA_PROXY").orElse("")
-val generatedProxyDir = layout.buildDirectory.dir("generated/embeddedProxy")
-val generateEmbeddedProxy = tasks.register("generateEmbeddedProxy") {
-    inputs.property("proxy", embeddedProxy)
-    outputs.dir(generatedProxyDir)
-    doLast {
-        val spec = embeddedProxy.get().trim()
-        val literal = spec.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
-        val file = generatedProxyDir.get().asFile.resolve("com/lumina/reader/core/network/EmbeddedProxySpec.kt")
+abstract class GenerateEmbeddedProxy : DefaultTask() {
+    @get:Input
+    abstract val spec: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val literal = spec.get().trim().replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\$")
+        val file = outputDir.get().asFile.resolve("com/lumina/reader/core/network/EmbeddedProxySpec.kt")
         file.parentFile.mkdirs()
         file.writeText(
             "package com.lumina.reader.core.network\n\n" +
@@ -36,6 +38,11 @@ val generateEmbeddedProxy = tasks.register("generateEmbeddedProxy") {
                 "internal const val EMBEDDED_PROXY_SPEC: String = \"$literal\"\n"
         )
     }
+}
+
+val generateEmbeddedProxy = tasks.register<GenerateEmbeddedProxy>("generateEmbeddedProxy") {
+    spec.set(providers.environmentVariable("LUMINA_FLIBUSTA_PROXY").orElse(""))
+    outputDir.set(layout.buildDirectory.dir("generated/embeddedProxy"))
 }
 
 kotlin {
