@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -17,6 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +30,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -34,6 +43,8 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumina.reader.core.library.AppMessageAction
 import com.lumina.reader.core.library.AppMessages
+import com.lumina.reader.core.model.effectiveTheme
+import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.network.AiClient
 import com.lumina.reader.core.network.AiMessage
 import com.lumina.reader.ui.catalog.CatalogScreen
@@ -61,6 +72,12 @@ import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.LuminaReaderTheme
+import com.lumina.reader.ui.theme.rememberReducedMotion
+import com.lumina.reader.ui.transition.BookTransitionOverlay
+import com.lumina.reader.ui.transition.LocalBookSlotHost
+import com.lumina.reader.ui.transition.LocalBookTransition
+import com.lumina.reader.ui.transition.ReaderTransitionHost
+import com.lumina.reader.ui.transition.rememberBookTransitionState
 
 /**
  * The iPhone app: the same screens as Android, over the services iOS builds
@@ -93,6 +110,24 @@ fun LuminaIosApp() {
         val screens = rememberSaveableStateHolder()
         val dockScroll = rememberDockScrollState()
 
+        // The book-opening flight: the tab content is recorded into navLayer, which the
+        // transition snapshots; the overlay with the flying cover is drawn above it.
+        val density = LocalDensity.current
+        val navLayer = rememberGraphicsLayer()
+        val transition = rememberBookTransitionState(navLayer)
+        val reducedMotion = rememberReducedMotion()
+        val systemInDarkMode = isSystemInDarkTheme()
+        val readerSettings by remember { ReaderPreferences().settingsFlow }.collectAsState(initial = null)
+        SideEffect {
+            transition.reducedMotion = reducedMotion
+            transition.density = density
+            // The page the book opens onto has the colour the reader will draw with.
+            readerSettings?.effectiveTheme(systemInDarkMode)?.let { theme ->
+                transition.paper = theme.bgComposeColor
+                transition.paperInk = theme.textComposeColor
+            }
+        }
+
         fun selectTab(destination: DockDestination) {
             tabRoute = destination.route
             managingCatalogs = false
@@ -116,9 +151,24 @@ fun LuminaIosApp() {
 
         CompositionLocalProvider(
             LocalDockScroll provides dockScroll.connection,
-            LocalAppSnackbar provides snackbar
+            LocalAppSnackbar provides snackbar,
+            LocalBookTransition provides transition,
+            LocalBookSlotHost provides transition
         ) {
-            Box(modifier = Modifier.fillMaxSize().background(Lumina.colors.wall)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Lumina.colors.wall)
+                    .onSizeChanged { transition.rootSize = it }
+            ) {
+              Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawWithContent {
+                        navLayer.record { this@drawWithContent.drawContent() }
+                        drawLayer(navLayer)
+                    }
+              ) {
                 val bookId = openBookId
                 if (bookId == null) {
                     screens.SaveableStateProvider(tab.route + managingCatalogs) {
@@ -197,21 +247,35 @@ fun LuminaIosApp() {
                     BookScope(bookId) {
                         val reader: ReaderViewModel = viewModel { ReaderViewModel(bookId) }
                         val aiClient = remember { AiClient() }
-                        ReaderScreen(
-                            viewModel = reader,
-                            onBack = { openBookId = null },
-                            askAi = { messages ->
-                                aiClient.askAssistant(messages.map { AiMessage(role = it.role, content = it.content) }).content
+                        // «Reader ready»: loading finished and two frames drawn, then the
+                        // overlay fades onto the real page (as the Android nav graph does).
+                        val loading by reader.isLoading.collectAsState()
+                        LaunchedEffect(loading) {
+                            if (!loading) {
+                                withFrameNanos { }
+                                withFrameNanos { }
+                                transition.onReaderReady(bookId)
                             }
-                        )
+                        }
+                        ReaderTransitionHost(bookId = bookId, onExit = { openBookId = null }) { requestClose ->
+                            ReaderScreen(
+                                viewModel = reader,
+                                onBack = requestClose,
+                                askAi = { messages ->
+                                    aiClient.askAssistant(messages.map { AiMessage(role = it.role, content = it.content) }).content
+                                }
+                            )
+                        }
                     }
                 }
+              }
+                BookTransitionOverlay(state = transition)
                 LuminaSnackbarHost(
                     hostState = snackbar,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .safeDrawingPadding()
-                        .padding(bottom = if (bookId == null && !managingCatalogs) LuminaDimens.DockHeight + 24.dp else 12.dp)
+                        .padding(bottom = if (openBookId == null && !managingCatalogs) LuminaDimens.DockHeight + 24.dp else 12.dp)
                 )
             }
 

@@ -1,10 +1,17 @@
 package com.lumina.reader.ios
 
 import androidx.compose.ui.window.ComposeUIViewController
+import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
+import com.lumina.reader.core.library.ChatServices
+import com.lumina.reader.core.library.ChatServicesHolder
 import com.lumina.reader.core.library.IosLibrary
 import com.lumina.reader.core.library.IosLibraryImports
 import com.lumina.reader.core.library.UrlImportSource
+import com.lumina.reader.core.preferences.CatalogPreferences
 import com.lumina.reader.core.reminder.IosReadingReminders
+import com.lumina.reader.ui.catalog.CatalogChatDownloads
+import com.lumina.reader.ui.catalog.IosCatalogDownloads
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
@@ -22,6 +29,16 @@ import platform.UIKit.UIViewController
 fun MainViewController(arguments: List<String>): UIViewController {
     // Plans the daily reading reminder now and again on every background transition.
     IosReadingReminders.start()
+    // The assistant downloads through the catalogue's queue, so its books show in the
+    // same downloads sheet and island instead of failing.
+    ChatServicesHolder.install {
+        ChatServices(
+            catalogPreferences = CatalogPreferences(),
+            readingStatsDao = AppDatabase.getDatabase().readingStatsDao(),
+            downloads = CatalogChatDownloads(IosCatalogDownloads.queue)
+        )
+    }
+    IosVolumeKeys.start()
     return ComposeUIViewController { LuminaIosApp() }
 }
 
