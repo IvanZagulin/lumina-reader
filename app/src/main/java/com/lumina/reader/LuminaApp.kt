@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.platform.AppInfo
 
 class LuminaApp : Application() {

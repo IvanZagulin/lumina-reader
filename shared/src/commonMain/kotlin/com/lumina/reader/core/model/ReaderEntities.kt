@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.lumina.reader.platform.AppClock
 
 /**
  * A saved place in a book. The position is the first visible character of a
@@ -23,7 +24,7 @@ data class Bookmark(
     val paragraphIndex: Int = 0,
     val chapterTitle: String = "",
     val snippet: String,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = AppClock.nowMillis(),
     @ColumnInfo(defaultValue = "0")
     val charOffset: Int = 0
 )
@@ -46,7 +47,7 @@ data class ReadingHighlight(
     val selectedText: String,
     val note: String? = null,
     val colorHex: String = "#FFEB3B",
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = AppClock.nowMillis(),
     @ColumnInfo(defaultValue = "0")
     val paragraphIndex: Int = 0,
     @ColumnInfo(defaultValue = "0")
@@ -65,7 +66,7 @@ data class ReadingStats(
     val bookId: Long,
     val sessionDurationSeconds: Long,
     val wordsReadCount: Int,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = AppClock.nowMillis()
 )
 
 /**

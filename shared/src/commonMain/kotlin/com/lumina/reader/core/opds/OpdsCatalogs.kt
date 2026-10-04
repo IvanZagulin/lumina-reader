@@ -1,6 +1,6 @@
 package com.lumina.reader.core.opds
 
-import okhttp3.Credentials
+import okio.ByteString.Companion.encodeUtf8
 
 /**
  * An OPDS catalogue the user can browse and search. Built-in catalogues can be
@@ -26,7 +26,7 @@ data class OpdsCatalogConfig(
     /** Headers for every request to this catalogue (feeds, covers, downloads). */
     fun authHeaders(): Map<String, String> =
         if (hasCredentials) {
-            mapOf("Authorization" to Credentials.basic(username, password, Charsets.UTF_8))
+            mapOf("Authorization" to basicCredentials(username, password))
         } else {
             emptyMap()
         }
@@ -88,6 +88,14 @@ object BuiltInCatalogs {
 
     fun find(id: String): OpdsCatalogConfig? = all.firstOrNull { it.id == id }
 }
+
+/**
+ * HTTP Basic credentials, "Basic " + Base64 of "user:password" in UTF-8: what
+ * OkHttp's `Credentials.basic(username, password, UTF_8)` returns (it encodes
+ * with the same okio Base64).
+ */
+fun basicCredentials(username: String, password: String): String =
+    "Basic " + "$username:$password".encodeUtf8().base64()
 
 /** Picks the catalogue a URL belongs to (for credentials and mirrors). */
 fun List<OpdsCatalogConfig>.catalogFor(url: String): OpdsCatalogConfig? = firstOrNull { it.owns(url) }

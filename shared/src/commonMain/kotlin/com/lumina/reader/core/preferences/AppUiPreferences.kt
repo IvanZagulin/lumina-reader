@@ -1,7 +1,5 @@
 package com.lumina.reader.core.preferences
 
-import android.content.Context
-import android.content.SharedPreferences
 import com.lumina.reader.ui.transition.OpenAnimation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,25 +12,34 @@ enum class LibraryViewMode { SHELVES, BOOKCASE, LIST }
 enum class LibrarySort { RECENT, TITLE, AUTHOR, ADDED, PROGRESS }
 
 /**
- * Small UI preferences of the library and the app shell, kept in the
- * SharedPreferences file `lumina_ui` (read synchronously, so the first frame
- * already uses the stored view). One instance per process: the library and the
- * settings sheet observe the same flows.
+ * Small synchronous key-value storage for UI choices that the first frame
+ * already needs. Android: the SharedPreferences file [PreferenceFiles.UI];
+ * iOS: NSUserDefaults.
  */
-class AppUiPreferences private constructor(context: Context) {
+interface UiPreferencesStore {
+    fun getString(key: String): String?
+    fun putString(key: String, value: String)
+    fun getBoolean(key: String, default: Boolean): Boolean
+    fun putBoolean(key: String, value: Boolean)
+}
 
-    private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+/**
+ * Small UI preferences of the library and the app shell (read synchronously,
+ * so the first frame already uses the stored view). One instance per process:
+ * the library and the settings sheet observe the same flows. On Android
+ * `AppUiPreferences.get(context)` (androidMain) gives it.
+ */
+class AppUiPreferences(private val store: UiPreferencesStore) {
 
     private val mutableOpenAnimation = MutableStateFlow(
-        parseEnum(prefs.getString(KEY_OPEN_ANIMATION, null), OpenAnimation.FULL)
+        parseEnum(store.getString(KEY_OPEN_ANIMATION), OpenAnimation.FULL)
     )
-    private val mutableShelfCaptions = MutableStateFlow(prefs.getBoolean(KEY_SHELF_CAPTIONS, false))
+    private val mutableShelfCaptions = MutableStateFlow(store.getBoolean(KEY_SHELF_CAPTIONS, false))
     private val mutableLibraryView = MutableStateFlow(
-        parseEnum(prefs.getString(KEY_LIBRARY_VIEW, null), LibraryViewMode.SHELVES)
+        parseEnum(store.getString(KEY_LIBRARY_VIEW), LibraryViewMode.SHELVES)
     )
     private val mutableLibrarySort = MutableStateFlow(
-        parseEnum(prefs.getString(KEY_LIBRARY_SORT, null), LibrarySort.RECENT)
+        parseEnum(store.getString(KEY_LIBRARY_SORT), LibrarySort.RECENT)
     )
 
     /** «Анимация открытия книги»: Полная / Быстрая / Выкл. */
@@ -49,41 +56,33 @@ class AppUiPreferences private constructor(context: Context) {
 
     fun setOpenAnimation(value: OpenAnimation) {
         mutableOpenAnimation.value = value
-        prefs.edit().putString(KEY_OPEN_ANIMATION, value.name).apply()
+        store.putString(KEY_OPEN_ANIMATION, value.name)
     }
 
     fun setShelfCaptions(value: Boolean) {
         mutableShelfCaptions.value = value
-        prefs.edit().putBoolean(KEY_SHELF_CAPTIONS, value).apply()
+        store.putBoolean(KEY_SHELF_CAPTIONS, value)
     }
 
     fun setLibraryView(value: LibraryViewMode) {
         mutableLibraryView.value = value
-        prefs.edit().putString(KEY_LIBRARY_VIEW, value.name).apply()
+        store.putString(KEY_LIBRARY_VIEW, value.name)
     }
 
     fun setLibrarySort(value: LibrarySort) {
         mutableLibrarySort.value = value
-        prefs.edit().putString(KEY_LIBRARY_SORT, value.name).apply()
+        store.putString(KEY_LIBRARY_SORT, value.name)
     }
 
     companion object {
-        private const val FILE_NAME = "lumina_ui"
-        private const val KEY_OPEN_ANIMATION = "open_animation"
-        private const val KEY_SHELF_CAPTIONS = "shelf_captions"
-        private const val KEY_LIBRARY_VIEW = "library_view"
-        private const val KEY_LIBRARY_SORT = "library_sort"
-
-        @Volatile
-        private var instance: AppUiPreferences? = null
-
-        fun get(context: Context): AppUiPreferences =
-            instance ?: synchronized(this) {
-                instance ?: AppUiPreferences(context.applicationContext).also { instance = it }
-            }
+        // Keys stored on the device; they must not change.
+        const val KEY_OPEN_ANIMATION = "open_animation"
+        const val KEY_SHELF_CAPTIONS = "shelf_captions"
+        const val KEY_LIBRARY_VIEW = "library_view"
+        const val KEY_LIBRARY_SORT = "library_sort"
 
         /** Stored enum names survive renames: unknown values fall back to [default]. */
-        internal inline fun <reified T : Enum<T>> parseEnum(stored: String?, default: T): T =
+        inline fun <reified T : Enum<T>> parseEnum(stored: String?, default: T): T =
             enumValues<T>().firstOrNull { it.name == stored } ?: default
     }
 }

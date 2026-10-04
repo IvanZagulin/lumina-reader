@@ -30,7 +30,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.preferences.AppUiPreferences
+import com.lumina.reader.core.preferences.get
 import com.lumina.reader.ui.components.BookCoverModel
 import com.lumina.reader.ui.components.toCoverModel
 import com.lumina.reader.ui.theme.Lumina

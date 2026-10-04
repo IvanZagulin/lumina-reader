@@ -1,6 +1,6 @@
 package com.lumina.reader.core.preferences
 
-import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -8,7 +8,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.lumina.reader.core.model.ReaderFontIds
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReaderThemeMode
@@ -17,9 +16,13 @@ import com.lumina.reader.core.model.legacyParagraphSpacingEm
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore by preferencesDataStore(name = "reader_settings")
-
-class ReaderPreferences(private val context: Context) {
+/**
+ * Reader settings in the DataStore file [PreferenceFiles.READER]. The store is
+ * the process-wide instance of that file: on Android `ReaderPreferences(context)`
+ * (androidMain), on iOS `ReaderPreferences()` (iosMain). Key names are stored
+ * on the device and must not change.
+ */
+class ReaderPreferences(private val dataStore: DataStore<Preferences>) {
 
     private object PreferencesKeys {
         val FONT_SIZE = intPreferencesKey("font_size_sp")
@@ -51,10 +54,10 @@ class ReaderPreferences(private val context: Context) {
         val TAP_ZONES = stringPreferencesKey("tap_zones")
     }
 
-    val settingsFlow: Flow<ReaderSettings> = context.dataStore.data.map { readSettings(it) }
+    val settingsFlow: Flow<ReaderSettings> = dataStore.data.map { readSettings(it) }
 
     suspend fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             writeSettings(preferences, transform(readSettings(preferences)))
         }
     }

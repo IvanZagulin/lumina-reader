@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
 }
 
 val ciVersionCode = providers.gradleProperty("versionCodeOverride").orNull?.toIntOrNull()
@@ -100,13 +99,12 @@ dependencies {
     // Media session and MediaStyle notification for read-aloud playback
     implementation(libs.androidx.media)
 
-    // Room DB
+    // Room: the database, its entities and DAOs are in :shared (Room KSP runs
+    // there); :app uses the runtime directly (withTransaction).
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
 
-    // DataStore
-    implementation(libs.androidx.datastore.preferences)
+    // DataStore: the settings classes and their files are in :shared.
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

@@ -46,6 +46,7 @@ import com.lumina.reader.core.model.ReadingStatus
 import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.LibraryViewMode
+import com.lumina.reader.core.preferences.get
 import com.lumina.reader.ui.components.BookcaseRow
 import com.lumina.reader.ui.components.GhostBooksRow
 import com.lumina.reader.ui.components.ShelfBookSize

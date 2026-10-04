@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.library.LibraryRepository
@@ -15,6 +16,7 @@ import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.LibrarySort
 import com.lumina.reader.core.preferences.LibraryViewMode
+import com.lumina.reader.core.preferences.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow

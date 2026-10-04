@@ -51,6 +51,16 @@ jobs:
           path: build/release-deps.txt
           if-no-files-found: ignore
 
+      # Room exports the database schema of :shared (shared/schemas/...); a new
+      # or changed file here is a schema change to review and commit.
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: shared/schemas
+          if-no-files-found: ignore
+
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4

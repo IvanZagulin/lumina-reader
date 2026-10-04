@@ -3,6 +3,7 @@ package com.lumina.reader.core.library
 import android.content.Context
 import androidx.room.withTransaction
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.repository.BookCacheRepository

@@ -2,6 +2,7 @@ package com.lumina.reader.core.database
 
 import androidx.room.*
 import com.lumina.reader.core.model.Book
+import com.lumina.reader.platform.AppClock
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -44,7 +45,7 @@ interface BookDao {
     suspend fun updateCompleted(
         id: Long,
         isComp: Boolean,
-        completedAt: Long = System.currentTimeMillis()
+        completedAt: Long = AppClock.nowMillis()
     )
 
     @Query("UPDATE books SET collection = :collection WHERE id = :id")
@@ -75,7 +76,7 @@ interface BookDao {
         paragraphIndex: Int,
         charOffset: Int,
         progress: Float,
-        timestamp: Long = System.currentTimeMillis()
+        timestamp: Long = AppClock.nowMillis()
     )
 
     @Query("UPDATE books SET collection = :collection, seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
