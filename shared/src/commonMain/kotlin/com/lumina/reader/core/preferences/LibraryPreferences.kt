@@ -1,23 +1,27 @@
 package com.lumina.reader.core.preferences
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
-private val Context.libraryDataStore by preferencesDataStore(name = "library_settings")
-
-/** Library-wide settings: user shelves (which exist even while empty) and one-time flags. */
-class LibraryPreferences(context: Context) {
-    private val dataStore = context.applicationContext.libraryDataStore
+/**
+ * Library-wide settings: user shelves (which exist even while empty) and
+ * one-time flags, in the DataStore file [PreferenceFiles.LIBRARY]. On Android
+ * `LibraryPreferences(context)` (androidMain) gives the process-wide store.
+ */
+class LibraryPreferences(private val dataStore: DataStore<Preferences>) {
 
     private object Keys {
         val CUSTOM_SHELVES = stringPreferencesKey("custom_shelves_json")
@@ -57,14 +61,28 @@ class LibraryPreferences(context: Context) {
         const val MAIN_SHELF = "Основная"
         val DEFAULT_SHELVES = listOf("Избранное", "Учеба", "Художественная")
 
-        private val gson = Gson()
+        /**
+         * The shelves are stored as a JSON array of strings (written by Gson
+         * before the move to common code; the format is the same).
+         */
+        private val shelvesSerializer = ListSerializer(String.serializer().nullable).nullable
+        private val format = Json
 
-        internal fun encodeShelves(shelves: List<String>): String = gson.toJson(shelves.toTypedArray())
+        fun encodeShelves(shelves: List<String>): String =
+            format.encodeToString(shelvesSerializer, shelves)
 
-        internal fun decodeShelves(json: String?): List<String> {
+        /**
+         * Shelves from the stored JSON: the defaults when nothing was stored
+         * or the value is unreadable, an empty list for a stored `null` or a
+         * blank value (as Gson read them); null entries are dropped, names
+         * trimmed with inner whitespace collapsed, blanks and
+         * case-insensitive duplicates removed.
+         */
+        fun decodeShelves(json: String?): List<String> {
             if (json == null) return DEFAULT_SHELVES
-            val parsed: Array<String?> = try {
-                gson.fromJson(json, Array<String?>::class.java) ?: return emptyList()
+            if (json.isBlank()) return emptyList()
+            val parsed: List<String?> = try {
+                format.decodeFromString(shelvesSerializer, json) ?: return emptyList()
             } catch (e: Exception) {
                 return DEFAULT_SHELVES
             }

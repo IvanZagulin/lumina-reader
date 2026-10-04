@@ -7,10 +7,14 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
     // Stability metadata for the classes that composables in :app / :sharedUi
-    // take as parameters (download and TTS states, enums); without the Compose
-    // compiler they would be treated as unstable.
+    // take as parameters (books, reader settings, download and TTS states);
+    // without the Compose compiler they would be treated as unstable.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    // Room: the database, its entities and DAOs live in commonMain; KSP
+    // generates the implementation for each target (see dependencies below).
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.room)
 }
 
 kotlin {
@@ -31,17 +35,33 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.coroutines.core)
             // On Android these resolve to androidx.compose runtime / ui-graphics /
             // ui-text 1.11.2, the versions :app already uses.
             implementation(libs.jb.compose.runtime)
-            implementation(libs.jb.compose.ui.graphics)
-            // api: public signatures of :shared use these types (AnnotatedString
-            // in BionicReadingHelper; okio Source / BufferedSource in TextEncoding
-            // and DecodingCharReader). Same artifacts at runtime as implementation.
+            // api: public signatures of :shared use these types (Flow in the DAOs
+            // and preferences; Color in ReadingTheme; AnnotatedString in
+            // BionicReadingHelper; okio Source / BufferedSource in TextEncoding and
+            // DecodingCharReader; RoomDatabase, the DAOs' annotations and
+            // DataStore<Preferences> in the data layer). Same artifacts at
+            // runtime as implementation.
+            api(libs.kotlinx.coroutines.core)
+            api(libs.jb.compose.ui.graphics)
             api(libs.jb.compose.ui.text)
             api(libs.okio)
+            api(libs.androidx.room.runtime)
+            api(libs.androidx.datastore.preferences.core)
             implementation(libs.kotlinx.serialization.json)
+        }
+        androidMain.dependencies {
+            // The Context.preferencesDataStore delegates that have always created
+            // the app's settings files (filesDir/datastore/<name>.preferences_pb).
+            implementation(libs.androidx.datastore.preferences)
+        }
+        iosMain.dependencies {
+            // Android uses the framework SQLite (Room compatibility mode, no
+            // driver); the iPhone app bundles SQLite.
+            implementation(libs.androidx.sqlite.bundled)
+            implementation(libs.kotlinx.serialization.protobuf)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -72,4 +92,19 @@ android {
             isIncludeAndroidResources = true
         }
     }
+}
+
+// Exported schemas (one JSON per database version). CI uploads the folder as
+// the "room-schemas" artifact; commit it so later schema changes are reviewed
+// against it.
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
+// Room's annotation processor for every target that compiles the database:
+// Android (the app) and both iOS targets (device and simulator).
+dependencies {
+    add("kspAndroid", libs.androidx.room.compiler)
+    add("kspIosArm64", libs.androidx.room.compiler)
+    add("kspIosSimulatorArm64", libs.androidx.room.compiler)
 }

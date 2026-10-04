@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.lumina.reader.BuildConfig
 import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.ReminderSettings
+import com.lumina.reader.core.preferences.get
 import com.lumina.reader.core.reminder.ReadingReminder
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion

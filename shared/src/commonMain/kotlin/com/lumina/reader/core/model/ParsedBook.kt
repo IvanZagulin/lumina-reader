@@ -51,8 +51,8 @@ data class ParsedBook(
     // of both equals and hashCode.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-        other as ParsedBook
+        // A data class is final, so this is the former javaClass comparison.
+        if (other !is ParsedBook) return false
         return title == other.title && author == other.author && chapters == other.chapters
     }
 

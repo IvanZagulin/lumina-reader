@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.download.BookDownloader
 import com.lumina.reader.core.download.DownloadEvent
 import com.lumina.reader.core.download.DownloadNotifier

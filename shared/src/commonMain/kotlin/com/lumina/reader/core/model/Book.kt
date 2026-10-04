@@ -2,7 +2,13 @@ package com.lumina.reader.core.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.lumina.reader.platform.AppClock
 
+/**
+ * A library entry (table `books`). The columns, their order, types and
+ * defaults are part of the on-device schema (version 8): Room checks them
+ * against the database it opens, so any change needs a migration.
+ */
 @Entity(tableName = "books")
 data class Book(
     @PrimaryKey(autoGenerate = true)
@@ -19,7 +25,7 @@ data class Book(
     val currentCharOffset: Int = 0,
     val currentProgressPercent: Float = 0f,
     val totalChapters: Int = 1,
-    val lastReadTimestamp: Long = System.currentTimeMillis(),
+    val lastReadTimestamp: Long = AppClock.nowMillis(),
     val startedAt: Long? = null,
     val fileSizeBytes: Long = 0L,
     val language: String = "ru",

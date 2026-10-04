@@ -1,11 +1,11 @@
 package com.lumina.reader.core.preferences
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.lumina.reader.core.opds.BuiltInCatalogs
 import com.lumina.reader.core.opds.CatalogSettingsCodec
 import com.lumina.reader.core.opds.OpdsCatalogConfig
@@ -14,14 +14,13 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-private val Context.catalogDataStore by preferencesDataStore(name = "opds_catalogs")
-
 /**
  * OPDS catalogues: the built-in defaults (which can only be switched off) plus
- * catalogues the user added, with optional HTTP Basic credentials.
+ * catalogues the user added, with optional HTTP Basic credentials. Stored in
+ * the DataStore file [PreferenceFiles.CATALOGS]; on Android
+ * `CatalogPreferences(context)` (androidMain) gives the process-wide store.
  */
-class CatalogPreferences(context: Context) {
-    private val dataStore = context.applicationContext.catalogDataStore
+class CatalogPreferences(private val dataStore: DataStore<Preferences>) {
 
     private object Keys {
         val USER_CATALOGS = stringPreferencesKey("user_catalogs_json")

@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStats
 import java.time.DayOfWeek

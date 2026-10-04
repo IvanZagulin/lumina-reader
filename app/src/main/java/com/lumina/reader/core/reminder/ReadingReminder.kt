@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.lumina.reader.MainActivity
 import com.lumina.reader.R
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.preferences.ReminderPreferences
 import com.lumina.reader.core.preferences.ReminderSettings
 import java.io.IOException

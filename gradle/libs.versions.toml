@@ -20,6 +20,10 @@ androidxNavigation = "2.9.7"
 composeMultiplatform = "1.11.1"
 cmpMaterial3 = "1.9.0"
 room = "2.8.4"
+# SQLite compiled into the iPhone app (Room's driver there). Android keeps the
+# framework SQLite through Room's compatibility mode (no driver), as before.
+# 2.6.2 is the androidx.sqlite version room-runtime 2.8.4 itself depends on.
+sqlite = "2.6.2"
 # Kotlin Multiplatform libraries of :shared. atomicfu and kotlinx-datetime are
 # declared for the stages that first use them (locks, dates); nothing depends
 # on them yet, so they are not on any classpath.
@@ -27,6 +31,8 @@ okio = "3.18.2"
 serialization = "1.11.0"
 atomicfu = "0.33.0"
 datetime = "0.8.0"
+# The version the Android app has shipped with. Its datastore-preferences-core
+# is already multiplatform (jvm, which Android uses, and iOS), so :shared keeps it.
 datastore = "1.1.1"
 coroutines = "1.11.0"
 coil = "2.7.0"
@@ -72,6 +78,9 @@ jb-compose-ui-text = { group = "org.jetbrains.compose.ui", name = "ui-text", ver
 # Multiplatform I/O, JSON, locks and dates (:shared)
 okio = { group = "com.squareup.okio", name = "okio", version.ref = "okio" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+# iOS only: DataStore's native preferences serializer uses it; pinned to the
+# kotlinx-serialization-core version the rest of :shared resolves.
+kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version.ref = "serialization" }
 atomicfu = { group = "org.jetbrains.kotlinx", name = "atomicfu", version.ref = "atomicfu" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "datetime" }
 
@@ -85,9 +94,11 @@ androidx-media = { group = "androidx.media", name = "media", version.ref = "medi
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqlite" }
 
 # Preferences DataStore
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+androidx-datastore-preferences-core = { group = "androidx.datastore", name = "datastore-preferences-core", version.ref = "datastore" }
 
 # Coroutines
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -125,3 +136,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+androidx-room = { id = "androidx.room", version.ref = "room" }

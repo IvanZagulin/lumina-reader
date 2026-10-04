@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lumina.reader.core.database.AppDatabase
+import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.download.DownloadRequest
 import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.library.BookImporter
