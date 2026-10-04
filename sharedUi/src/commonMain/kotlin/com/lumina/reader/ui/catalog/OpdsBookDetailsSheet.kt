@@ -45,6 +45,7 @@ import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 /**
  * Book details (spec §7.9 «OpdsBookDetailsSheet»): 120×180 cover on a lamp
@@ -77,7 +78,7 @@ fun OpdsBookDetailsSheet(
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier
+            modifier = Modifier.absorbListOverscroll()
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 28.dp)

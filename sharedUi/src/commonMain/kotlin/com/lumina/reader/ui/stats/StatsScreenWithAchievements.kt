@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.theme.LuminaShape
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,12 +62,13 @@ fun StatsScreenWithAchievements(
     if (showAnalytics) {
         ModalBottomSheet(
             onDismissRequest = { showAnalytics = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             shape = LuminaShape.Sheet,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 0.dp
         ) {
             Column(
-                modifier = Modifier
+                modifier = Modifier.absorbListOverscroll()
                     .fillMaxHeight(0.94f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
@@ -80,12 +83,13 @@ fun StatsScreenWithAchievements(
         AchievementCompat.update(state, advanced)
         ModalBottomSheet(
             onDismissRequest = { showAchievements = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             shape = LuminaShape.Sheet,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 0.dp
         ) {
             Column(
-                modifier = Modifier
+                modifier = Modifier.absorbListOverscroll()
                     .fillMaxHeight(0.94f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)

@@ -53,6 +53,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 /** «20:00» */
 fun formatReminderTime(hour: Int, minute: Int): String =
@@ -93,7 +94,7 @@ fun AppSettingsSheet(
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
-            modifier = Modifier
+            modifier = Modifier.absorbListOverscroll()
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)

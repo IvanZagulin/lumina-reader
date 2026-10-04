@@ -37,6 +37,7 @@ import com.lumina.reader.ui.catalog.CatalogServicesHolder
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 /**
  * Every download task (spec §7.10): progress, cancel, retry, open, and
@@ -74,7 +75,7 @@ fun DownloadsSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.absorbListOverscroll().fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

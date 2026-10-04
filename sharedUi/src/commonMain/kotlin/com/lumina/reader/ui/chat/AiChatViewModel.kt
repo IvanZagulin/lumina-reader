@@ -38,6 +38,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import com.lumina.reader.core.opds.OpdsFormats
 
 sealed class AiAction {
     data class DownloadBook(val query: String) : AiAction()
@@ -226,47 +227,53 @@ class AiChatViewModel(
         }
 
         val best = pickBestPublication(query, found)
-        val acquisition = best?.publication?.preferredAcquisition
-        if (best == null || acquisition == null) {
+        // Best format first (EPUB on the iPhone); when a download turns out not to be a
+        // book - a catalogue answering a conversion request with a web page - the next
+        // format is tried before giving up.
+        val offered = best?.publication?.let { OpdsFormats.ranked(it.acquisitions) }.orEmpty()
+        if (best == null || offered.isEmpty()) {
             reportExecutionResult("В доступных каталогах не нашлась книга «$query». Ничего не было добавлено.")
             return null
         }
 
         val title = best.publication.title
         val statusIndex = addStatus("Найдена «$title». Начинаю загрузку…")
-        if (statusIndex >= 0) _downloadCards.update { it + (statusIndex to acquisition.url) }
-        val cover = best.publication.thumbnailUrl ?: best.publication.coverUrl
-        DownloadMetaRegistry.put(
-            acquisition.url,
-            DownloadMeta(
+        var lastFailure = ""
+        for ((attempt, acquisition) in offered.withIndex()) {
+            if (attempt > 0) addStatus("Не вышло, пробую другой формат: ${acquisition.label}…")
+            if (statusIndex >= 0 && attempt == 0) _downloadCards.update { it + (statusIndex to acquisition.url) }
+            val cover = best.publication.thumbnailUrl ?: best.publication.coverUrl
+            DownloadMetaRegistry.put(
+                acquisition.url,
+                DownloadMeta(
+                    title = title,
+                    author = best.publication.authorLine,
+                    coverUrl = cover,
+                    coverHeaders = best.catalog.authHeadersFor(cover),
+                    formatLabel = acquisition.label
+                )
+            )
+            val outcome = chatDownloads.downloadAndAwait(
+                url = acquisition.url,
                 title = title,
                 author = best.publication.authorLine,
-                coverUrl = cover,
-                coverHeaders = best.catalog.authHeadersFor(cover),
-                formatLabel = acquisition.label
+                formatHint = acquisition.format,
+                headers = best.catalog.authHeaders(),
+                mirrorBaseUrls = best.catalog.mirrorBaseUrls
             )
-        )
-        val outcome = chatDownloads.downloadAndAwait(
-            url = acquisition.url,
-            title = title,
-            author = best.publication.authorLine,
-            formatHint = acquisition.format,
-            headers = best.catalog.authHeaders(),
-            mirrorBaseUrls = best.catalog.mirrorBaseUrls
-        )
-        return when (outcome) {
-            is DownloadState.Completed -> {
-                reportExecutionResult(
-                    if (outcome.alreadyInLibrary) "«${outcome.title}» уже есть в библиотеке." else "«${outcome.title}» добавлена в библиотеку."
-                )
-                outcome.bookId
+            when (outcome) {
+                is DownloadState.Completed -> {
+                    reportExecutionResult(
+                        if (outcome.alreadyInLibrary) "«${outcome.title}» уже есть в библиотеке." else "«${outcome.title}» добавлена в библиотеку."
+                    )
+                    return outcome.bookId
+                }
+                is DownloadState.Failed -> lastFailure = outcome.message
+                else -> return null
             }
-            is DownloadState.Failed -> {
-                reportExecutionResult("Не удалось скачать «$title»: ${outcome.message}")
-                null
-            }
-            else -> null
         }
+        reportExecutionResult("Не удалось скачать «$title»: $lastFailure")
+        return null
     }
 
     private suspend fun organizeSeries(action: AiAction.OrganizeSeries, downloaded: Map<String, Long>) {

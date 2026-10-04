@@ -207,7 +207,29 @@ class OpdsRepository(
      * "authors" sub-searches), up to [MAX_NAVIGATION_FEEDS] of them are opened.
      */
     suspend fun findPublications(query: String, catalogs: List<OpdsCatalogConfig>): List<FoundPublication> {
-        val results = searchAll(catalogs, query, OpdsSearchType.BOOKS)
+        // Flibusta first: it has almost everything and answers fastest, so the other
+        // catalogues (some of which may be slow or unreachable) are only asked when it
+        // found nothing to download, or could not be reached.
+        val primary = catalogs.filter { it.id == BuiltInCatalogs.FLIBUSTA_ID }
+        val others = catalogs.filter { it.id != BuiltInCatalogs.FLIBUSTA_ID }
+        if (primary.isEmpty() || others.isEmpty()) return findPublicationsIn(catalogs, query, SEARCH_TIMEOUT_MS)
+        val first = try {
+            findPublicationsIn(primary, query, PRIMARY_SEARCH_TIMEOUT_MS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        if (first.any { it.publication.acquisitions.isNotEmpty() }) return first
+        return first + findPublicationsIn(others, query, SEARCH_TIMEOUT_MS)
+    }
+
+    private suspend fun findPublicationsIn(
+        catalogs: List<OpdsCatalogConfig>,
+        query: String,
+        timeoutMillis: Long
+    ): List<FoundPublication> {
+        val results = searchAll(catalogs, query, OpdsSearchType.BOOKS, timeoutMillis)
         val direct = results.flatMap { result ->
             result.feed?.publications.orEmpty().map { FoundPublication(result.catalog, it) }
         }
@@ -256,6 +278,9 @@ class OpdsRepository(
 
     companion object {
         const val SEARCH_TIMEOUT_MS = 20_000L
+
+        /** The first, preferred catalogue gets less time: a blocked one must not hold up the rest. */
+        const val PRIMARY_SEARCH_TIMEOUT_MS = 12_000L
         private const val MAX_NAVIGATION_FEEDS = 8
 
         /**

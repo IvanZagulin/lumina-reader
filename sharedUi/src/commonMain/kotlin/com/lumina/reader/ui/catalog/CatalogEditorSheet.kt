@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 private val FieldShape = RoundedCornerShape(16.dp)
 
@@ -95,7 +96,7 @@ fun CatalogEditorSheet(
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier
+            modifier = Modifier.absorbListOverscroll()
                 .fillMaxWidth()
                 .imePadding()
                 .verticalScroll(rememberScrollState())

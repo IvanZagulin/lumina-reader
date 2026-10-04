@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -136,12 +138,24 @@ fun LuminaIosApp() {
         }
 
         LaunchedEffect(Unit) {
+            // Each message is shown in its own coroutine and replaces the one on screen:
+            // three books finishing one after another must not queue up three notices
+            // that each wait to be tapped (a snackbar with an action never leaves on its
+            // own unless it has a duration, which is what Android's MainActivity sets).
             AppMessages.messages.collect { message ->
                 if (!message.isFresh()) return@collect
-                val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel)
-                val action = message.action
-                if (result == SnackbarResult.ActionPerformed && action is AppMessageAction.OpenBook) {
-                    openBookId = action.bookId
+                launch {
+                    snackbar.currentSnackbarData?.dismiss()
+                    val action = message.action
+                    val result = snackbar.showSnackbar(
+                        message = message.text,
+                        actionLabel = message.actionLabel,
+                        withDismissAction = action != null,
+                        duration = if (action != null || message.isError) SnackbarDuration.Long else SnackbarDuration.Short
+                    )
+                    if (result == SnackbarResult.ActionPerformed && action is AppMessageAction.OpenBook) {
+                        openBookId = action.bookId
+                    }
                 }
             }
         }

@@ -11,15 +11,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.theme.LuminaShape
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 /** The 36×4dp drag handle of reader sheets, in the text colour at 20 %. */
 @Composable
@@ -58,26 +54,11 @@ fun ReaderModalSheet(
         dragHandle = { ReaderSheetHandle(colors) }
     ) {
         ReaderMaterialTheme(colors) {
-            // Dragging a list past its END hands the leftover to the sheet, which tries to
-            // move, snaps back and moves again: the contents jump up and down. The leftover
-            // of a scroll toward the end stops here. Scrolling toward the start is left
-            // alone, so a swipe down from the top of a list still closes the sheet.
+            // Lists must not drag the sheet (see absorbListOverscroll).
             androidx.compose.foundation.layout.Column(
-                modifier = Modifier.nestedScroll(KeepEndOfListInSheet),
+                modifier = Modifier.absorbListOverscroll(),
                 content = content
             )
         }
     }
-}
-
-/**
- * Swallows what a list could not scroll when the finger moves up (toward the end
- * of the list), so it never reaches the sheet's own drag; see [ReaderModalSheet].
- */
-private val KeepEndOfListInSheet = object : NestedScrollConnection {
-    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-        if (available.y < 0f) Offset(0f, available.y) else Offset.Zero
-
-    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
-        if (available.y < 0f) Velocity(0f, available.y) else Velocity.Zero
 }
