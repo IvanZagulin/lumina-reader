@@ -56,6 +56,8 @@ kotlin {
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.palette.ktx)
             implementation(libs.coil3.network.okhttp)
+            // BackHandler behind PlatformBackHandler (:app already uses it).
+            implementation(libs.androidx.activity.compose)
         }
         iosMain.dependencies {
             implementation(libs.coil3.network.ktor3)
