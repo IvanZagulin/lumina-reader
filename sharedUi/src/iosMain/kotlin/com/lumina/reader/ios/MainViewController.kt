@@ -1,8 +1,6 @@
 package com.lumina.reader.ios
 
 import androidx.compose.ui.window.ComposeUIViewController
-import com.lumina.reader.ui.preview.IosPreviewApp
-import platform.Foundation.NSBundle
 import platform.UIKit.UIViewController
 
 /**
@@ -10,22 +8,9 @@ import platform.UIKit.UIViewController
  * which passes the process arguments. Swift sees it as
  * `MainViewControllerKt.MainViewController(arguments:)`.
  *
- * `-startRoute <route>` selects the first screen; CI's simulator smoke test uses it
- * to take one screenshot per screen.
+ * CI's simulator smoke test launches with `-startRoute home`; the library is
+ * the only top-level screen so far, so the route needs no handling yet.
  */
-fun MainViewController(arguments: List<String>): UIViewController {
-    val versionName = infoString("CFBundleShortVersionString") ?: "?"
-    val buildNumber = infoString("CFBundleVersion") ?: "?"
-    val startRoute = arguments.valueAfter("-startRoute")
-    return ComposeUIViewController {
-        IosPreviewApp(versionName = versionName, buildNumber = buildNumber, startRoute = startRoute)
-    }
-}
-
-private fun infoString(key: String): String? =
-    NSBundle.mainBundle.objectForInfoDictionaryKey(key) as? String
-
-private fun List<String>.valueAfter(flag: String): String? {
-    val index = indexOf(flag)
-    return if (index >= 0) getOrNull(index + 1) else null
-}
+@Suppress("UNUSED_PARAMETER")
+fun MainViewController(arguments: List<String>): UIViewController =
+    ComposeUIViewController { LuminaIosApp() }
