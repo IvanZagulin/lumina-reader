@@ -13,7 +13,7 @@ import okio.Source
  * PDF "parser": one chapter per page titled "Страница N" with no paragraphs
  * (pages are rendered as images by the reader via [Chapter.pdfPageNumber]),
  * plus a cover rendered from the first page. The platform's PDF engine
- * ([inspectPdf]: PdfRenderer on Android, PDFKit on iOS) counts the pages and
+ * ([inspectPdf]: PdfRenderer on Android, CoreGraphics on iOS) counts the pages and
  * renders the cover.
  */
 class PdfParser internal constructor(

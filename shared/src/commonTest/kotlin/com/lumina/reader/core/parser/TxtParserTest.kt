@@ -8,6 +8,7 @@ import com.lumina.reader.core.parser.txt.TxtParser
 import com.lumina.reader.core.text.TestEncoders
 import okio.Buffer
 import okio.FileSystem
+import okio.SYSTEM
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

@@ -1,10 +1,12 @@
-@file:OptIn(ExperimentalForeignApi::class)
+@file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 
 package com.lumina.reader.core.parser.pdf
 
 import com.lumina.reader.core.parser.pdf.PdfParser.Companion.MAX_COVER_SIDE
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import okio.Path
@@ -50,7 +52,9 @@ internal actual fun inspectPdf(path: Path): PdfSummary? {
         val pageCount = CGPDFDocumentGetNumberOfPages(document).toInt()
         val cover = if (pageCount > 0) {
             // Pages are numbered from 1; the page belongs to the document.
-            CGPDFDocumentGetPage(document, 1u)?.let(::renderCover)
+            // The UIImage and its JPEG data are autoreleased: drain them here, not
+            // whenever the calling background thread happens to drain its pool.
+            CGPDFDocumentGetPage(document, 1u)?.let { page -> autoreleasepool { renderCover(page) } }
         } else {
             null
         }

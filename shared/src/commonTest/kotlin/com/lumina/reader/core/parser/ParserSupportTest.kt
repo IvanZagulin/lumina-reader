@@ -16,6 +16,7 @@ import com.lumina.reader.core.text.StringCharReader
 import okio.Buffer
 import okio.FileSystem
 import okio.Path
+import okio.SYSTEM
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertContentEquals

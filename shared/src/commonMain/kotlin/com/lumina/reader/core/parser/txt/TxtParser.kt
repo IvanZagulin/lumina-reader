@@ -10,6 +10,7 @@ import com.lumina.reader.core.parser.common.TextEncoding
 import com.lumina.reader.core.text.charset.TextCharset
 import okio.FileSystem
 import okio.Path
+import okio.SYSTEM
 import okio.Source
 import okio.buffer
 import okio.use
