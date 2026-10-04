@@ -14,6 +14,7 @@ import platform.UIKit.UIApplicationDidBecomeActiveNotification
 import platform.UIKit.UIApplicationWillResignActiveNotification
 import platform.UIKit.UIScreen
 import platform.UIKit.UIViewController
+import platform.UIKit.popoverPresentationController
 
 /** The idle timer is the app's, so it is simply switched back on when the reader leaves. */
 @Composable
@@ -43,6 +44,8 @@ actual fun rememberTextSharer(): (String) -> Unit = remember {
         } else {
             val sheet = UIActivityViewController(listOf(text), null)
             // On iPad the sheet is a popover and UIKit throws without an anchor.
+            // popoverPresentationController comes from a UIViewController category,
+            // which Kotlin/Native exposes as an imported extension.
             sheet.popoverPresentationController?.sourceView = top.view
             top.presentViewController(sheet, animated = true, completion = null)
         }
