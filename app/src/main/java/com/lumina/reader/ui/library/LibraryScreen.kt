@@ -37,15 +37,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
+import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStatus
-import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.LibraryViewMode
-import com.lumina.reader.core.preferences.get
 import com.lumina.reader.ui.components.BookcaseRow
 import com.lumina.reader.ui.components.GhostBooksRow
 import com.lumina.reader.ui.components.ShelfBookSize
@@ -80,7 +78,6 @@ fun LibraryScreen(
     isCheckingForUpdates: Boolean = false,
     updateAvailable: Boolean = false
 ) {
-    val context = LocalContext.current
     val sharer = rememberBookSharer()
     val allBooks by viewModel.allBooks.collectAsState()
     val libraryLoaded by viewModel.libraryLoaded.collectAsState()
@@ -99,7 +96,7 @@ fun LibraryScreen(
     val isLoading by viewModel.isLoading.collectAsState()
 
     val transition = LocalBookTransition.current
-    val uiPreferences = remember(context) { AppUiPreferences.get(context) }
+    val uiPreferences = remember { AppServices.library.uiPreferences }
     val openAnimation by uiPreferences.openAnimation.collectAsState()
 
     var searchActive by rememberSaveable { mutableStateOf(query.isNotEmpty()) }
