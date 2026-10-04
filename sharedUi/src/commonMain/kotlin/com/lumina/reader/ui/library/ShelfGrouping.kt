@@ -38,7 +38,7 @@ private fun Book.isInProgress(): Boolean = !isDone() && currentProgressPercent >
 private fun Book.isUntouched(): Boolean = !isDone() && currentProgressPercent <= 0f
 
 /** The book's shelf, normalised; a blank collection means the main shelf. */
-internal fun Book.shelfName(): String =
+fun Book.shelfName(): String =
     normalizeShelfName(collection).ifBlank { LibraryPreferences.MAIN_SHELF }
 
 private fun isMainShelf(name: String): Boolean =
@@ -160,13 +160,13 @@ fun List<Book>.sortedForView(sort: LibrarySort): List<Book> = when (sort) {
     LibrarySort.RECENT -> sortedWith(
         compareByDescending<Book> { it.isInProgress() }.thenByDescending(Book::lastReadTimestamp)
     )
-    LibrarySort.TITLE -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, Book::title))
+    LibrarySort.TITLE -> sortedWith(compareBy(CaseInsensitiveOrder, Book::title))
     LibrarySort.AUTHOR -> sortedWith(
-        compareBy(String.CASE_INSENSITIVE_ORDER, Book::author).thenBy(String.CASE_INSENSITIVE_ORDER, Book::title)
+        compareBy(CaseInsensitiveOrder, Book::author).thenBy(CaseInsensitiveOrder, Book::title)
     )
     LibrarySort.ADDED -> sortedByDescending(Book::id)
     LibrarySort.PROGRESS -> sortedWith(
-        compareByDescending(Book::currentProgressPercent).thenBy(String.CASE_INSENSITIVE_ORDER, Book::title)
+        compareByDescending(Book::currentProgressPercent).thenBy(CaseInsensitiveOrder, Book::title)
     )
 }
 
