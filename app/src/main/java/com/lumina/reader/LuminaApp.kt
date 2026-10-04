@@ -16,6 +16,20 @@ import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.preferences.get
 import com.lumina.reader.core.tts.TtsControllerReadAloud
+import com.lumina.reader.core.library.ChatServices
+import com.lumina.reader.core.library.ChatServicesHolder
+import com.lumina.reader.core.preferences.CatalogPreferences
+import com.lumina.reader.core.reminder.DailyReadingReminder
+import com.lumina.reader.core.reminder.ReadingReminder
+import com.lumina.reader.ui.catalog.AndroidCatalogDownloads
+import com.lumina.reader.ui.catalog.CatalogServices
+import com.lumina.reader.ui.catalog.CatalogServicesHolder
+import com.lumina.reader.ui.chat.AndroidChatDownloads
+import com.lumina.reader.ui.shell.ReadingReminderControl
+import com.lumina.reader.ui.shell.ShellServices
+import com.lumina.reader.ui.stats.SharedPreferencesStatsGoalStore
+import com.lumina.reader.ui.stats.StatsServices
+import com.lumina.reader.ui.stats.StatsServicesHolder
 import com.lumina.reader.platform.AppInfo
 
 class LuminaApp : Application() {
@@ -56,5 +70,27 @@ class LuminaApp : Application() {
                 readAloud = TtsControllerReadAloud(this)
             )
         }
+        // Wave 2: each screen group reads its services from its own holder, built on
+        // first use (the importer and the preference files must not open at start-up).
+        CatalogServicesHolder.install {
+            CatalogServices(
+                catalogPreferences = CatalogPreferences(this),
+                downloads = AndroidCatalogDownloads(BookImporter.get(this))
+            )
+        }
+        ChatServicesHolder.install {
+            ChatServices(
+                catalogPreferences = CatalogPreferences(this),
+                readingStatsDao = AppDatabase.getDatabase(this).readingStatsDao(),
+                downloads = AndroidChatDownloads(BookImporter.get(this))
+            )
+        }
+        StatsServicesHolder.install {
+            val db = AppDatabase.getDatabase(this)
+            StatsServices(db.bookDao(), db.readingStatsDao(), SharedPreferencesStatsGoalStore(this))
+        }
+        DailyReadingReminder.install { ReadingReminder.environment(this) }
+        // The settings sheet plans the reading reminder through this.
+        ShellServices.installReminders { ReadingReminderControl(this) }
     }
 }

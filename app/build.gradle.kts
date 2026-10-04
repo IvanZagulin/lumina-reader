@@ -114,6 +114,8 @@ dependencies {
 
     // Gson
     implementation(libs.gson)
+    // AiClient (still in :app) builds its JSON with kotlinx.serialization's JsonElement.
+    implementation(libs.kotlinx.serialization.json)
 
     // Network
     implementation(libs.okhttp)

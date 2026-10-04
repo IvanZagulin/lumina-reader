@@ -47,6 +47,8 @@ kotlin {
             implementation(libs.jb.compose.material.icons.extended)
             implementation(libs.jb.compose.resources)
             implementation(libs.coil3.compose)
+            // NetworkHeaders / httpHeaders: catalogue covers that need Basic auth.
+            implementation(libs.coil3.network.core)
             // Calendar dates in common code (reader bookmark and quote dates); api because
             // relativeDateLabel takes a kotlinx.datetime.TimeZone.
             api(libs.kotlinx.datetime)

@@ -3,16 +3,18 @@ package com.lumina.reader.ui.stats
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReadingStats
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalTime::class)
 class AdvancedStatsCalculatorTest {
-    private val zone = ZoneId.of("Europe/Moscow")
-    private val now = Instant.parse("2026-08-22T12:00:00Z").toEpochMilli()
+    private val zone = TimeZone.of("Europe/Moscow")
+    private val now = millis("2026-08-22T12:00:00Z")
 
     @Test
     fun `builds wrapped matrix sessions authors series and formats`() {
@@ -27,13 +29,13 @@ class AdvancedStatsCalculatorTest {
                 seriesName = "Цикл",
                 isCompleted = true,
                 currentProgressPercent = 100f,
-                startedAt = Instant.parse("2026-08-01T12:00:00Z").toEpochMilli(),
-                completedAt = Instant.parse("2026-08-22T10:00:00Z").toEpochMilli()
+                startedAt = millis("2026-08-01T12:00:00Z"),
+                completedAt = millis("2026-08-22T10:00:00Z")
             ),
             book(2, "Вторая", "Автор Б", BookFormat.PDF).copy(
                 seriesName = "Цикл",
                 currentProgressPercent = 40f,
-                lastReadTimestamp = Instant.parse("2026-07-20T14:00:00Z").toEpochMilli()
+                lastReadTimestamp = millis("2026-07-20T14:00:00Z")
             )
         )
 
@@ -53,12 +55,12 @@ class AdvancedStatsCalculatorTest {
 
     @Test
     fun `detects abandoned backlog and completion duration`() {
-        val oldRead = Instant.parse("2026-06-01T12:00:00Z").toEpochMilli()
+        val oldRead = millis("2026-06-01T12:00:00Z")
         val completed = book(1, "Готовая", "Автор", BookFormat.FB2).copy(
             isCompleted = true,
             currentProgressPercent = 100f,
-            startedAt = Instant.parse("2026-08-01T12:00:00Z").toEpochMilli(),
-            completedAt = Instant.parse("2026-08-10T12:00:00Z").toEpochMilli()
+            startedAt = millis("2026-08-01T12:00:00Z"),
+            completedAt = millis("2026-08-10T12:00:00Z")
         )
         val abandoned = book(2, "Брошенная", "Автор", BookFormat.TXT).copy(
             currentProgressPercent = 35f,
@@ -86,8 +88,10 @@ class AdvancedStatsCalculatorTest {
         bookId = bookId,
         sessionDurationSeconds = seconds,
         wordsReadCount = words,
-        timestamp = Instant.parse(timestamp).toEpochMilli()
+        timestamp = millis(timestamp)
     )
+
+    private fun millis(isoInstant: String): Long = Instant.parse(isoInstant).toEpochMilliseconds()
 
     private fun book(id: Long, title: String, author: String, format: BookFormat) = Book(
         id = id,

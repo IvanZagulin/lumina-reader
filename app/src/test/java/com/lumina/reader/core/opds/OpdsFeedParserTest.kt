@@ -6,19 +6,18 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-/** Uses the framework XML pull parser, hence Robolectric. */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+/**
+ * The parser runs on the shared markup tokenizer (no Android XML parser any
+ * more), so these are plain JVM tests; they use only common APIs and can move
+ * to :shared commonTest with the parser.
+ */
 class OpdsFeedParserTest {
 
     private val parser = OpdsFeedParser()
 
     private fun parse(xml: String, url: String = "https://flibusta.is/opds/new/0") =
-        parser.parseFeed(xml.byteInputStream(Charsets.UTF_8), url)
+        parser.parseFeed(xml.encodeToByteArray(), url)
 
     private val rootFeed = """
         <?xml version="1.0" encoding="utf-8"?>
@@ -189,11 +188,64 @@ class OpdsFeedParserTest {
               <Url type="application/atom+xml" template="/opds/search?searchTerms={searchTerms}&amp;page={startPage?}"/>
             </OpenSearchDescription>
         """.trimIndent()
-        val template = parser.parseOpenSearchTemplate(xml.byteInputStream(), "https://flibusta.is/opds-opensearch.xml")
+        val template = parser.parseOpenSearchTemplate(xml.encodeToByteArray(), "https://flibusta.is/opds-opensearch.xml")
         assertEquals("https://flibusta.is/opds/search?searchTerms={searchTerms}&page={startPage?}", template)
         assertEquals(
             "https://flibusta.is/opds/search?searchTerms=%D0%B2%D0%B5%D0%B4%D1%8C%D0%BC%D0%B0%D0%BA%201&page=",
             OpenSearch.expand(template!!, " ведьмак 1 ")
+        )
+    }
+
+    @Test
+    fun unclosedHtmlInsideContentDoesNotSwallowTheNextEntry() {
+        // <br> without "/" is not XML. The cursor closes it with its parent; Android's
+        // relaxed KXmlParser closed the innermost element on every end tag instead,
+        // which lost the first entry's link and skipped the second entry.
+        val xml = """
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <title>Первая</title>
+                <content type="xhtml"><div>Строка<br>ещё</div></content>
+                <link href="/b/1.epub" rel="http://opds-spec.org/acquisition" type="application/epub+zip"/>
+              </entry>
+              <entry>
+                <title>Вторая</title>
+                <link href="/b/2.epub" rel="http://opds-spec.org/acquisition" type="application/epub+zip"/>
+              </entry>
+              </stray>
+            </feed>
+        """.trimIndent()
+        val books = parse(xml, url = "https://example.org/opds").entries.map { it as OpdsEntry.Publication }
+        assertEquals(listOf("Первая", "Вторая"), books.map { it.title })
+        assertEquals("Строка\nещё", books[0].summary)
+        assertEquals("https://example.org/b/2.epub", books[1].acquisitions.single().url)
+    }
+
+    @Test
+    fun decodesTheEncodingOfTheXmlDeclaration() {
+        val head = """<?xml version="1.0" encoding="windows-1251"?><feed><title>""".encodeToByteArray()
+        // "Каталог" in windows-1251.
+        val title = intArrayOf(0xCA, 0xE0, 0xF2, 0xE0, 0xEB, 0xEE, 0xE3).map { it.toByte() }.toByteArray()
+        val tail = "</title></feed>".encodeToByteArray()
+        val feed = parser.parseFeed(head + title + tail, "https://example.org/opds")
+        assertEquals("Каталог", feed.title)
+    }
+
+    @Test
+    fun readsSizesOnlyWithAWholeUnit() {
+        assertEquals(1_572_864L, OpdsFeedParser.sizeFromText("Размер: 1,5 Мб"))
+        assertEquals(2048L, OpdsFeedParser.sizeFromText("Формат: fb2\nразмер: 2 KB"))
+        assertEquals(300L, OpdsFeedParser.sizeFromText("РАЗМЕР : 300 байт"))
+        // "Kbytes" is no unit of the list: neither "kb" nor "k" may run on into a word.
+        assertNull(OpdsFeedParser.sizeFromText("Размер: 12 Kbytes"))
+    }
+
+    @Test
+    fun matchesSeriesKeywordsInAnyCase() {
+        assertEquals(OpdsSeries("Дюна", 3), OpdsFeedParser.seriesFromText("СЕРИЯ: Дюна №3"))
+        assertEquals(
+            OpdsSeries("Хроники"),
+            OpdsFeedParser.seriesFromLinks(listOf(OpdsLink(href = "https://x/s/1", title = "Все КНИГИ СЕРИИ «Хроники»")))
         )
     }
 }

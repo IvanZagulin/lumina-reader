@@ -92,7 +92,7 @@ object BookFileNames {
  * for a malformed escape or an unknown charset. Android: the JDK class, as
  * before; iOS: [UrlDecoding].
  */
-internal expect fun decodeUrlComponent(value: String, charset: String): String
+expect fun decodeUrlComponent(value: String, charset: String): String
 
 /** Picks the title and author stored for an imported book. */
 object ImportMetadata {

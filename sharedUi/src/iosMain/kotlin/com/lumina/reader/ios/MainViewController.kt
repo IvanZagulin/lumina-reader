@@ -4,6 +4,7 @@ import androidx.compose.ui.window.ComposeUIViewController
 import com.lumina.reader.core.library.IosLibrary
 import com.lumina.reader.core.library.IosLibraryImports
 import com.lumina.reader.core.library.UrlImportSource
+import com.lumina.reader.core.reminder.IosReadingReminders
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
@@ -18,8 +19,11 @@ import platform.UIKit.UIViewController
  * the only top-level screen so far, so the route needs no handling yet.
  */
 @Suppress("UNUSED_PARAMETER")
-fun MainViewController(arguments: List<String>): UIViewController =
-    ComposeUIViewController { LuminaIosApp() }
+fun MainViewController(arguments: List<String>): UIViewController {
+    // Plans the daily reading reminder now and again on every background transition.
+    IosReadingReminders.start()
+    return ComposeUIViewController { LuminaIosApp() }
+}
 
 /**
  * «Открыть в Lumina» from another app (Files, Telegram, Mail): the Swift host

@@ -2,17 +2,19 @@ package com.lumina.reader.ui.stats
 
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStats
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalTime::class)
 class ReadingStatsCalculatorTest {
 
-    private val zone = ZoneId.of("Europe/Moscow")
-    private val now = Instant.parse("2026-08-14T12:00:00Z").toEpochMilli()
+    private val zone = TimeZone.of("Europe/Moscow")
+    private val now = millis("2026-08-14T12:00:00Z")
 
     @Test
     fun `calculates period totals streaks and reading habits`() {
@@ -28,7 +30,7 @@ class ReadingStatsCalculatorTest {
             stats = stats,
             books = listOf(book(1, "Первая"), book(2, "Вторая")),
             nowMillis = now,
-            zoneId = zone
+            timeZone = zone
         )
 
         assertEquals(900, result.today.durationSeconds)
@@ -66,12 +68,12 @@ class ReadingStatsCalculatorTest {
 
     @Test
     fun `uses supplied timezone at day boundary`() {
-        val boundaryNow = Instant.parse("2026-08-14T00:30:00Z").toEpochMilli()
+        val boundaryNow = millis("2026-08-14T00:30:00Z")
         val result = ReadingStatsCalculator.calculate(
             stats = listOf(session(1, "2026-08-13T23:30:00Z", 90, 150)),
             books = emptyList(),
             nowMillis = boundaryNow,
-            zoneId = ZoneId.of("Europe/Moscow")
+            timeZone = TimeZone.of("Europe/Moscow")
         )
 
         assertEquals(1, result.today.sessionCount)
@@ -86,7 +88,7 @@ class ReadingStatsCalculatorTest {
             valid.copy(id = 2, sessionDurationSeconds = -1),
             valid.copy(id = 3, sessionDurationSeconds = 90_000),
             valid.copy(id = 4, wordsReadCount = -20),
-            valid.copy(id = 5, timestamp = Instant.parse("2026-09-01T10:00:00Z").toEpochMilli())
+            valid.copy(id = 5, timestamp = millis("2026-09-01T10:00:00Z"))
         )
 
         val result = ReadingStatsCalculator.calculate(stats, emptyList(), now, zone)
@@ -112,7 +114,7 @@ class ReadingStatsCalculatorTest {
 
     @Test
     fun `uses completion timestamps for monthly and yearly book goals`() {
-        val completedAt = Instant.parse("2026-08-10T12:00:00Z").toEpochMilli()
+        val completedAt = millis("2026-08-10T12:00:00Z")
         val completedBook = book(1, "Готовая").copy(
             isCompleted = true,
             currentProgressPercent = 100f,
@@ -123,7 +125,7 @@ class ReadingStatsCalculatorTest {
             stats = listOf(session(1, "2026-08-10T10:00:00Z", 600, 1_000)),
             books = listOf(completedBook),
             nowMillis = now,
-            zoneId = zone,
+            timeZone = zone,
             goalSettings = StatsGoalSettings(yearlyBooksTarget = 12)
         )
 
@@ -143,8 +145,10 @@ class ReadingStatsCalculatorTest {
         bookId = bookId,
         sessionDurationSeconds = durationSeconds,
         wordsReadCount = words,
-        timestamp = Instant.parse(timestamp).toEpochMilli()
+        timestamp = millis(timestamp)
     )
+
+    private fun millis(isoInstant: String): Long = Instant.parse(isoInstant).toEpochMilliseconds()
 
     private fun book(id: Long, title: String) = Book(
         id = id,

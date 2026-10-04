@@ -1,16 +1,16 @@
 package com.lumina.reader.ios
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
@@ -18,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -32,36 +34,72 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumina.reader.core.library.AppMessageAction
 import com.lumina.reader.core.library.AppMessages
+import com.lumina.reader.core.network.AiClient
+import com.lumina.reader.core.network.AiMessage
+import com.lumina.reader.ui.catalog.CatalogScreen
+import com.lumina.reader.ui.catalog.CatalogSourcesScreen
+import com.lumina.reader.ui.catalog.CatalogSourcesViewModel
+import com.lumina.reader.ui.catalog.CatalogViewModel
+import com.lumina.reader.ui.chat.AiChatScreen
+import com.lumina.reader.ui.chat.AiChatViewModel
+import com.lumina.reader.ui.downloads.DownloadIsland
+import com.lumina.reader.ui.downloads.DownloadsSheet
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.reader.ReaderScreen
 import com.lumina.reader.ui.reader.ReaderViewModel
-import com.lumina.reader.ui.reader.selection.AskAiMessage
+import com.lumina.reader.ui.shell.AppSettingsSheet
+import com.lumina.reader.ui.shell.DockDestination
+import com.lumina.reader.ui.shell.LocalAppSnackbar
+import com.lumina.reader.ui.shell.LocalDockScroll
+import com.lumina.reader.ui.shell.LuminaDock
+import com.lumina.reader.ui.shell.LuminaSnackbarHost
+import com.lumina.reader.ui.shell.rememberDockScrollState
+import com.lumina.reader.ui.stats.StatsScreenWithAchievements
+import com.lumina.reader.ui.stats.StatsViewModel
 import com.lumina.reader.ui.theme.Lumina
+import com.lumina.reader.ui.theme.LuminaDimens
+import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.LuminaReaderTheme
 
 /**
- * The iPhone app: the shared library and reader screens over the services iOS
- * builds from IosLibrary.
+ * The iPhone app: the same screens as Android, over the services iOS builds
+ * from IosLibrary and the holders of each feature.
  *
- * Navigation is one piece of state, the open book. The library keeps its
- * scroll position while a book is open (SaveableStateHolder), and every opened
- * book gets its own ViewModelStore, cleared when the book closes — what a
- * NavBackStackEntry does on Android. Without it each book read would stay in
- * memory, parsed text included, for as long as the app runs.
+ * Navigation is state, not a graph: a selected dock tab and, above it, the
+ * open book. Each tab keeps its scroll and input while another is shown
+ * (SaveableStateHolder), and every opened book gets its own ViewModelStore,
+ * cleared when it closes — what a NavBackStackEntry does on Android. Without
+ * it each book read would stay in memory, parsed text included.
  *
- * Books come in through the Files picker and «Открыть в Lumina»; results and
- * errors arrive as [AppMessages] and show in a snackbar, as on Android.
- * Catalogues and settings are no-ops until their screens move.
+ * The book-opening flight is Android-only for now: without a transition host
+ * the shared screens simply open the book (BookSlotHost's defaults).
  */
 @Composable
 fun LuminaIosApp() {
     LuminaReaderTheme {
         var openBookId by rememberSaveable { mutableStateOf<Long?>(null) }
+        var tabRoute by rememberSaveable { mutableStateOf(DockDestination.LIBRARY.route) }
+        var managingCatalogs by rememberSaveable { mutableStateOf(false) }
+        var catalogQuery by rememberSaveable { mutableStateOf<String?>(null) }
+        var showSettings by rememberSaveable { mutableStateOf(false) }
+        var showDownloads by rememberSaveable { mutableStateOf(false) }
+        var shelfBadge by rememberSaveable { mutableIntStateOf(0) }
+
+        val tab = DockDestination.forRoute(tabRoute) ?: DockDestination.LIBRARY
         val library: LibraryViewModel = viewModel { LibraryViewModel() }
         val pickBooks = rememberBookPicker()
         val snackbar = remember { SnackbarHostState() }
         val screens = rememberSaveableStateHolder()
+        val dockScroll = rememberDockScrollState()
+
+        fun selectTab(destination: DockDestination) {
+            tabRoute = destination.route
+            managingCatalogs = false
+            if (destination == DockDestination.LIBRARY) shelfBadge = 0
+            dockScroll.reset()
+        }
+
         LaunchedEffect(Unit) {
             AppMessages.messages.collect { message ->
                 if (!message.isFresh()) return@collect
@@ -75,47 +113,133 @@ fun LuminaIosApp() {
         LaunchedEffect(Unit) {
             AppMessages.openBookRequests.collect { bookId -> openBookId = bookId }
         }
-        Box(modifier = Modifier.fillMaxSize().background(Lumina.colors.wall)) {
-            val bookId = openBookId
-            if (bookId == null) {
-                screens.SaveableStateProvider("library") {
-                    LibraryScreen(
-                        viewModel = library,
+
+        CompositionLocalProvider(
+            LocalDockScroll provides dockScroll.connection,
+            LocalAppSnackbar provides snackbar
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Lumina.colors.wall)) {
+                val bookId = openBookId
+                if (bookId == null) {
+                    screens.SaveableStateProvider(tab.route + managingCatalogs) {
+                        when (tab) {
+                            DockDestination.LIBRARY -> LibraryScreen(
+                                viewModel = library,
+                                onOpenBook = { id -> openBookId = id },
+                                onImportBook = pickBooks,
+                                onOpenCatalogs = { selectTab(DockDestination.CATALOG) },
+                                onSearchCatalogs = { query ->
+                                    if (query.isNotBlank()) {
+                                        catalogQuery = query
+                                        selectTab(DockDestination.CATALOG)
+                                    }
+                                },
+                                onOpenSettings = { showSettings = true }
+                            )
+                            DockDestination.CATALOG ->
+                                if (managingCatalogs) {
+                                    val sources: CatalogSourcesViewModel = viewModel { CatalogSourcesViewModel() }
+                                    CatalogSourcesScreen(viewModel = sources, onBack = { managingCatalogs = false })
+                                } else {
+                                    val catalog: CatalogViewModel = viewModel { CatalogViewModel() }
+                                    DockScrollArea {
+                                        CatalogScreen(
+                                            viewModel = catalog,
+                                            onBack = { selectTab(DockDestination.LIBRARY) },
+                                            onOpenBook = { id -> openBookId = id },
+                                            onManageCatalogs = { managingCatalogs = true },
+                                            initialQuery = catalogQuery
+                                        )
+                                    }
+                                }
+                            DockDestination.ASSISTANT -> {
+                                val chat: AiChatViewModel = viewModel { AiChatViewModel() }
+                                DockScrollArea {
+                                    AiChatScreen(viewModel = chat, onBack = { selectTab(DockDestination.LIBRARY) })
+                                }
+                            }
+                            DockDestination.STATS -> {
+                                val stats: StatsViewModel = viewModel { StatsViewModel() }
+                                DockScrollArea {
+                                    StatsScreenWithAchievements(
+                                        viewModel = stats,
+                                        onBack = { selectTab(DockDestination.LIBRARY) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = !managingCatalogs,
+                        enter = fadeIn(androidx.compose.animation.core.tween(LuminaMotion.DurationMedium)) +
+                            slideInVertically(androidx.compose.animation.core.tween(LuminaMotion.DurationMedium)) { it },
+                        exit = fadeOut(androidx.compose.animation.core.tween(LuminaMotion.DurationShort)) +
+                            slideOutVertically(androidx.compose.animation.core.tween(LuminaMotion.DurationMedium)) { it },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        LuminaDock(
+                            selected = tab,
+                            onSelect = { destination -> if (destination != tab) selectTab(destination) },
+                            onAddBook = pickBooks,
+                            collapse = { dockScroll.collapse.value },
+                            libraryBadge = shelfBadge
+                        )
+                    }
+                    DownloadIsland(
                         onOpenBook = { id -> openBookId = id },
-                        onImportBook = pickBooks,
-                        onOpenCatalogs = {},
-                        onSearchCatalogs = {},
-                        onOpenSettings = {}
+                        onOpenDownloads = { showDownloads = true },
+                        modifier = Modifier.align(Alignment.TopCenter)
                     )
+                } else {
+                    BookScope(bookId) {
+                        val reader: ReaderViewModel = viewModel { ReaderViewModel(bookId) }
+                        val aiClient = remember { AiClient() }
+                        ReaderScreen(
+                            viewModel = reader,
+                            onBack = { openBookId = null },
+                            askAi = { messages ->
+                                aiClient.askAssistant(messages.map { AiMessage(role = it.role, content = it.content) }).content
+                            }
+                        )
+                    }
                 }
-                // Android adds books from the dock's «+»; the dock moves in stage 8d.
-                FloatingActionButton(
-                    onClick = pickBooks,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                LuminaSnackbarHost(
+                    hostState = snackbar,
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(Alignment.BottomCenter)
                         .safeDrawingPadding()
-                        .padding(20.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Добавить книгу")
-                }
-            } else {
-                BookScope(bookId) {
-                    val reader: ReaderViewModel = viewModel { ReaderViewModel(bookId) }
-                    ReaderScreen(
-                        viewModel = reader,
-                        onBack = { openBookId = null },
-                        askAi = askAiUnavailable
-                    )
-                }
+                        .padding(bottom = if (bookId == null && !managingCatalogs) LuminaDimens.DockHeight + 24.dp else 12.dp)
+                )
             }
-            SnackbarHost(
-                hostState = snackbar,
-                modifier = Modifier.align(Alignment.BottomCenter).safeDrawingPadding()
-            )
+
+            if (showDownloads) {
+                DownloadsSheet(
+                    onDismiss = { showDownloads = false },
+                    onOpenBook = { id ->
+                        showDownloads = false
+                        openBookId = id
+                    }
+                )
+            }
+            if (showSettings) {
+                // APK updates are Android's: iOS updates come through AltStore.
+                AppSettingsSheet(
+                    onDismiss = { showSettings = false },
+                    onCheckForUpdates = null,
+                    isCheckingForUpdates = false
+                )
+            }
         }
     }
+}
+
+/** Keeps a top-level screen's lists scrolling the dock, as the Android nav graph does. */
+@Composable
+private fun DockScrollArea(content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().nestedScroll(LocalDockScroll.current)) { content() }
 }
 
 /** A ViewModelStore that lives exactly as long as [bookId] is open. */
@@ -130,9 +254,4 @@ private fun BookScope(bookId: Long, content: @Composable () -> Unit) {
         onDispose { owner.viewModelStore.clear() }
     }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, content = content)
-}
-
-/** The assistant needs the network client, which comes to the iPhone with the catalogues. */
-private val askAiUnavailable: suspend (List<AskAiMessage>) -> String = {
-    throw UnsupportedOperationException("ИИ-помощник появится на iPhone в одном из следующих обновлений")
 }
