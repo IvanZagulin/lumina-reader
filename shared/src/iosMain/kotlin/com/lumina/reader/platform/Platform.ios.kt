@@ -19,8 +19,12 @@ actual object LuminaLog {
 
     private fun log(level: String, tag: String, message: String, error: Throwable?) {
         val suffix = if (error == null) "" else ": " + error.toString()
-        // The text goes in as an argument, never as the format string.
-        NSLog("%@", "$level/$tag: $message$suffix")
+        val line = "$level/$tag: $message$suffix"
+        // The line is the format itself, with % escaped. NSLog's format is a
+        // typed NSString parameter, which Kotlin/Native bridges from String;
+        // a String passed through its C varargs is not bridged, so `%@` read
+        // the text bytes as an object pointer and crashed with SIGSEGV.
+        NSLog(line.replace("%", "%%"))
     }
 }
 
