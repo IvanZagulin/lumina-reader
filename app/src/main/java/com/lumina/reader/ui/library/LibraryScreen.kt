@@ -26,7 +26,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -62,7 +61,6 @@ import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.transition.BookTransitionState
 import com.lumina.reader.ui.transition.LocalBookTransition
-import kotlinx.coroutines.launch
 
 /**
  * The library (spec §5): one LazyColumn over the warm wall with a lamp glow —
@@ -83,6 +81,7 @@ fun LibraryScreen(
     updateAvailable: Boolean = false
 ) {
     val context = LocalContext.current
+    val sharer = rememberBookSharer()
     val allBooks by viewModel.allBooks.collectAsState()
     val libraryLoaded by viewModel.libraryLoaded.collectAsState()
     val books by viewModel.displayBooks.collectAsState()
@@ -102,7 +101,6 @@ fun LibraryScreen(
     val transition = LocalBookTransition.current
     val uiPreferences = remember(context) { AppUiPreferences.get(context) }
     val openAnimation by uiPreferences.openAnimation.collectAsState()
-    val scope = rememberCoroutineScope()
 
     var searchActive by rememberSaveable { mutableStateOf(query.isNotEmpty()) }
     var finishedExpanded by rememberSaveable { mutableStateOf(false) }
@@ -357,7 +355,7 @@ fun LibraryScreen(
                 )
             },
             onDelete = { viewModel.deleteBook(actionsBook) },
-            onShare = { scope.launch { shareBook(context, actionsBook) } }
+            onShare = { sharer.share(actionsBook) }
         )
     }
 

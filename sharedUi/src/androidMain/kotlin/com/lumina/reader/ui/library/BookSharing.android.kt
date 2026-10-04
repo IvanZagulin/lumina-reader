@@ -3,39 +3,32 @@ package com.lumina.reader.ui.library
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.model.Book
-import com.lumina.reader.core.model.BookFormat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** MIME type and extension of a stored book file. */
-internal fun BookFormat.shareMime(): Pair<String, String> = when (this) {
-    BookFormat.EPUB -> "application/epub+zip" to "epub"
-    BookFormat.FB2 -> "application/x-fictionbook+xml" to "fb2"
-    // Stored as the original archive (BookFileNames: "fb2.zip"), so it is sent as one.
-    BookFormat.FB2_ZIP -> "application/zip" to "fb2.zip"
-    BookFormat.PDF -> "application/pdf" to "pdf"
-    BookFormat.TXT -> "text/plain" to "txt"
-}
-
-/** A file name from the title that every file system accepts. */
-internal fun shareFileName(title: String, extension: String): String {
-    val base = title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-        .take(80)
-        .ifBlank { "book" }
-    return "$base.$extension"
+@Composable
+actual fun rememberBookSharer(): BookSharer {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    return remember(context, scope) {
+        BookSharer { book -> scope.launch { shareBook(context, book) } }
+    }
 }
 
 /**
- * «Поделиться»: copies the book into `cache/shared/books/` (FileProvider only
- * exposes `cache/shared/` for sending) and opens the system share sheet.
+ * Copies the book into `cache/shared/books/` (FileProvider only exposes
+ * `cache/shared/` for sending) and opens the system share sheet.
  */
-suspend fun shareBook(context: Context, book: Book) {
+private suspend fun shareBook(context: Context, book: Book) {
     val (mime, extension) = book.format.shareMime()
     val file = withContext(Dispatchers.IO) {
         runCatching {
