@@ -28,8 +28,10 @@ import com.lumina.reader.MainActivity
 import com.lumina.reader.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -38,7 +40,8 @@ import androidx.media.app.NotificationCompat as MediaNotificationCompat
 /**
  * Foreground service that keeps read-aloud alive in the background. It owns
  * the media session (lock screen, headset and Bluetooth controls) and the
- * media-style notification, and stops itself when playback goes IDLE.
+ * media-style notification, and stops itself when playback goes IDLE or
+ * stays paused for [PAUSE_TIMEOUT_MS].
  *
  * Started by [TtsController]; it never drives playback on its own.
  */
@@ -56,6 +59,7 @@ class TtsPlaybackService : Service() {
     private var mediaSession: MediaSessionCompat? = null
     private var noisyReceiverRegistered = false
     private var stopping = false
+    private var pauseTimeout: Job? = null
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -180,8 +184,23 @@ class TtsPlaybackService : Service() {
             return
         }
         if (stopping) return
+        schedulePauseTimeout(model.status)
         updateSession(model)
         postNotification(buildNotification(model))
+    }
+
+    /** A pause nobody comes back to ends the session, like a stop from the notification. */
+    private fun schedulePauseTimeout(status: TtsStatus) {
+        if (status != TtsStatus.PAUSED) {
+            pauseTimeout?.cancel()
+            pauseTimeout = null
+            return
+        }
+        if (pauseTimeout?.isActive == true) return
+        pauseTimeout = scope.launch {
+            delay(PAUSE_TIMEOUT_MS)
+            if (TtsController.state.value.status == TtsStatus.PAUSED) TtsController.stop()
+        }
     }
 
     private fun stopPlayback() {
@@ -350,6 +369,7 @@ class TtsPlaybackService : Service() {
         private const val MEDIA_SESSION_TAG = "LuminaTts"
         private const val REQUEST_CONTENT = 7302
         private const val TAG = "TtsPlaybackService"
+        private const val PAUSE_TIMEOUT_MS = 30L * 60 * 1000
 
         internal fun createChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return

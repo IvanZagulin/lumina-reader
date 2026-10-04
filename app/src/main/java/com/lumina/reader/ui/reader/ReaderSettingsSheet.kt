@@ -93,7 +93,8 @@ import com.lumina.reader.ui.theme.LuminaShape
 import kotlin.math.roundToInt
 
 private const val MIN_FONT_SIZE = 12
-private const val MAX_FONT_SIZE = 32
+// 36 matches the A+ limit of earlier versions, so a saved size is never shown clamped.
+private const val MAX_FONT_SIZE = 36
 
 /**
  * «Аа» (§7.3): brightness and themes on top, then the tabs «Текст»,
