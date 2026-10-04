@@ -20,14 +20,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.update.SemanticVersion
 import com.lumina.reader.ui.components.BookCoverModel
@@ -134,13 +132,13 @@ private fun PreviewShelves() {
 
 @Composable
 private fun PreviewControls(versionName: String, startRoute: String?) {
-    var query by remember { mutableStateOf("") }
+    val search: PreviewViewModel = viewModel { PreviewViewModel() }
     Column(
         modifier = Modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Spacer(Modifier.height(4.dp))
-        SearchPill(query = query, onQueryChange = { query = it }, placeholder = "Название или автор")
+        SearchPill(query = search.query, onQueryChange = search::onQueryChange, placeholder = "Название или автор")
         Row(verticalAlignment = Alignment.CenterVertically) {
             DownloadProgressChip(
                 state = DownloadChipState.Idle,

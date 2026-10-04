@@ -47,6 +47,8 @@ kotlin {
             implementation(libs.jb.compose.material.icons.extended)
             implementation(libs.jb.compose.resources)
             implementation(libs.coil3.compose)
+            // Multiplatform ViewModel (`viewModel { }`) for the shared screens (stage 8b+).
+            implementation(libs.jb.lifecycle.viewmodel.compose)
         }
         androidMain.dependencies {
             // WindowCompat (system bar appearance) and cover colours (Palette),
