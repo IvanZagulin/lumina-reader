@@ -62,6 +62,10 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        // JUnit 4 for the JVM run of the tests (testDebugUnitTest), as in :shared.
+        androidUnitTest.dependencies {
+            implementation(libs.junit)
+        }
     }
 }
 

@@ -7,6 +7,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.lumina.reader.sharedui.resources.Res
 import com.lumina.reader.sharedui.resources.lora_variable
@@ -16,9 +18,9 @@ import org.jetbrains.compose.resources.FontResource
 
 // UI typefaces (spec §1.4). Both files are subset variable fonts (wght axis)
 // shipped as Compose Multiplatform resources (composeResources/font), so
-// Android and iOS load the same files. Font(resource, weight) sets the `wght`
-// variation for each declared weight, exactly like Font(R.font.x, weight) did,
-// so one file serves every weight.
+// Android and iOS load the same files. Each declared weight sets the `wght`
+// variation (see variableFont), exactly like Font(R.font.x, weight) did, so
+// one file serves every weight.
 //
 // Loading a resource font is a composable call, so the families are created
 // once by LuminaReaderTheme and handed down through LocalLuminaFonts; the
@@ -64,9 +66,20 @@ internal fun rememberLuminaFonts(): LuminaFonts {
 
 @Composable
 private fun rememberVariableFamily(resource: FontResource): FontFamily {
-    val normal = Font(resource, FontWeight.Normal)
-    val medium = Font(resource, FontWeight.Medium)
-    val semiBold = Font(resource, FontWeight.SemiBold)
-    val bold = Font(resource, FontWeight.Bold)
+    val normal = variableFont(resource, FontWeight.Normal)
+    val medium = variableFont(resource, FontWeight.Medium)
+    val semiBold = variableFont(resource, FontWeight.SemiBold)
+    val bold = variableFont(resource, FontWeight.Bold)
     return remember(normal, medium, semiBold, bold) { FontFamily(normal, medium, semiBold, bold) }
 }
+
+/**
+ * One weight of a variable font. The `wght` (and `ital` = 0) variation is
+ * passed explicitly: on Android that is exactly the default of
+ * Font(R.font.x, weight) and of the resource Font(resource, weight), but on
+ * iOS the resource Font(resource, weight) without settings loads the font's
+ * default instance, so every weight would draw as Regular.
+ */
+@Composable
+private fun variableFont(resource: FontResource, weight: FontWeight): androidx.compose.ui.text.font.Font =
+    Font(resource, weight, FontStyle.Normal, FontVariation.Settings(weight, FontStyle.Normal))

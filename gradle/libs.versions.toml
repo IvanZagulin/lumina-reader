@@ -23,9 +23,12 @@ cmpMaterial3 = "1.9.0"
 # Frozen upstream; its Android variant is androidx material-icons-extended 1.7.6,
 # the version :app already uses.
 cmpIcons = "1.7.3"
-# Coil 3 (multiplatform). 3.4.0 is the last release for Compose 1.11: 3.5+ pulls
-# Compose Multiplatform 1.12 (compileSdk 37 / AGP 9.2). Its Android variant
-# depends on androidx lifecycle-runtime 2.9.4, the version :app already uses.
+# Coil 3 (multiplatform). 3.4.0 is the last release we can take: 3.5.0 is built
+# with Kotlin 2.4 (kotlin-stdlib 2.4.0, newer klibs than our 2.3.21 compiler) and
+# 3.6+ pulls Compose Multiplatform 1.12 (androidx compose 1.12). Its Android
+# variant depends on androidx lifecycle-runtime 2.9.4, the version :app uses;
+# its iOS klibs (built on Compose 1.9.3 / Skiko 0.9.22) link against Compose
+# 1.11.1 / Skiko 0.144.6 without a missing signature (klib dump-ir-signatures).
 coil3 = "3.4.0"
 # Ktor: so far only the iOS engine of Coil's network fetcher (the shared HTTP
 # client follows in stage 7); 3.6.0 is built with Kotlin 2.3.21 / coroutines 1.11.
