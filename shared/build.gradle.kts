@@ -56,6 +56,9 @@ kotlin {
             // The Context.preferencesDataStore delegates that have always created
             // the app's settings files (filesDir/datastore/<name>.preferences_pb).
             implementation(libs.androidx.datastore.preferences)
+            // RoomDatabase.withTransaction for LibraryRepository, as :app has
+            // always used it (same artifact :app already ships).
+            implementation(libs.androidx.room.ktx)
         }
         iosMain.dependencies {
             // Android uses the framework SQLite (Room compatibility mode, no

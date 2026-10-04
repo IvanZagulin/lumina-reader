@@ -2,10 +2,10 @@ package com.lumina.reader.core.library
 
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class BookDeduplicationTest {
 
