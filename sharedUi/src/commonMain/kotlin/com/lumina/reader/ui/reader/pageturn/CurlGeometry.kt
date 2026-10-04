@@ -6,7 +6,7 @@ import kotlin.math.sqrt
  * A small convex polygon in preallocated arrays, so clipping during a curl
  * allocates nothing per frame.
  */
-internal class CurlPolygon(capacity: Int = 8) {
+class CurlPolygon(capacity: Int = 8) {
     val xs = FloatArray(capacity)
     val ys = FloatArray(capacity)
     var size = 0
@@ -46,7 +46,7 @@ internal class CurlPolygon(capacity: Int = 8) {
  * The flap's back side is the flap reflected across the fold:
  * `X' = X − 2((X − M)·n)n`.
  */
-internal class CurlGeometry {
+class CurlGeometry {
     var width = 0f
         private set
     var height = 0f
@@ -258,7 +258,7 @@ internal class CurlGeometry {
 }
 
 /** Which corner a curl drags, chosen by where the drag starts (§9.3). */
-internal enum class CurlCorner {
+enum class CurlCorner {
     TOP,
     BOTTOM,
 
@@ -275,7 +275,7 @@ internal enum class CurlCorner {
 }
 
 /** y of the dragged corner for a touch at [touchY]. */
-internal fun curlCornerY(corner: CurlCorner, height: Float, touchY: Float): Float = when (corner) {
+fun curlCornerY(corner: CurlCorner, height: Float, touchY: Float): Float = when (corner) {
     CurlCorner.TOP -> 0f
     CurlCorner.BOTTOM -> height
     CurlCorner.MIDDLE -> touchY
@@ -286,7 +286,7 @@ internal fun curlCornerY(corner: CurlCorner, height: Float, touchY: Float): Floa
  * quadratic Bézier from the corner (W, cornerY) through (0.3W, 0.85H) — mirrored
  * for the top corner — to (−W, cornerY). Writes x and y into [out].
  */
-internal fun curlTapPath(t: Float, width: Float, height: Float, cornerY: Float, out: FloatArray) {
+fun curlTapPath(t: Float, width: Float, height: Float, cornerY: Float, out: FloatArray) {
     val u = t.coerceIn(0f, 1f)
     val startX = width
     val controlX = 0.3f * width
@@ -304,6 +304,6 @@ internal fun curlTapPath(t: Float, width: Float, height: Float, cornerY: Float, 
  * past the middle of the page or flung left. Backward (the previous page
  * uncurling from x = -W): it is more than half way back or flung right.
  */
-internal fun shouldCommitCurl(forward: Boolean, touchX: Float, width: Float, velocityX: Float): Boolean =
+fun shouldCommitCurl(forward: Boolean, touchX: Float, width: Float, velocityX: Float): Boolean =
     if (forward) touchX < width / 2f || velocityX < -1000f
     else touchX > 0f || velocityX > 1000f

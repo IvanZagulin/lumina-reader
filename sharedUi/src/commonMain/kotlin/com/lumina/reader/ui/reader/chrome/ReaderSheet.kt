@@ -18,7 +18,7 @@ import com.lumina.reader.ui.theme.LuminaShape
 
 /** The 36×4dp drag handle of reader sheets, in the text colour at 20 %. */
 @Composable
-internal fun ReaderSheetHandle(colors: ReaderChromeColors) {
+fun ReaderSheetHandle(colors: ReaderChromeColors) {
     Box(
         modifier = Modifier
             .padding(top = 10.dp, bottom = 6.dp)
@@ -35,7 +35,7 @@ internal fun ReaderSheetHandle(colors: ReaderChromeColors) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReaderModalSheet(
+fun ReaderModalSheet(
     colors: ReaderChromeColors,
     onDismiss: () -> Unit,
     scrimAlpha: Float = 0.15f,

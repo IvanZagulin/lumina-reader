@@ -25,7 +25,7 @@ import com.lumina.reader.ui.theme.LuminaMotion
  * out in 150ms. The progress is read only while drawing.
  */
 @Composable
-internal fun BookmarkRibbon(
+fun BookmarkRibbon(
     visible: Boolean,
     color: Color,
     reducedMotion: Boolean,

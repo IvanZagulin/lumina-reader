@@ -47,10 +47,10 @@ import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.LuminaMotion
 
 /** Beyond this many entries only the path to the current chapter starts expanded (§7.4). */
-internal const val TOC_COLLAPSE_THRESHOLD = 60
+const val TOC_COLLAPSE_THRESHOLD = 60
 
 /** True when entry [index] has nested entries right after it. */
-internal fun tocHasChildren(items: List<TocItem>, index: Int): Boolean =
+fun tocHasChildren(items: List<TocItem>, index: Int): Boolean =
     index + 1 < items.size && items[index + 1].level > items[index].level
 
 /**
@@ -58,7 +58,7 @@ internal fun tocHasChildren(items: List<TocItem>, index: Int): Boolean =
  * before ([chapterIndex], [paragraphIndex]); -1 when the position lies
  * before every entry.
  */
-internal fun currentTocIndex(items: List<TocItem>, chapterIndex: Int, paragraphIndex: Int): Int {
+fun currentTocIndex(items: List<TocItem>, chapterIndex: Int, paragraphIndex: Int): Int {
     var result = -1
     items.forEachIndexed { index, item ->
         val starts = item.chapterIndex < chapterIndex ||
@@ -69,7 +69,7 @@ internal fun currentTocIndex(items: List<TocItem>, chapterIndex: Int, paragraphI
 }
 
 /** Indices of the entries that contain entry [index] (its parents, outermost first). */
-internal fun tocAncestors(items: List<TocItem>, index: Int): List<Int> {
+fun tocAncestors(items: List<TocItem>, index: Int): List<Int> {
     if (index !in items.indices) return emptyList()
     val result = ArrayList<Int>()
     var level = items[index].level
@@ -83,7 +83,7 @@ internal fun tocAncestors(items: List<TocItem>, index: Int): List<Int> {
 }
 
 /** Expanded entries when the sheet opens: everything, or only the path to [current] for long lists. */
-internal fun defaultTocExpanded(items: List<TocItem>, current: Int): Set<Int> =
+fun defaultTocExpanded(items: List<TocItem>, current: Int): Set<Int> =
     if (items.size <= TOC_COLLAPSE_THRESHOLD) {
         items.indices.filter { tocHasChildren(items, it) }.toSet()
     } else {
@@ -91,7 +91,7 @@ internal fun defaultTocExpanded(items: List<TocItem>, current: Int): Set<Int> =
     }
 
 /** Indices shown when entries outside [expanded] hide their children. */
-internal fun visibleTocIndices(items: List<TocItem>, expanded: Set<Int>): List<Int> {
+fun visibleTocIndices(items: List<TocItem>, expanded: Set<Int>): List<Int> {
     val result = ArrayList<Int>(items.size)
     var hiddenBelowLevel = Int.MAX_VALUE
     items.forEachIndexed { index, item ->
@@ -109,7 +109,7 @@ internal fun visibleTocIndices(items: List<TocItem>, expanded: Set<Int>): List<I
  * marked «Вы здесь» and scrolled into view, entries already read dimmed.
  */
 @Composable
-internal fun TocList(
+fun TocList(
     items: List<TocItem>,
     currentIndex: Int,
     colors: ReaderChromeColors,
@@ -244,7 +244,7 @@ private fun TocRow(
 
 /** Typography of empty states in the navigation sheet. */
 @Composable
-internal fun NavigationEmptyState(text: String, colors: ReaderChromeColors, modifier: Modifier = Modifier) {
+fun NavigationEmptyState(text: String, colors: ReaderChromeColors, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()

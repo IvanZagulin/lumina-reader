@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
  * it when there is less than its height plus [minTop] above; always at
  * least [margin] from the container edges.
  */
-internal fun selectionMenuPosition(
+fun selectionMenuPosition(
     anchor: Rect,
     menu: IntSize,
     container: IntSize,
@@ -77,7 +77,7 @@ internal fun selectionMenuPosition(
 }
 
 /** An action of the second row of the menu. */
-internal class SelectionMenuAction(
+class SelectionMenuAction(
     val label: String,
     val isDestructive: Boolean = false,
     val onClick: () -> Unit
@@ -90,7 +90,7 @@ internal class SelectionMenuAction(
  * overlay's coordinates).
  */
 @Composable
-internal fun SelectionMenu(
+fun SelectionMenu(
     anchor: Rect,
     colors: ReaderChromeColors,
     selectedColorHex: String?,

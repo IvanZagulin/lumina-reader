@@ -3,13 +3,13 @@ package com.lumina.reader.ui.reader
 import com.lumina.reader.core.model.Chapter
 
 /** Shortest query the in-book search runs for. */
-internal const val MIN_SEARCH_QUERY_LENGTH = 2
+const val MIN_SEARCH_QUERY_LENGTH = 2
 
 /** Search stops after this many matches. */
-internal const val MAX_SEARCH_RESULTS = 500
+const val MAX_SEARCH_RESULTS = 500
 
 /** Characters of context shown on each side of a match. */
-internal const val SEARCH_SNIPPET_CONTEXT = 40
+const val SEARCH_SNIPPET_CONTEXT = 40
 
 /**
  * One match of the in-book search. [matchStart]/[matchEnd] are offsets in
@@ -44,7 +44,7 @@ data class SearchMatch(
     val end: Int
 )
 
-internal data class SearchOutcome(
+data class SearchOutcome(
     val results: List<SearchResult>,
     val truncated: Boolean
 )
@@ -54,23 +54,23 @@ internal data class SearchOutcome(
  * character, so offsets found in the normalized text are valid in the
  * original text.
  */
-internal fun normalizeForSearch(text: String): String {
+fun normalizeForSearch(text: String): String {
     val chars = CharArray(text.length)
     for (index in text.indices) {
-        val lower = Character.toLowerCase(text[index])
+        val lower = text[index].lowercaseChar()
         chars[index] = if (lower == 'ё') 'е' else lower
     }
-    return String(chars)
+    return chars.concatToString()
 }
 
 /** Snippet of [text] around [matchStart, matchEnd) with the match located inside it. */
-internal data class Snippet(
+data class Snippet(
     val text: String,
     val matchStart: Int,
     val matchEnd: Int
 )
 
-internal fun buildSnippet(
+fun buildSnippet(
     text: String,
     matchStart: Int,
     matchEnd: Int,
@@ -104,7 +104,7 @@ internal fun buildSnippet(
  * Illustrations and empty (PDF) chapters are skipped. [checkCancelled] is
  * called between paragraphs so a newer query can stop an older search.
  */
-internal fun searchChapters(
+fun searchChapters(
     chapters: List<Chapter>,
     query: String,
     maxResults: Int = MAX_SEARCH_RESULTS,
@@ -146,7 +146,7 @@ internal fun searchChapters(
 }
 
 /** Chapter titles such as "Раздел 3" produced by some parsers read better as "Глава N". */
-internal fun displayChapterTitle(title: String, chapterIndex: Int): String =
+fun displayChapterTitle(title: String, chapterIndex: Int): String =
     if (title.isBlank() || title.matches(Regex("Раздел\\s+\\d+", RegexOption.IGNORE_CASE))) {
         "Глава ${chapterIndex + 1}"
     } else {
@@ -154,7 +154,7 @@ internal fun displayChapterTitle(title: String, chapterIndex: Int): String =
     }
 
 /** Plain text of a paragraph on screen and the part of it that is visible. */
-internal data class VisibleParagraphText(
+data class VisibleParagraphText(
     val paragraphIndex: Int,
     val text: String,
     val visibleStart: Int = 0,
@@ -162,7 +162,7 @@ internal data class VisibleParagraphText(
 )
 
 /** Where a selection lies inside one paragraph. */
-internal data class ParagraphTextRange(
+data class ParagraphTextRange(
     val paragraphIndex: Int,
     val start: Int,
     val end: Int
@@ -174,7 +174,7 @@ internal data class ParagraphTextRange(
  * A selection that spans paragraphs (copied without separators) is mapped to
  * the part inside its first paragraph.
  */
-internal fun locateSelection(
+fun locateSelection(
     selected: String,
     paragraphs: List<VisibleParagraphText>
 ): ParagraphTextRange? {

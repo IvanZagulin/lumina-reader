@@ -26,7 +26,7 @@ import com.lumina.reader.ui.theme.LuminaShape
  * jump (scrubber, contents, search), leading back to where the reader was.
  */
 @Composable
-internal fun ReturnToPageChip(
+fun ReturnToPageChip(
     label: String,
     colors: ReaderChromeColors,
     onClick: () -> Unit,

@@ -63,14 +63,14 @@ import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.LuminaDimens
 
 /** Results of one chapter, in book order. */
-internal data class SearchChapterGroup(
+data class SearchChapterGroup(
     val chapterIndex: Int,
     val chapterTitle: String,
     val results: List<SearchResult>
 )
 
 /** Groups consecutive results by chapter (the search returns them in book order). */
-internal fun groupSearchResults(results: List<SearchResult>): List<SearchChapterGroup> {
+fun groupSearchResults(results: List<SearchResult>): List<SearchChapterGroup> {
     val groups = ArrayList<SearchChapterGroup>()
     var start = 0
     while (start < results.size) {
@@ -84,7 +84,7 @@ internal fun groupSearchResults(results: List<SearchResult>): List<SearchChapter
 }
 
 /** Russian plural: [one] for 1, 21…; [few] for 2–4, 22…; [many] otherwise. */
-internal fun russianPlural(count: Int, one: String, few: String, many: String): String {
+fun russianPlural(count: Int, one: String, few: String, many: String): String {
     val mod100 = count % 100
     val mod10 = count % 10
     return when {
@@ -96,7 +96,7 @@ internal fun russianPlural(count: Int, one: String, few: String, many: String): 
 }
 
 /** «37 совпадений в 9 главах»; «первые 500 …» when the search stopped early. */
-internal fun searchSummary(results: List<SearchResult>, truncated: Boolean): String {
+fun searchSummary(results: List<SearchResult>, truncated: Boolean): String {
     val chapters = results.map { it.chapterIndex }.distinct().size
     val matches = results.size
     val matchWord = russianPlural(matches, "совпадение", "совпадения", "совпадений")
@@ -112,7 +112,7 @@ internal fun searchSummary(results: List<SearchResult>, truncated: Boolean): Str
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun InBookSearchPanel(
+fun InBookSearchPanel(
     state: SearchState,
     colors: ReaderChromeColors,
     onQueryChange: (String) -> Unit,

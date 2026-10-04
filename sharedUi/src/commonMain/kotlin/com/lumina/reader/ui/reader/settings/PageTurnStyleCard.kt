@@ -41,10 +41,11 @@ import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.PageTurnAnimation
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.LuminaShape
+import kotlin.math.PI
 import kotlin.math.sin
 
 /** «Сдвиг», «3D-переворот», «Загиб», «Без анимации». */
-internal fun pageTurnLabel(style: PageTurnAnimation): String = when (style) {
+fun pageTurnLabel(style: PageTurnAnimation): String = when (style) {
     PageTurnAnimation.SLIDE -> "Сдвиг"
     PageTurnAnimation.FLIP -> "3D-переворот"
     PageTurnAnimation.CURL -> "Загиб"
@@ -58,7 +59,7 @@ internal fun pageTurnLabel(style: PageTurnAnimation): String = when (style) {
  * where it is not supported.
  */
 @Composable
-internal fun PageTurnStyleCard(
+fun PageTurnStyleCard(
     style: PageTurnAnimation,
     selected: Boolean,
     enabled: Boolean,
@@ -146,7 +147,7 @@ private fun DrawScope.drawPageTurnDemo(style: PageTurnAnimation, t: Float, page:
     val radius = CornerRadius(3.dp.toPx())
     val stroke = Stroke(width = 1.dp.toPx())
     // Ease in and out over the loop: 0 → 1 → hold.
-    val phase = (sin((t * 2f - 0.5f) * Math.PI).toFloat() + 1f) / 2f
+    val phase = (sin((t * 2f - 0.5f) * PI).toFloat() + 1f) / 2f
     fun pageAt(x: Float, fill: Color) {
         drawRoundRect(fill, Offset(x, 0f), Size(w, h), radius)
         drawRoundRect(ink, Offset(x, 0f), Size(w, h), radius, style = stroke)

@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.sp
 
 /** Running head of a page: the chapter title, centred, one line (§4.2). */
 @Composable
-internal fun ReaderPageHeader(
+fun ReaderPageHeader(
     title: String,
     color: Color,
     modifier: Modifier = Modifier

@@ -39,7 +39,7 @@ import com.lumina.reader.ui.theme.LuminaDimens
  * a menu (§4.2). 56dp tall, 12dp from the screen edges, under the status bar.
  */
 @Composable
-internal fun ReaderTopBar(
+fun ReaderTopBar(
     title: String,
     subtitle: String,
     isBookmarked: Boolean,

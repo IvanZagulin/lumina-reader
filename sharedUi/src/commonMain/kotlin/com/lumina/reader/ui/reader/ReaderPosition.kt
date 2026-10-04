@@ -76,7 +76,7 @@ data class VisibleRange(
 }
 
 /** A restored position; [atChapterEnd] asks the reader to open the last page. */
-internal data class RestoredPosition(
+data class RestoredPosition(
     val position: ReaderPosition,
     val atChapterEnd: Boolean
 )
@@ -87,7 +87,7 @@ internal data class RestoredPosition(
  * never opens as a blank screen. Older versions stored [Int.MAX_VALUE] as the
  * paragraph to mean "end of the chapter".
  */
-internal fun restoreReaderPosition(
+fun restoreReaderPosition(
     chapters: List<Chapter>,
     chapterIndex: Int,
     paragraphIndex: Int,
@@ -114,7 +114,7 @@ internal fun restoreReaderPosition(
 }
 
 /** Index of the word-start characters in [text]: a word is a run of non-whitespace. */
-internal inline fun forEachWordStart(text: String, start: Int, end: Int, action: (Int) -> Unit) {
+inline fun forEachWordStart(text: String, start: Int, end: Int, action: (Int) -> Unit) {
     val from = start.coerceIn(0, text.length)
     val to = end.coerceIn(from, text.length)
     for (index in from until to) {
@@ -125,7 +125,7 @@ internal inline fun forEachWordStart(text: String, start: Int, end: Int, action:
 }
 
 /** Number of words that start in [start, end). */
-internal fun countWords(text: String, start: Int = 0, end: Int = text.length): Int {
+fun countWords(text: String, start: Int = 0, end: Int = text.length): Int {
     var count = 0
     forEachWordStart(text, start, end) { count++ }
     return count
@@ -135,21 +135,22 @@ internal fun countWords(text: String, start: Int = 0, end: Int = text.length): I
  * Counts every word of the session once, however often its page is shown.
  * A word belongs to the page on which it starts.
  */
-internal class SessionWordTracker {
-    private val counted = HashMap<Long, java.util.BitSet>()
+class SessionWordTracker {
+    // One flag per character of the paragraph: is a counted word starting there?
+    private val counted = HashMap<Long, BooleanArray>()
 
     /** Counts the words starting in [start, end) of a paragraph that were not counted yet. */
     fun count(chapterIndex: Int, paragraphIndex: Int, plainText: String, start: Int, end: Int): Int {
         val key = (chapterIndex.toLong() shl 32) or (paragraphIndex.toLong() and 0xFFFFFFFFL)
-        var bits: java.util.BitSet? = counted[key]
+        var bits: BooleanArray? = counted[key]
         var added = 0
         forEachWordStart(plainText, start, end) { wordStart ->
-            val set = bits ?: java.util.BitSet(plainText.length).also {
+            val set = bits ?: BooleanArray(plainText.length).also {
                 bits = it
                 counted[key] = it
             }
-            if (!set.get(wordStart)) {
-                set.set(wordStart)
+            if (!set[wordStart]) {
+                set[wordStart] = true
                 added++
             }
         }
@@ -162,14 +163,14 @@ internal class SessionWordTracker {
 }
 
 /** Default reading speed until the reader has some history. */
-internal const val DEFAULT_WORDS_PER_MINUTE = 200
+const val DEFAULT_WORDS_PER_MINUTE = 200
 
 /**
  * Average reading speed over recent sessions. Sessions without words are
  * ignored; with too little history the default is used. The result is kept
  * within a plausible range so one odd session cannot distort the estimate.
  */
-internal fun averageWordsPerMinute(sessions: List<ReadingStats>): Int {
+fun averageWordsPerMinute(sessions: List<ReadingStats>): Int {
     val useful = sessions.filter { it.wordsReadCount > 0 && it.sessionDurationSeconds > 0 }
     val words = useful.sumOf { it.wordsReadCount.toLong() }
     val seconds = useful.sumOf { it.sessionDurationSeconds }
@@ -178,14 +179,14 @@ internal fun averageWordsPerMinute(sessions: List<ReadingStats>): Int {
 }
 
 /** Minutes needed for [wordsLeft] words; at least one minute while text remains. */
-internal fun estimateMinutesLeft(wordsLeft: Int, wordsPerMinute: Int): Int {
+fun estimateMinutesLeft(wordsLeft: Int, wordsPerMinute: Int): Int {
     if (wordsLeft <= 0) return 0
     val speed = wordsPerMinute.coerceAtLeast(1)
     return ceil(wordsLeft.toDouble() / speed).toInt().coerceAtLeast(1)
 }
 
 /** "12 мин", "1 ч 05 мин"; null when there is nothing to show. */
-internal fun formatTimeLeft(minutes: Int?): String? {
+fun formatTimeLeft(minutes: Int?): String? {
     if (minutes == null || minutes <= 0) return null
     if (minutes < 60) return "$minutes мин"
     val hours = minutes / 60
@@ -197,7 +198,7 @@ internal fun formatTimeLeft(minutes: Int?): String? {
  * Words from [paragraphIndex]/[charOffset] to the end of the chapter.
  * [paragraphWordCounts] holds the word count of every paragraph.
  */
-internal fun wordsRemainingInChapter(
+fun wordsRemainingInChapter(
     plainParagraphs: List<String>,
     paragraphWordCounts: IntArray,
     paragraphIndex: Int,
@@ -212,11 +213,11 @@ internal fun wordsRemainingInChapter(
 }
 
 /** Plain text of a paragraph for statistics and search; illustrations have no words. */
-internal fun paragraphPlainText(raw: String): String =
+fun paragraphPlainText(raw: String): String =
     if (ParagraphMarkup.isImage(raw)) "" else ParagraphMarkup.plainText(raw)
 
 /** Short text that identifies a bookmark in the list. */
-internal fun bookmarkSnippet(
+fun bookmarkSnippet(
     chapter: Chapter,
     paragraphIndex: Int,
     charOffset: Int,

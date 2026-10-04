@@ -25,7 +25,7 @@ import com.lumina.reader.ui.reader.chrome.ReaderInverseCapsule
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** «3 из 37»; «— из 37» when the current match is not among the results. */
-internal fun searchPositionLabel(index: Int, total: Int): String =
+fun searchPositionLabel(index: Int, total: Int): String =
     if (index in 0 until total) "${index + 1} из $total" else "— из $total"
 
 /**
@@ -33,7 +33,7 @@ internal fun searchPositionLabel(index: Int, total: Int): String =
  * colours above the footer, stepping through the matches.
  */
 @Composable
-internal fun SearchNavigatorCapsule(
+fun SearchNavigatorCapsule(
     index: Int,
     total: Int,
     colors: ReaderChromeColors,

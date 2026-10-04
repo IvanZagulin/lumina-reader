@@ -34,7 +34,7 @@ import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
  * label (§4.2). Generic over the option type.
  */
 @Composable
-internal fun <T> IconSegmentRow(
+fun <T> IconSegmentRow(
     options: List<T>,
     selected: T,
     colors: ReaderChromeColors,
@@ -76,7 +76,7 @@ internal fun <T> IconSegmentRow(
 }
 
 /** Three text lines whose gap grows with [spacing] (1.2 … 2.0). */
-internal fun DrawScope.drawLineSpacingIcon(spacing: Float, color: Color) {
+fun DrawScope.drawLineSpacingIcon(spacing: Float, color: Color) {
     val stroke = 2.dp.toPx()
     val gap = size.height * 0.16f * spacing
     val total = 2 * gap
@@ -88,7 +88,7 @@ internal fun DrawScope.drawLineSpacingIcon(spacing: Float, color: Color) {
 }
 
 /** A page outline with text lines inset by [margin] (12 … 44 dp). */
-internal fun DrawScope.drawMarginIcon(margin: Int, color: Color) {
+fun DrawScope.drawMarginIcon(margin: Int, color: Color) {
     val stroke = 1.5.dp.toPx()
     val pageLeft = size.width * 0.18f
     val pageWidth = size.width * 0.64f
