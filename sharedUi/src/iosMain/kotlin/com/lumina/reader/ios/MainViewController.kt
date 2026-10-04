@@ -4,6 +4,7 @@ import androidx.compose.ui.window.ComposeUIViewController
 import com.lumina.reader.core.library.IosLibrary
 import com.lumina.reader.core.library.IosLibraryImports
 import com.lumina.reader.core.library.UrlImportSource
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.UIKit.UIViewController
@@ -29,6 +30,8 @@ fun MainViewController(arguments: List<String>): UIViewController =
  * the Inbox are not; UrlImportSource asks for access only when it is needed. The
  * book opens once it is in the library, as "Открыть с помощью" does on Android.
  */
+// removeItemAtURL's NSError** out-parameter is a cinterop pointer.
+@OptIn(ExperimentalForeignApi::class)
 fun importBookFromUrl(url: NSURL) {
     IosLibraryImports.launchInBackground {
         try {
