@@ -18,6 +18,12 @@ import okio.SYSTEM
  *   changes with app updates.
  */
 interface LibraryFiles {
+    /**
+     * The file system the directories below live on. The pipeline moves,
+     * writes, lists and deletes through it, but the parsers, [ZipInspector]
+     * and [StreamCopier] (headers, hashes) always read [FileSystem.SYSTEM]:
+     * use the system file system (both apps and the tests do).
+     */
     val fileSystem: FileSystem
 
     /** Book files (`<uuid>.<ext>`, the welcome book). */

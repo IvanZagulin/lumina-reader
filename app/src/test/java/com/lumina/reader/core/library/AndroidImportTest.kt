@@ -17,6 +17,7 @@ import okio.Path.Companion.toOkioPath
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -66,6 +67,9 @@ class AndroidImportTest {
 
             val source = UriImportSource(context, uri)
             assertEquals("shared-book.fb2", source.displayName)
+            // A revoked permission keeps its own message (no log), as importUri always did.
+            assertEquals("Нет доступа к файлу", source.failureMessage(SecurityException("revoked")))
+            assertNull(source.failureMessage(java.io.IOException("broken pipe")))
             val result = pipeline.importSource(source)
             assertTrue(result.toString(), result is ImportResult.Imported)
             val book = (result as ImportResult.Imported).book
