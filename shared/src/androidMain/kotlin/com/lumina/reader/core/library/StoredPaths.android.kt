@@ -1,8 +1,10 @@
 package com.lumina.reader.core.library
 
 import okio.Path
-import okio.Path.Companion.toOkioPath
-import java.io.File
+import okio.Path.Companion.toPath
 
-/** Exactly AndroidLibraryFiles.resolve: the stored path is already absolute. */
-actual fun resolveStoredLibraryPath(stored: String): Path = File(stored).toOkioPath()
+/**
+ * The stored path is already absolute on Android, so it is the file itself —
+ * exactly what coverImageOf did before stored paths needed resolving.
+ */
+actual fun resolveStoredLibraryPath(stored: String): Path = stored.toPath()
