@@ -1,0 +1,88 @@
+{
+  "name": "Lumina Reader",
+  "identifier": "com.lumina.reader.source",
+  "subtitle": "Читалка EPUB, FB2, PDF и TXT для iPhone",
+  "description": "Неподписанные сборки Lumina Reader для iPhone, собранные GitHub Actions из ветки main. AltStore подписывает приложение вашим Apple ID при установке и обновлении.",
+  "iconURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+  "website": "https://github.com/IvanZagulin/lumina-reader",
+  "sourceURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/automation/altstore-source/source.json",
+  "tintColor": "#A64A23",
+  "featuredApps": [
+    "com.lumina.reader"
+  ],
+  "apps": [
+    {
+      "name": "Lumina Reader",
+      "bundleIdentifier": "com.lumina.reader",
+      "developerName": "IvanZagulin",
+      "subtitle": "Читалка электронных книг",
+      "localizedDescription": "Lumina Reader — читалка электронных книг EPUB, FB2, PDF и TXT. Это предварительные сборки для iPhone: перенос приложения с Android идёт по этапам, и пока сборка показывает только экран-заглушку.",
+      "iconURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "tintColor": "#A64A23",
+      "category": "lifestyle",
+      "screenshots": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      },
+      "versions": [
+        {
+          "version": "1.0.19",
+          "buildVersion": "19",
+          "date": "2026-10-04T21:03:02Z",
+          "localizedDescription": "Сборка 1.0.19 из коммита 9d99e68.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.19/LuminaReader-1.0.19.ipa",
+          "size": 20054044,
+          "sha256": "111ccd64d7694270e5feae454aa12dfd6bb02acce78bb0dfc496bde00f34dee0",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.18",
+          "buildVersion": "18",
+          "date": "2026-10-04T20:13:29Z",
+          "localizedDescription": "Сборка 1.0.18 из коммита 1c91840.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.18/LuminaReader-1.0.18.ipa",
+          "size": 20056616,
+          "sha256": "134170e830e03a45cf08c44b02ef72d3e1b2239298f326b4a390ceea2da1a31c",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.17",
+          "buildVersion": "17",
+          "date": "2026-10-04T19:23:22Z",
+          "localizedDescription": "Сборка 1.0.17 из коммита 60289ba.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.17/LuminaReader-1.0.17.ipa",
+          "size": 20056619,
+          "sha256": "f6c9779a98b8bf658f2ab4a17b4e8421854387cf2e9d038878658c512bef2ef5",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.16",
+          "buildVersion": "16",
+          "date": "2026-10-04T18:54:08Z",
+          "localizedDescription": "Сборка 1.0.16 из коммита 0ca7d70.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.16/LuminaReader-1.0.16.ipa",
+          "size": 20058098,
+          "sha256": "59208c4ca9455c4e5bf8b5ee5a05ce4c41f45dc2de612a159d7a34612872d6d0",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.15",
+          "buildVersion": "15",
+          "date": "2026-10-04T18:27:44Z",
+          "localizedDescription": "Сборка 1.0.15 из коммита cc496c1.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.15/LuminaReader-1.0.15.ipa",
+          "size": 20058099,
+          "sha256": "8dc430d604163fdea98e2dbcbc0208d5c5fb998e756b432ffe6f9b697268061d",
+          "minOSVersion": "15.0"
+        }
+      ],
+      "version": "1.0.19",
+      "versionDate": "2026-10-04T21:03:02Z",
+      "versionDescription": "Сборка 1.0.19 из коммита 9d99e68.",
+      "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.19/LuminaReader-1.0.19.ipa",
+      "size": 20054044
+    }
+  ],
+  "news": []
+}
