@@ -1,22 +1,16 @@
 package com.lumina.reader.ui.library
 
-import android.app.Application
-import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.library.AppMessages
-import com.lumina.reader.core.library.BookImporter
-import com.lumina.reader.core.library.LibraryRepository
+import com.lumina.reader.core.library.AppServices
+import com.lumina.reader.core.library.LibraryServices
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReadingStatus
-import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.LibrarySort
 import com.lumina.reader.core.preferences.LibraryViewMode
-import com.lumina.reader.core.preferences.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -33,13 +27,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @OptIn(FlowPreview::class)
-class LibraryViewModel(application: Application) : AndroidViewModel(application) {
+class LibraryViewModel(
+    services: LibraryServices = AppServices.library
+) : ViewModel() {
 
-    private val bookDao = AppDatabase.getDatabase(application).bookDao()
-    private val importer = BookImporter.get(application)
-    private val repository = LibraryRepository(application)
-    private val libraryPreferences = LibraryPreferences(application)
-    private val uiPreferences = AppUiPreferences.get(application)
+    private val bookDao = services.bookDao
+    private val imports = services.imports
+    private val repository = services.repository
+    private val libraryPreferences = services.libraryPreferences
+    private val uiPreferences = services.uiPreferences
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
@@ -59,7 +55,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val selectedSeries = _selectedSeries.asStateFlow()
 
     /** True while a local file ("Добавить книгу" / "Открыть с помощью") is being imported. */
-    val isLoading: StateFlow<Boolean> = importer.activeImports
+    val isLoading: StateFlow<Boolean> = imports.activeImports
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -172,7 +168,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
-        importer.seedWelcomeBookIfNeeded()
+        imports.seedWelcomeBookIfNeeded()
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -203,13 +199,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun toggleFavorite(book: Book) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.Default) {
             bookDao.updateFavorite(book.id, !book.isFavorite)
         }
     }
 
     fun toggleCompleted(book: Book) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.Default) {
             bookDao.updateCompleted(book.id, !book.isCompleted)
         }
     }
@@ -220,7 +216,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         seriesName: String,
         seriesOrder: Int
     ) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.Default) {
             val normalizedCollection = normalizeShelfName(collection).ifBlank { LibraryPreferences.MAIN_SHELF }
             val normalizedSeries = normalizeShelfName(seriesName)
             val normalizedOrder = if (normalizedSeries.isBlank()) 0 else seriesOrder.coerceAtLeast(0)
@@ -253,17 +249,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Copies a picked document into the library; continues if the screen is left. */
-    fun importBookFromUri(uri: Uri) {
-        importer.importFromUri(uri)
-    }
-
     /** Deletes the book with its file, cover, bookmarks and highlights. */
     fun deleteBook(book: Book) {
-        importer.launchInBackground {
+        imports.launchInBackground {
             repository.deleteBook(book)
             // Catalogue rows of this book offer the download again.
-            importer.forgetBook(book.id)
+            imports.forgetBook(book.id)
             AppMessages.post("Книга «${book.title}» удалена")
         }
     }
