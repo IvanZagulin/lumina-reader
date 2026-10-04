@@ -17,6 +17,10 @@ targets:
     sources:
       # Swift host, Info.plist (never copied as a resource) and Assets.xcassets
       - path: LuminaReader
+    dependencies:
+      # LuminaUI is a static framework, so the system frameworks its Kotlin code
+      # uses must be linked by the app: the reading reminder is a local notification.
+      - sdk: UserNotifications.framework
     settings:
       base:
         PRODUCT_NAME: LuminaReader
