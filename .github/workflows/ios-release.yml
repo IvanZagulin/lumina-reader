@@ -95,6 +95,8 @@ jobs:
 
       - name: Link the Kotlin framework for devices
         shell: bash
+        env:
+          LUMINA_FLIBUSTA_PROXY: ${{ secrets.LUMINA_FLIBUSTA_PROXY }}
         run: |
           chmod +x gradlew
           ./gradlew :sharedUi:linkReleaseFrameworkIosArm64 --no-daemon --stacktrace

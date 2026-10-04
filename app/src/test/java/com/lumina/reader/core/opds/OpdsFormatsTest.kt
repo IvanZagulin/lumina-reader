@@ -29,6 +29,20 @@ class OpdsFormatsTest {
     }
 
     @Test
+    fun madeToOrderEpubGoesAfterTheStoredFb2() {
+        val flibusta = listOf(
+            OpdsAcquisition("https://flibusta.is/b/1/epub", BookFormat.EPUB),
+            OpdsAcquisition("https://flibusta.is/b/1/fb2", BookFormat.FB2_ZIP)
+        )
+        assertEquals(listOf(BookFormat.FB2_ZIP, BookFormat.EPUB), OpdsFormats.ranked(flibusta).map { it.format })
+        val file = listOf(
+            OpdsAcquisition("https://x.org/books/1.epub", BookFormat.EPUB),
+            OpdsAcquisition("https://x.org/books/1.fb2.zip", BookFormat.FB2_ZIP)
+        )
+        assertEquals("https://x.org/books/1.fb2.zip", OpdsFormats.ranked(file).first().url)
+    }
+
+    @Test
     fun prefersFb2ThenEpub() {
         val acquisitions = listOf(
             OpdsAcquisition("p", BookFormat.PDF),

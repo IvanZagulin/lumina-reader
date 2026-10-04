@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okio.Buffer
@@ -50,7 +51,7 @@ data class DownloadedFile(
  * Reading the body is a suspending, cancellable Ktor call, so cancelling the
  * download ends it at once (OkHttp needed a watcher that cancelled the call).
  */
-class BookDownloader(private val clientProvider: () -> HttpClient = { OpdsHttp.downloadClient }) {
+class BookDownloader(private val clientProvider: (url: String) -> HttpClient = { OpdsHttp.downloadClientFor(it) }) {
 
     suspend fun download(
         request: DownloadRequest,
@@ -61,7 +62,14 @@ class BookDownloader(private val clientProvider: () -> HttpClient = { OpdsHttp.d
         var lastError: Throwable? = null
         for (candidate in OpdsUrls.candidates(request.url, request.mirrorBaseUrls)) {
             try {
-                return@withContext downloadOnce(candidate, request, target, maxBytes, onProgress)
+                return@withContext try {
+                    downloadOnce(candidate, request, target, maxBytes, onProgress)
+                } catch (e: HttpStatusException) {
+                    // A busy catalogue answers 502/503/504 now and the same request an instant later.
+                    if (e.code !in 502..504) throw e
+                    delay(TRANSIENT_RETRY_DELAY_MILLIS)
+                    downloadOnce(candidate, request, target, maxBytes, onProgress)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ImportException) {
@@ -94,7 +102,7 @@ class BookDownloader(private val clientProvider: () -> HttpClient = { OpdsHttp.d
         // Credentials only go to the catalogue's own hosts and mirrors.
         val sendCredentials = targetHost != null && (targetHost == ownHost || targetHost in mirrorHosts)
         NetworkProxy.ready()
-        return clientProvider().prepareGet(url) {
+        return clientProvider(url).prepareGet(url) {
             // set, not append: the same replace semantics as OkHttp's Request.Builder.header.
             headers[HttpHeaders.UserAgent] = OpdsHttp.USER_AGENT
             headers[HttpHeaders.Accept] = "*/*"
@@ -161,5 +169,6 @@ class BookDownloader(private val clientProvider: () -> HttpClient = { OpdsHttp.d
 
     private companion object {
         const val BUFFER_SIZE = 64 * 1024
+        const val TRANSIENT_RETRY_DELAY_MILLIS = 1_500L
     }
 }

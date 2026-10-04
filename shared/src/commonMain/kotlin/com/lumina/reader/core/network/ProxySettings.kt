@@ -62,8 +62,48 @@ object NetworkProxy {
         }
     }
 
+    /**
+     * The proxy for a request to [url]: the user's own, for everything the catalogues
+     * fetch; otherwise the built-in one, for Flibusta's addresses only; otherwise none.
+     */
+    fun forUrl(url: String): ProxySettings? =
+        current ?: EmbeddedProxy.settings?.takeIf { EmbeddedProxy.appliesTo(url) }
+
     /** Returns once the stored proxy has been read (at once if nothing was bound). */
     suspend fun ready() {
         if (bound) loaded.await()
+    }
+}
+
+/**
+ * The proxy built into the app for the catalogues that are blocked in Russia (Flibusta),
+ * read from the spec put in at build time ("login:password@host:port", HTTP). Used only
+ * for those catalogues' addresses and only when the user has not set a proxy of their
+ * own; with no spec - a build made without the secret - there is none.
+ */
+internal object EmbeddedProxy {
+    val settings: ProxySettings? by lazy { parse(EMBEDDED_PROXY_SPEC) }
+
+    fun appliesTo(url: String): Boolean {
+        val host = url.substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore(':').lowercase()
+        return "flibusta" in host
+    }
+
+    internal fun parse(spec: String): ProxySettings? {
+        val text = spec.trim().removePrefix("http://")
+        if (text.isEmpty()) return null
+        val credentials = if ('@' in text) text.substringBeforeLast('@') else ""
+        val address = text.substringAfterLast('@')
+        val host = address.substringBeforeLast(':', "")
+        val port = address.substringAfterLast(':', "").toIntOrNull() ?: return null
+        val parsed = ProxySettings(
+            enabled = true,
+            type = ProxyType.HTTP,
+            host = host,
+            port = port,
+            username = credentials.substringBefore(':'),
+            password = credentials.substringAfter(':', "")
+        )
+        return parsed.takeIf { it.usable }
     }
 }

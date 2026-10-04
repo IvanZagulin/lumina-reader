@@ -41,7 +41,21 @@ object OpdsFormats {
     /** All offered formats, best first: what to try next when a download turns out not to be a book. */
     fun ranked(acquisitions: List<OpdsAcquisition>): List<OpdsAcquisition> {
         val order = PREFERENCE
-        return acquisitions.sortedBy { order.indexOf(it.format).let { index -> if (index < 0) Int.MAX_VALUE else index } }
+        val hasFb2 = acquisitions.any { it.format == BookFormat.FB2_ZIP || it.format == BookFormat.FB2 }
+        return acquisitions.sortedBy { acquisition ->
+            val index = order.indexOf(acquisition.format).let { if (it < 0) Int.MAX_VALUE else it }
+            // A catalogue that makes the EPUB on request (Flibusta's /b/<id>/epub) answers it with
+            // 502, a timeout or a web page about half the time, while the FB2 it keeps ready always
+            // downloads: the stored FB2 goes first and the made-to-order EPUB is the fallback.
+            if (hasFb2 && isMadeToOrder(acquisition)) order.size else index
+        }
+    }
+
+    /** An EPUB link that is an endpoint (".../epub"), not a file (".../book.epub"): the catalogue converts it on demand. */
+    private fun isMadeToOrder(acquisition: OpdsAcquisition): Boolean {
+        if (acquisition.format != BookFormat.EPUB) return false
+        val path = acquisition.url.lowercase().substringBefore('#').substringBefore('?').trimEnd('/')
+        return path.endsWith("/epub")
     }
 
     fun isThumbnailRel(rel: String?): Boolean = rel != null && rel.lowercase() in THUMBNAIL_RELS

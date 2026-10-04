@@ -40,7 +40,7 @@ data class FoundPublication(
 /** Loads, searches and pages OPDS catalogues. */
 class OpdsRepository(
     // A provider, not a client: the proxy setting can change while the repository lives.
-    private val clientProvider: () -> HttpClient = { OpdsHttp.feedClient },
+    private val clientProvider: (url: String) -> HttpClient = { OpdsHttp.feedClientFor(it) },
     private val parser: OpdsFeedParser = OpdsFeedParser(),
     private val feedCache: OpdsFeedCache = OpdsFeedCache.shared
 ) {
@@ -91,7 +91,7 @@ class OpdsRepository(
             runCatching { parser.parseFeed(hit.body, hit.finalUrl) }.getOrNull()?.let { return it }
         }
         NetworkProxy.ready()
-        return clientProvider().prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+        return clientProvider(url).prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
             val body = response.readBodyBytes(MAX_FEED_BYTES)
                 ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
@@ -102,7 +102,7 @@ class OpdsRepository(
     }
 
     private suspend fun fetchOpenSearchTemplate(url: String, catalog: OpdsCatalogConfig?): String? =
-        clientProvider().prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+        clientProvider(url).prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
             val body = response.readBodyBytes(MAX_FEED_BYTES) ?: return@execute null
             parser.parseOpenSearchTemplate(body, response.finalUrl)

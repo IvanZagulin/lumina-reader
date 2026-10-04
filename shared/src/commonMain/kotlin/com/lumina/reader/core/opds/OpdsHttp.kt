@@ -26,21 +26,20 @@ object OpdsHttp {
     private val downloadTimeouts = HttpTimeouts(connectMillis = 15_000, readMillis = 60_000, writeMillis = 60_000, callMillis = 0)
 
     private val lock = PlatformLock()
-    private var feed: Pair<ProxySettings?, HttpClient>? = null
-    private var download: Pair<ProxySettings?, HttpClient>? = null
+    private var feed = HashMap<ProxySettings?, HttpClient>()
+    private var download = HashMap<ProxySettings?, HttpClient>()
 
-    /** The client for feeds; rebuilt when the proxy setting changes (clients are fixed at creation). */
-    val feedClient: HttpClient
-        get() = lock.withLock {
-            val proxy = NetworkProxy.current
-            feed?.takeIf { it.first == proxy }?.second
-                ?: luminaHttpClient(feedTimeouts, proxy).also { feed = proxy to it }
-        }
+    /**
+     * The client for feeds from [url]. Clients are fixed at creation, so there is one per
+     * proxy in use (none, the user's, the built-in one for Flibusta), made when first needed.
+     */
+    fun feedClientFor(url: String): HttpClient = lock.withLock {
+        val proxy = NetworkProxy.forUrl(url)
+        feed.getOrPut(proxy) { luminaHttpClient(feedTimeouts, proxy) }
+    }
 
-    val downloadClient: HttpClient
-        get() = lock.withLock {
-            val proxy = NetworkProxy.current
-            download?.takeIf { it.first == proxy }?.second
-                ?: luminaHttpClient(downloadTimeouts, proxy).also { download = proxy to it }
-        }
+    fun downloadClientFor(url: String): HttpClient = lock.withLock {
+        val proxy = NetworkProxy.forUrl(url)
+        download.getOrPut(proxy) { luminaHttpClient(downloadTimeouts, proxy) }
+    }
 }
