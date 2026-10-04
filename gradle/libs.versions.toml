@@ -24,10 +24,12 @@ cmpMaterial3 = "1.9.0"
 # the version :app already uses.
 cmpIcons = "1.7.3"
 # JetBrains multiplatform ViewModel and Navigation for the shared screens
-# (stage 8b onward). These are the versions Compose Multiplatform 1.11.1 aligns
-# with; on Android they resolve to the androidx lifecycle/navigation above.
-jbLifecycle = "2.11.0"
-jbNavigation = "2.9.2"
+# (stage 8b onward). Their numbers track androidx: the 2.11 line resolves to
+# androidx lifecycle 2.11, which demands AGP 9.1 and compileSdk 37, so stay on
+# the 2.9 line that Compose Multiplatform 1.11.1 itself aligns with (androidx
+# lifecycle 2.9.x, the version :app is pinned to) until the AGP 9 migration.
+jbLifecycle = "2.9.1"
+jbNavigation = "2.9.0-beta03"
 # Coil 3 (multiplatform). 3.4.0 is the last release we can take: 3.5.0 is built
 # with Kotlin 2.4 (kotlin-stdlib 2.4.0, newer klibs than our 2.3.21 compiler) and
 # 3.6+ pulls Compose Multiplatform 1.12 (androidx compose 1.12). Its Android
