@@ -11,6 +11,10 @@ struct LuminaReaderApp: App {
         WindowGroup {
             ComposeView()
                 .ignoresSafeArea()
+                // «Открыть в Lumina» from Files, Telegram, Mail (document types in Info.plist).
+                .onOpenURL { url in
+                    MainViewControllerKt.importBookFromUrl(url: url)
+                }
         }
     }
 }
