@@ -1,5 +1,6 @@
 package com.lumina.reader.ui.reader.chrome
 
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
@@ -10,10 +11,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.platform.AppInfo
+import com.lumina.reader.platform.PlatformKind
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** The 36×4dp drag handle of reader sheets, in the text colour at 20 %. */
@@ -53,7 +57,15 @@ fun ReaderModalSheet(
         dragHandle = { ReaderSheetHandle(colors) }
     ) {
         ReaderMaterialTheme(colors) {
-            androidx.compose.foundation.layout.Column(content = content)
+            // On iOS a list in a sheet has a rubber-band overscroll of its own; dragging
+            // past the end of the table of contents then fights the sheet's own drag and
+            // the list jumps up and down. The sheet keeps its drag; the list stops bouncing.
+            // Android's glow does not do this and stays.
+            CompositionLocalProvider(
+                LocalOverscrollFactory provides if (AppInfo.platform == PlatformKind.IOS) null else LocalOverscrollFactory.current
+            ) {
+                androidx.compose.foundation.layout.Column(content = content)
+            }
         }
     }
 }
