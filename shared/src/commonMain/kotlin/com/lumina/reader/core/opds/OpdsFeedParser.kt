@@ -486,9 +486,9 @@ class OpdsFeedParser {
         }.joinToString("")
 
         /** Strips an XML prefix: "dc:language" -> "language". */
-        internal fun localName(name: String?): String = name.orEmpty().substringAfterLast(':')
+        fun localName(name: String?): String = name.orEmpty().substringAfterLast(':')
 
-        internal fun seriesFromText(text: String): OpdsSeries? {
+        fun seriesFromText(text: String): OpdsSeries? {
             if (text.isBlank()) return null
             val match = SERIES_IN_TEXT.find(text) ?: return null
             val name = match.groupValues[1].trim().trim('«', '»', '"').trim()
@@ -496,7 +496,7 @@ class OpdsFeedParser {
             return OpdsSeries(name, match.groupValues[2].toIntOrNull())
         }
 
-        internal fun seriesFromLinks(links: List<OpdsLink>): OpdsSeries? {
+        fun seriesFromLinks(links: List<OpdsLink>): OpdsSeries? {
             for (link in links) {
                 val title = link.title ?: continue
                 val match = SERIES_IN_LINK.find(title) ?: continue
@@ -513,7 +513,7 @@ class OpdsFeedParser {
          * alternation with a negative look-ahead for any Unicode letter, a
          * character class common code avoids; Char.isLetter is the same set.
          */
-        internal fun sizeFromText(text: String): Long? {
+        fun sizeFromText(text: String): Long? {
             for (match in SIZE_IN_TEXT.findAll(text)) {
                 val unitStart = match.range.last + 1
                 val unit = SIZE_UNITS.firstOrNull { unit ->

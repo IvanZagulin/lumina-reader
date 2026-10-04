@@ -51,8 +51,13 @@ kotlin {
             api(libs.androidx.room.runtime)
             api(libs.androidx.datastore.preferences.core)
             implementation(libs.kotlinx.serialization.json)
+            // api: luminaHttpClient and the constructors of OpdsRepository, BookDownloader
+            // and AiClient expose io.ktor.client.HttpClient to :app and :sharedUi.
+            api(libs.ktor.client.core)
         }
         androidMain.dependencies {
+            // The Android engine is OkHttp, as the OPDS client and downloader always used.
+            implementation(libs.ktor.client.okhttp)
             // The Context.preferencesDataStore delegates that have always created
             // the app's settings files (filesDir/datastore/<name>.preferences_pb).
             implementation(libs.androidx.datastore.preferences)
@@ -65,6 +70,8 @@ kotlin {
             // driver); the iPhone app bundles SQLite.
             implementation(libs.androidx.sqlite.bundled)
             implementation(libs.kotlinx.serialization.protobuf)
+            // NSURLSession through Ktor: OPDS feeds, downloads and the assistant on iPhone.
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
