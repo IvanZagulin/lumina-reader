@@ -57,8 +57,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.network.httpHeaders
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.lumina.reader.ui.components.toNetworkHeaders
 import com.lumina.reader.ui.theme.LegacyM3Defaults
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaShape
@@ -293,7 +296,7 @@ internal fun CatalogCover(
                 val request = remember(url, authHeaders, large) {
                     ImageRequest.Builder(context)
                         .data(url)
-                        .apply { authHeaders.forEach { (name, value) -> addHeader(name, value) } }
+                        .httpHeaders(authHeaders.toNetworkHeaders())
                         .size(if (large) 360 else 216, if (large) 540 else 324)
                         .crossfade(large)
                         .build()

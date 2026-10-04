@@ -74,8 +74,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          # testDebugUnitTest also runs :shared's commonTest on the JVM.
+          # testDebugUnitTest also runs :shared's and :sharedUi's commonTest on the JVM.
           path: |
             app/build/reports/tests
             shared/build/reports/tests
+            sharedUi/build/reports/tests
           if-no-files-found: ignore

@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.Bookmark
 import com.lumina.reader.core.model.ParsedBook

@@ -15,10 +15,24 @@ androidxIcons = "1.7.6"
 # 2.11 requires AGP 9.1+ and compileSdk 37; stay on 2.9 until the AGP 9 migration.
 androidxLifecycle = "2.9.4"
 androidxNavigation = "2.9.7"
-# Compose Multiplatform for the iPhone UI (:sharedUi, iOS targets only for now).
-# material3 1.9.0 is the CMP 1.11.1 plugin's own default.
+# Compose Multiplatform for the shared UI (:sharedUi, Android and iOS). On
+# Android these resolve to the androidx versions above; material3 1.9.0 is the
+# CMP 1.11.1 plugin's own default.
 composeMultiplatform = "1.11.1"
 cmpMaterial3 = "1.9.0"
+# Frozen upstream; its Android variant is androidx material-icons-extended 1.7.6,
+# the version :app already uses.
+cmpIcons = "1.7.3"
+# Coil 3 (multiplatform). 3.4.0 is the last release we can take: 3.5.0 is built
+# with Kotlin 2.4 (kotlin-stdlib 2.4.0, newer klibs than our 2.3.21 compiler) and
+# 3.6+ pulls Compose Multiplatform 1.12 (androidx compose 1.12). Its Android
+# variant depends on androidx lifecycle-runtime 2.9.4, the version :app uses;
+# its iOS klibs (built on Compose 1.9.3 / Skiko 0.9.22) link against Compose
+# 1.11.1 / Skiko 0.144.6 without a missing signature (klib dump-ir-signatures).
+coil3 = "3.4.0"
+# Ktor: so far only the iOS engine of Coil's network fetcher (the shared HTTP
+# client follows in stage 7); 3.6.0 is built with Kotlin 2.3.21 / coroutines 1.11.
+ktor = "3.6.0"
 room = "2.8.4"
 # SQLite compiled into the iPhone app (Room's driver there). Android keeps the
 # framework SQLite through Room's compatibility mode (no driver), as before.
@@ -35,7 +49,6 @@ datetime = "0.8.0"
 # is already multiplatform (jvm, which Android uses, and iOS), so :shared keeps it.
 datastore = "1.1.1"
 coroutines = "1.11.0"
-coil = "2.7.0"
 gson = "2.11.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
@@ -64,12 +77,16 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3",
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "androidxIcons" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "androidxNavigation" }
 
-# Compose Multiplatform (iOS UI in :sharedUi); direct coordinates instead of the
-# deprecated compose.* accessors of the Gradle plugin.
+# Compose Multiplatform (shared UI in :sharedUi); direct coordinates instead of
+# the deprecated compose.* accessors of the Gradle plugin.
 jb-compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime", version.ref = "composeMultiplatform" }
 jb-compose-foundation = { group = "org.jetbrains.compose.foundation", name = "foundation", version.ref = "composeMultiplatform" }
 jb-compose-ui = { group = "org.jetbrains.compose.ui", name = "ui", version.ref = "composeMultiplatform" }
 jb-compose-material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "cmpMaterial3" }
+jb-compose-material-icons-extended = { group = "org.jetbrains.compose.material", name = "material-icons-extended", version.ref = "cmpIcons" }
+# Compose Multiplatform resources: the UI fonts of :sharedUi (Res.font.*). On
+# Android they are packaged as assets of the library.
+jb-compose-resources = { group = "org.jetbrains.compose.components", name = "components-resources", version.ref = "composeMultiplatform" }
 # :shared (AnnotatedString, Color): on Android these resolve to the same
 # androidx.compose 1.11.2 artifacts that :app already uses.
 jb-compose-ui-graphics = { group = "org.jetbrains.compose.ui", name = "ui-graphics", version.ref = "composeMultiplatform" }
@@ -105,8 +122,12 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
-# Coil image loading
-coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+# Coil image loading (covers): the Compose integration plus one network fetcher
+# per platform (OkHttp on Android, as with Coil 2; Ktor's Darwin engine on iOS).
+coil3-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil3" }
+coil3-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil3" }
+coil3-network-ktor3 = { group = "io.coil-kt.coil3", name = "coil-network-ktor3", version.ref = "coil3" }
+ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
 
 # Gson
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }

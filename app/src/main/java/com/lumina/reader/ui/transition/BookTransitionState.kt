@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -40,7 +41,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
+import okio.Path
 
 /** Where the page starts when the reader closes (predictive back may have shrunk it). */
 internal data class CloseStart(val scale: Float = 1f, val translationX: Float = 0f, val cornerPx: Float = 0f)
@@ -58,15 +59,19 @@ class BookTransitionState internal constructor(
     private val scope: CoroutineScope,
     private val graphicsContext: GraphicsContext,
     private val navLayer: GraphicsLayer
-) {
+) : BookSlotHost {
     enum class Phase { Idle, Opening, WaitingReader, Closing }
 
     var phase by mutableStateOf(Phase.Idle)
         private set
 
     /** The book whose shelf slot is drawn transparent while the clone flies. */
-    var hiddenBookId by mutableStateOf<Long?>(null)
+    override var hiddenBookId by mutableStateOf<Long?>(null)
         private set
+
+    /** The shared shelf books (:sharedUi) register their slots through this. */
+    override fun slotModifier(key: String, bookId: Long): Modifier =
+        Modifier.bookTransitionSlot(this, key, bookId)
 
     /** NavHost transitions are skipped while the overlay animates. */
     val suppressNavAnimation: Boolean get() = phase != Phase.Idle
@@ -202,7 +207,7 @@ class BookTransitionState internal constructor(
         TransitionGeometry.showcaseRect(rootSize.width.toFloat(), rootSize.height.toFloat())
 
     private fun clothFor(model: BookCoverModel): Color {
-        val path = (model.image as? File)?.path
+        val path = (model.image as? Path)?.toString()
         return CoverPalette.peek(path)?.base ?: ClothPalette.forBook(model.title, model.author).color
     }
 

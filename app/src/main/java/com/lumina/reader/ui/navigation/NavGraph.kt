@@ -94,6 +94,7 @@ import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import com.lumina.reader.ui.transition.BookTransitionOverlay
 import com.lumina.reader.ui.transition.BookTransitionState
+import com.lumina.reader.ui.transition.LocalBookSlotHost
 import com.lumina.reader.ui.transition.LocalBookTransition
 import com.lumina.reader.ui.transition.ReaderTransitionHost
 import com.lumina.reader.ui.transition.rememberBookTransitionState
@@ -225,6 +226,7 @@ fun LuminaNavGraph(
 
     CompositionLocalProvider(
         LocalBookTransition provides transition,
+        LocalBookSlotHost provides transition,
         LocalDockScroll provides dockScroll.connection,
         LocalAppSnackbar provides snackbarHostState
     ) {

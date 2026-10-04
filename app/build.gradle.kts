@@ -75,6 +75,8 @@ android {
 dependencies {
     // Platform-neutral core shared with the iPhone app (same packages as before).
     implementation(project(":shared"))
+    // Shared Compose UI: theme, fonts and components (same packages as before).
+    implementation(project(":sharedUi"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -93,9 +95,6 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
-    // Cover colours (hero background, transition endpaper)
-    implementation(libs.androidx.palette.ktx)
-
     // Media session and MediaStyle notification for read-aloud playback
     implementation(libs.androidx.media)
 
@@ -109,8 +108,9 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
-    // Coil
-    implementation(libs.coil.compose)
+    // Coil 3: covers from files and catalogue URLs (OkHttp fetcher, auth headers)
+    implementation(libs.coil3.compose)
+    implementation(libs.coil3.network.okhttp)
 
     // Gson
     implementation(libs.gson)
