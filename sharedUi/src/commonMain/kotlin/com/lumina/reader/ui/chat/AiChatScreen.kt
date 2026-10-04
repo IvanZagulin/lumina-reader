@@ -81,6 +81,14 @@ import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
 private val UserBubbleShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 6.dp, bottomStart = 20.dp)
 private val AssistantBubbleShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp)
@@ -165,6 +173,26 @@ fun AiChatScreen(
 
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    // iPhone has no back button to close the keyboard, and the keyboard covers the dock,
+    // so a chat with something typed could not be left: a tap on the conversation or a
+    // drag of it puts the keyboard away.
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val hideKeyboard: () -> Unit = {
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
+    val hideKeyboardOnDrag = remember(focusManager, keyboard) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                }
+                return Offset.Zero
+            }
+        }
+    }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Above the dock (64dp + 12dp margin) unless the keyboard is open.
     val inputBottom = if (imeVisible) 8.dp else navBottom + LuminaDimens.DockHeight + LuminaDimens.ChromeMargin + 8.dp
@@ -176,7 +204,12 @@ fun AiChatScreen(
             .imePadding()
     ) {
         ChatHeader()
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .nestedScroll(hideKeyboardOnDrag)
+                .pointerInput(Unit) { detectTapGestures(onTap = { hideKeyboard() }) }
+        ) {
             if (lines.isEmpty() && !isLoading) {
                 EmptyChat(onSuggestion = send)
             } else {

@@ -14,6 +14,7 @@ import com.lumina.reader.core.opds.OpdsFeed
 import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
+import com.lumina.reader.core.opds.BuiltInCatalogs
 import com.lumina.reader.ui.downloads.DownloadMeta
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
@@ -325,30 +326,53 @@ class CatalogViewModel(
             )
         }
         searchJob = viewModelScope.launch {
-            // Each catalogue reports as soon as it answers.
-            catalogs.forEach { catalog ->
-                launch {
-                    val result = repository.searchAll(listOf(catalog), query, scope.searchType).first()
-                    val feed = result.feed
-                    val section = CatalogSearchSection(
-                        catalog = catalog,
-                        entries = feed?.entries?.let { appendUniqueEntries(emptyList(), it) }.orEmpty(),
-                        nextUrl = feed?.nextUrl,
-                        feedUrl = feed?.url,
-                        isLoading = false,
-                        error = result.error
-                            ?: if (feed != null && feed.entries.isEmpty()) "Ничего не найдено" else null
-                    )
-                    mutableState.update { state ->
-                        val search = state.globalSearch ?: return@update state
-                        if (search.query != query) return@update state
-                        state.copy(
-                            globalSearch = search.copy(
-                                sections = search.sections.map { if (it.catalog.id == catalog.id) section else it }
-                            )
+            // One catalogue's search; returns whether it found anything. Each section
+            // fills in as soon as its catalogue answers.
+            suspend fun searchIn(catalog: OpdsCatalogConfig): Boolean {
+                val result = repository.searchAll(listOf(catalog), query, scope.searchType).first()
+                val feed = result.feed
+                val section = CatalogSearchSection(
+                    catalog = catalog,
+                    entries = feed?.entries?.let { appendUniqueEntries(emptyList(), it) }.orEmpty(),
+                    nextUrl = feed?.nextUrl,
+                    feedUrl = feed?.url,
+                    isLoading = false,
+                    error = result.error
+                        ?: if (feed != null && feed.entries.isEmpty()) "Ничего не найдено" else null
+                )
+                mutableState.update { state ->
+                    val search = state.globalSearch ?: return@update state
+                    if (search.query != query) return@update state
+                    state.copy(
+                        globalSearch = search.copy(
+                            sections = search.sections.map { if (it.catalog.id == catalog.id) section else it }
                         )
-                    }
+                    )
                 }
+                return section.entries.isNotEmpty()
+            }
+
+            // Flibusta first: it is the fastest and has the most, so the others are only
+            // asked when it found nothing (or could not be reached).
+            val primary = catalogs.firstOrNull { it.id == BuiltInCatalogs.FLIBUSTA_ID }
+            val others = catalogs.filter { it.id != BuiltInCatalogs.FLIBUSTA_ID }
+            if (primary == null || others.isEmpty()) {
+                catalogs.forEach { catalog -> launch { searchIn(catalog) } }
+            } else if (searchIn(primary)) {
+                mutableState.update { state ->
+                    val search = state.globalSearch ?: return@update state
+                    if (search.query != query) return@update state
+                    state.copy(
+                        globalSearch = search.copy(
+                            sections = search.sections.map {
+                                if (it.catalog.id == primary.id) it
+                                else it.copy(isLoading = false, error = "Найдено во Флибусте — здесь не искали")
+                            }
+                        )
+                    )
+                }
+            } else {
+                others.forEach { catalog -> launch { searchIn(catalog) } }
             }
         }
     }

@@ -1,12 +1,20 @@
 package com.lumina.reader.core.opds
 
 import com.lumina.reader.core.model.BookFormat
+import com.lumina.reader.platform.AppInfo
+import com.lumina.reader.platform.PlatformKind
 
 /** Classification of OPDS acquisition links into formats the reader can open. */
 object OpdsFormats {
 
-    /** Download order preference: FB2 first (smallest, best structure), then EPUB. */
-    private val PREFERENCE = listOf(BookFormat.FB2_ZIP, BookFormat.FB2, BookFormat.EPUB, BookFormat.PDF, BookFormat.TXT)
+    /** Android's download order: FB2 first (smallest, best structure), then EPUB. */
+    private val ANDROID_PREFERENCE = listOf(BookFormat.FB2_ZIP, BookFormat.FB2, BookFormat.EPUB, BookFormat.PDF, BookFormat.TXT)
+
+    /** The iPhone's: EPUB reads best there (its text, images and notes come through whole). */
+    private val IOS_PREFERENCE = listOf(BookFormat.EPUB, BookFormat.FB2_ZIP, BookFormat.FB2, BookFormat.PDF, BookFormat.TXT)
+
+    private val PREFERENCE: List<BookFormat>
+        get() = if (AppInfo.platform == PlatformKind.IOS) IOS_PREFERENCE else ANDROID_PREFERENCE
 
     private val THUMBNAIL_RELS = setOf(
         "http://opds-spec.org/image/thumbnail",
@@ -28,8 +36,13 @@ object OpdsFormats {
         BookFormat.TXT -> "TXT"
     }
 
-    fun preferred(acquisitions: List<OpdsAcquisition>): OpdsAcquisition? =
-        acquisitions.minByOrNull { PREFERENCE.indexOf(it.format).let { index -> if (index < 0) Int.MAX_VALUE else index } }
+    fun preferred(acquisitions: List<OpdsAcquisition>): OpdsAcquisition? = ranked(acquisitions).firstOrNull()
+
+    /** All offered formats, best first: what to try next when a download turns out not to be a book. */
+    fun ranked(acquisitions: List<OpdsAcquisition>): List<OpdsAcquisition> {
+        val order = PREFERENCE
+        return acquisitions.sortedBy { order.indexOf(it.format).let { index -> if (index < 0) Int.MAX_VALUE else index } }
+    }
 
     fun isThumbnailRel(rel: String?): Boolean = rel != null && rel.lowercase() in THUMBNAIL_RELS
     fun isCoverRel(rel: String?): Boolean = rel != null && rel.lowercase() in COVER_RELS

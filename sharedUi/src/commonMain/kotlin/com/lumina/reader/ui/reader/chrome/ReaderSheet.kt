@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.ui.theme.LuminaShape
+import com.lumina.reader.ui.components.absorbListOverscroll
 
 /** The 36×4dp drag handle of reader sheets, in the text colour at 20 %. */
 @Composable
@@ -53,7 +54,11 @@ fun ReaderModalSheet(
         dragHandle = { ReaderSheetHandle(colors) }
     ) {
         ReaderMaterialTheme(colors) {
-            androidx.compose.foundation.layout.Column(content = content)
+            // Lists must not drag the sheet (see absorbListOverscroll).
+            androidx.compose.foundation.layout.Column(
+                modifier = Modifier.absorbListOverscroll(),
+                content = content
+            )
         }
     }
 }
