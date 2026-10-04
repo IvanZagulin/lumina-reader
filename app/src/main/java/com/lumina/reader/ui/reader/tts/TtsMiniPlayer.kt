@@ -50,6 +50,7 @@ import com.lumina.reader.ui.reader.chrome.ReaderChromeCapsule
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -210,7 +211,7 @@ private fun Equalizer(color: Color, animate: Boolean) {
         val p = phase?.value ?: 0.25f
         val barWidth = size.width / 5f
         for (i in 0 until 3) {
-            val wave = (sin((p + i * 0.27f) * 2f * Math.PI).toFloat() + 1f) / 2f
+            val wave = (sin((p + i * 0.27f) * 2f * PI).toFloat() + 1f) / 2f
             val height = size.height * (0.35f + 0.65f * wave)
             val x = barWidth * (i * 2f)
             drawRoundRect(

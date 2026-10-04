@@ -2,7 +2,7 @@ package com.lumina.reader.platform
 
 import platform.Foundation.NSRecursiveLock
 
-internal actual class PlatformLock actual constructor() {
+actual class PlatformLock actual constructor() {
     private val lock = NSRecursiveLock()
 
     actual fun <T> withLock(block: () -> T): T {

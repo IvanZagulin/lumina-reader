@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -38,7 +37,6 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -53,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.model.Chapter
 import com.lumina.reader.core.model.PageTurnAnimation
 import com.lumina.reader.core.model.ParsedBook
@@ -255,7 +254,6 @@ private fun ChapterPager(
     onBodySize: (IntSize) -> Unit,
     callbacks: ReaderViewerCallbacks
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pages = chapterPages.pages
     val totalChapters = parsedBook.chapters.size
@@ -536,11 +534,7 @@ private fun ChapterPager(
                     if (bookPageMap != null) {
                         showPageJumpDialog = true
                     } else {
-                        Toast.makeText(
-                            context,
-                            "Страницы книги ещё считаются, попробуйте через пару секунд",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        AppMessages.post("Страницы книги ещё считаются, попробуйте через пару секунд")
                     }
                 }
             )

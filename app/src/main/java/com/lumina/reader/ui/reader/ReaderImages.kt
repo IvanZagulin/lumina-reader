@@ -1,8 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,12 +14,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
+import com.lumina.reader.core.repository.LruMap
+import com.lumina.reader.platform.PlatformLock
 import kotlinx.coroutines.withContext
 
 /** Widest bitmap the reader decodes for a book illustration. */
@@ -49,57 +47,55 @@ internal fun calculateInSampleSize(sourceWidth: Int, sourceHeight: Int, requeste
 
 /**
  * Decoded book illustrations, sized for the screen and bounded by memory.
- * Decoding happens off the main thread through [load].
+ * Decoding happens off the main thread through [load]; the platform half
+ * (header size, sampled decode, byte count) is in ReaderImagesPlatform.
  */
 internal class ReaderImageCache(maxBytes: Int) {
-    private val cache = object : LruCache<String, Bitmap>(maxBytes.coerceAtLeast(1)) {
-        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
-    }
-    private val bounds = HashMap<String, Pair<Int, Int>>()
+    /**
+     * Guards [cache] and [bounds]. android.util.LruCache locked itself and
+     * LruMap does not, while [load] runs on several decode threads at once and
+     * [peek] runs in composition.
+     */
+    private val lock = PlatformLock()
+    private val cache = LruMap<String, ImageBitmap>(maxBytes.coerceAtLeast(1)) { bookImageByteCount(it) }
+    private val bounds = HashMap<String, IntSize>()
 
     private fun key(imageId: String, targetWidth: Int) = "$imageId@$targetWidth"
 
     fun peek(imageId: String, targetWidth: Int): ImageBitmap? =
-        cache.get(key(imageId, targetWidth))?.asImageBitmap()
+        lock.withLock { cache[key(imageId, targetWidth)] }
 
     /** Decodes [bytes] for [targetWidth]; blocking, call from a background thread. */
     fun load(imageId: String, bytes: ByteArray, targetWidth: Int): ImageBitmap? {
         val key = key(imageId, targetWidth)
-        cache.get(key)?.let { return it.asImageBitmap() }
+        lock.withLock { cache[key] }?.let { return it }
         val size = imageSize(imageId, bytes) ?: return null
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(size.first, size.second, targetWidth)
-        }
-        val bitmap = try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        } catch (error: OutOfMemoryError) {
-            cache.evictAll()
-            null
-        } ?: return null
-        cache.put(key, bitmap)
-        return bitmap.asImageBitmap()
+        val inSampleSize = calculateInSampleSize(size.width, size.height, targetWidth)
+        val bitmap = decodeBookImage(bytes, inSampleSize, onOutOfMemory = { lock.withLock { cache.clear() } })
+            ?: return null
+        lock.withLock { cache.put(key, bitmap) }
+        return bitmap
     }
 
     /** Width and height of the encoded image without decoding its pixels. */
-    fun imageSize(imageId: String, bytes: ByteArray): Pair<Int, Int>? {
-        synchronized(bounds) { bounds[imageId] }?.let { return it }
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        if (options.outWidth <= 0 || options.outHeight <= 0) return null
-        val size = options.outWidth to options.outHeight
-        synchronized(bounds) { bounds[imageId] = size }
+    fun imageSize(imageId: String, bytes: ByteArray): IntSize? {
+        lock.withLock { bounds[imageId] }?.let { return it }
+        val size = encodedImageSize(bytes) ?: return null
+        lock.withLock { bounds[imageId] = size }
         return size
     }
 
     fun clear() {
-        cache.evictAll()
-        synchronized(bounds) { bounds.clear() }
+        lock.withLock {
+            cache.clear()
+            bounds.clear()
+        }
     }
 
     companion object {
         /** An eighth of the heap, at most 32 MB. */
         fun defaultMaxBytes(): Int {
-            val heap = Runtime.getRuntime().maxMemory()
+            val heap = readerHeapBudgetBytes()
             return (heap / 8).coerceIn(4L * 1024 * 1024, 32L * 1024 * 1024).toInt()
         }
     }
@@ -119,7 +115,7 @@ internal fun BookImageFill(
             // produceState keeps its value when the keys change, so always
             // resolve the bitmap for the current keys.
             value = cache.peek(imageId, targetWidth)
-                ?: bytes?.let { data -> withContext(Dispatchers.IO) { cache.load(imageId, data, targetWidth) } }
+                ?: bytes?.let { data -> withContext(readerIoDispatcher) { cache.load(imageId, data, targetWidth) } }
         }
         val image = bitmap
         if (image != null) {
@@ -149,13 +145,15 @@ internal fun BookImageInline(
 ) {
     if (bytes == null) return
     val density = LocalDensity.current
+    // Becomes screenWidthDp() (ui.components, internal to :sharedUi; the same
+    // value on Android) when this file moves there.
     val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
     val targetWidth = screenWidthPx.coerceIn(1, MAX_IMAGE_DECODE_WIDTH)
     val size = remember(imageId, bytes) { cache.imageSize(imageId, bytes) } ?: return
-    val ratio = (size.first.toFloat() / size.second.toFloat()).coerceIn(0.2f, 5f)
+    val ratio = (size.width.toFloat() / size.height.toFloat()).coerceIn(0.2f, 5f)
     val bitmap by produceState(cache.peek(imageId, targetWidth), imageId, bytes, targetWidth) {
         value = cache.peek(imageId, targetWidth)
-            ?: withContext(Dispatchers.IO) { cache.load(imageId, bytes, targetWidth) }
+            ?: withContext(readerIoDispatcher) { cache.load(imageId, bytes, targetWidth) }
     }
     Box(
         modifier = modifier

@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,15 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lumina.reader.core.network.AiClient
-import com.lumina.reader.core.network.AiMessage
 import com.lumina.reader.ui.reader.ReaderFonts
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.reader.chrome.ReaderModalSheet
 import kotlinx.coroutines.CancellationException
 
 /** What the reader asks about a quote. */
-internal enum class AskAiMode(val label: String) {
+enum class AskAiMode(val label: String) {
     EXPLAIN("Объяснить"),
     RETELL("Пересказать"),
     TRANSLATE("Перевести"),
@@ -49,13 +48,20 @@ internal enum class AskAiMode(val label: String) {
 }
 
 /** Longest quote sent to the assistant. */
-internal const val MAX_AI_QUOTE_LENGTH = 2_000
+const val MAX_AI_QUOTE_LENGTH = 2_000
+
+/**
+ * One chat message of the «✦ Спросить ИИ» request (role "system" or "user").
+ * The sheet only builds the conversation; sending it is the caller's job, so
+ * the sheet does not depend on a platform HTTP client.
+ */
+data class AskAiMessage(val role: String, val content: String)
 
 /**
  * The request for «✦ Спросить ИИ»: a short system instruction in Russian
  * and the quote with the book it comes from.
  */
-internal fun askAiMessages(mode: AskAiMode, quote: String, bookTitle: String, author: String): List<AiMessage> {
+fun askAiMessages(mode: AskAiMode, quote: String, bookTitle: String, author: String): List<AskAiMessage> {
     val task = when (mode) {
         AskAiMode.EXPLAIN -> "Объясни смысл этого фрагмента простыми словами: о чём он, что важно понять."
         AskAiMode.RETELL -> "Кратко перескажи этот фрагмент своими словами в 2–3 предложениях."
@@ -65,12 +71,12 @@ internal fun askAiMessages(mode: AskAiMode, quote: String, bookTitle: String, au
     val source = listOf(bookTitle, author).filter { it.isNotBlank() }.joinToString(", ")
     val text = quote.trim().take(MAX_AI_QUOTE_LENGTH)
     return listOf(
-        AiMessage(
+        AskAiMessage(
             role = "system",
             content = "Ты — Lumina, помощник читателя в приложении для чтения книг. " +
                 "Отвечай по-русски, кратко и по делу, без markdown-разметки."
         ),
-        AiMessage(
+        AskAiMessage(
             role = "user",
             content = buildString {
                 append(task)
@@ -89,30 +95,33 @@ private sealed interface AskAiState {
 
 /**
  * «✦ Спросить ИИ» (§7.5): the quote, the question chips and the answer
- * under a «✦ LUMINA» eyebrow. Uses the app's [AiClient]; failures are shown
- * with «Повторить».
+ * under a «✦ LUMINA» eyebrow. [ask] sends the messages to the app's
+ * assistant and returns the answer text, or throws; it is passed in because
+ * the assistant's network client is platform code. Failures are shown with
+ * «Повторить».
  */
 @Composable
-internal fun AskAiSheet(
+fun AskAiSheet(
     quote: String,
     bookTitle: String,
     author: String,
     colors: ReaderChromeColors,
+    ask: suspend (messages: List<AskAiMessage>) -> String,
     onDismiss: () -> Unit
 ) {
-    val client = remember { AiClient() }
+    val latestAsk by rememberUpdatedState(ask)
     var mode by rememberSaveable { mutableStateOf(AskAiMode.EXPLAIN) }
     var attempt by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<AskAiState>(AskAiState.Loading) }
     LaunchedEffect(mode, attempt) {
         state = AskAiState.Loading
         state = try {
-            val answer = client.askAssistant(askAiMessages(mode, quote, bookTitle, author))
-            AskAiState.Answer(answer.content.trim())
+            val answer = latestAsk(askAiMessages(mode, quote, bookTitle, author))
+            AskAiState.Answer(answer.trim())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            AskAiState.Failed(e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Нет связи с помощником")
+            AskAiState.Failed(e.message?.takeIf { it.isNotBlank() } ?: "Нет связи с помощником")
         }
     }
     ReaderModalSheet(colors = colors, onDismiss = onDismiss, scrimAlpha = 0.32f) {

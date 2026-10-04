@@ -4,7 +4,9 @@ import com.lumina.reader.core.database.AppDatabase
 import com.lumina.reader.core.database.getDatabase
 import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
+import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.preferences.get
+import com.lumina.reader.core.tts.IosReadAloud
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +20,17 @@ internal actual fun defaultLibraryServices(): LibraryServices = LibraryServices(
     uiPreferences = AppUiPreferences.get(),
     imports = IosLibraryImports
 )
+
+internal actual fun defaultReaderServices(): ReaderServices {
+    val db = AppDatabase.getDatabase()
+    return ReaderServices(
+        bookDao = db.bookDao(),
+        bookmarkDao = db.bookmarkDao(),
+        statsDao = db.readingStatsDao(),
+        preferences = ReaderPreferences(),
+        readAloud = IosReadAloud
+    )
+}
 
 /**
  * The iPhone's import service: the shared pipeline plus an app-wide scope.

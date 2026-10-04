@@ -1,9 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.content.ClipboardManager
-import android.content.Context
-import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.foundation.background
@@ -32,16 +28,17 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReadingHighlight
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.reader.chrome.ReaderPageFooter
 import com.lumina.reader.ui.reader.footnote.FootnotePopup
@@ -91,13 +88,10 @@ internal fun ReaderContent(
     modifier: Modifier = Modifier
 ) {
     val chapter = parsedBook.chapters.getOrNull(chapterIndex) ?: return
-    val context = LocalContext.current
     val density = LocalDensity.current
     val clipboardManager = LocalClipboardManager.current
     val platformTextToolbar = LocalTextToolbar.current
-    val clipboard = remember(context) {
-        context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-    }
+    val clipboard = rememberSelectionClipboard()
     val selection = remember(platformTextToolbar, clipboard) {
         ReaderSelectionState(platformTextToolbar, clipboard)
     }
@@ -182,7 +176,7 @@ internal fun ReaderContent(
     val rootCoordinates = remember { CoordinatesHolder() }
 
     // The selection and the highlight menu are overlays of this screen: Back closes them.
-    BackHandler(enabled = highlightMenu != null || selection.hasSelection) {
+    PlatformBackHandler(enabled = highlightMenu != null || selection.hasSelection) {
         if (highlightMenu != null) highlightMenu = null else selection.clear()
     }
 
@@ -254,7 +248,7 @@ internal fun ReaderContent(
             fun withCaptured(action: (text: String, location: SelectionLocation?) -> Unit) {
                 val captured = selection.captureSelection()
                 if (captured == null) {
-                    showSelectionError(context)
+                    showSelectionError()
                 } else {
                     action(captured.text, captured.location)
                 }
@@ -267,13 +261,13 @@ internal fun ReaderContent(
                 reducedMotion = reducedMotion,
                 onColor = { swatch ->
                     withCaptured { text, location ->
-                        if (location == null) showLocateError(context)
+                        if (location == null) showLocateError()
                         else selectionActions.onHighlight(text, location, swatch.hex)
                     }
                 },
                 onNote = {
                     withCaptured { text, location ->
-                        if (location == null) showLocateError(context)
+                        if (location == null) showLocateError()
                         else selectionActions.onNote(text, location, HighlightPalette.Yellow.hex)
                     }
                 },
@@ -384,12 +378,12 @@ private class OffsetHolder {
 /** «12» for a footnote id like "note_12"; empty when the id has no number. */
 internal fun footnoteNumber(noteId: String): String = noteId.takeLastWhile { it.isDigit() }
 
-private fun showSelectionError(context: Context) {
-    Toast.makeText(context, "Не удалось прочитать выделенный текст", Toast.LENGTH_SHORT).show()
+private fun showSelectionError() {
+    AppMessages.post("Не удалось прочитать выделенный текст", isError = true)
 }
 
-private fun showLocateError(context: Context) {
-    Toast.makeText(context, "Не удалось найти выделенный текст на странице", Toast.LENGTH_SHORT).show()
+private fun showLocateError() {
+    AppMessages.post("Не удалось найти выделенный текст на странице", isError = true)
 }
 
 /** Converts a rectangle in root coordinates into [coordinates]' local space. */

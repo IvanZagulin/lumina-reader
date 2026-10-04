@@ -15,7 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Platform-free playback state machine behind TtsController (Android, :app).
+ * Platform-free playback state machine behind TtsController (Android, :app)
+ * and IosReadAloud (iPhone).
  *
  * Not thread-safe: every method and every engine callback must run on the
  * thread of [scope] (the main thread in the app, the test dispatcher in tests).

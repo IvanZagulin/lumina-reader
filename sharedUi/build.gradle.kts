@@ -52,6 +52,9 @@ kotlin {
             api(libs.kotlinx.datetime)
             // Multiplatform ViewModel (`viewModel { }`) for the shared screens (stage 8b+).
             implementation(libs.jb.lifecycle.viewmodel.compose)
+            // LocalLifecycleOwner and repeatOnLifecycle in common code (the reader's
+            // reading-session effect); the 2.9 line, aligned with the ViewModel above.
+            implementation(libs.jb.lifecycle.runtime.compose)
         }
         androidMain.dependencies {
             // WindowCompat (system bar appearance) and cover colours (Palette),

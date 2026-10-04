@@ -10,9 +10,12 @@ import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.library.LibraryRepository
 import com.lumina.reader.core.library.LibraryServices
+import com.lumina.reader.core.library.ReaderServices
 import com.lumina.reader.core.preferences.AppUiPreferences
 import com.lumina.reader.core.preferences.LibraryPreferences
+import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.preferences.get
+import com.lumina.reader.core.tts.TtsControllerReadAloud
 import com.lumina.reader.platform.AppInfo
 
 class LuminaApp : Application() {
@@ -39,6 +42,18 @@ class LuminaApp : Application() {
                 libraryPreferences = LibraryPreferences(this),
                 uiPreferences = AppUiPreferences.get(this),
                 imports = AndroidLibraryImports(BookImporter.get(this))
+            )
+        }
+        // The reader's services, built when the first book opens (the moment
+        // the reader used to open them itself, read-aloud included).
+        AppServices.installReader {
+            val db = AppDatabase.getDatabase(this)
+            ReaderServices(
+                bookDao = db.bookDao(),
+                bookmarkDao = db.bookmarkDao(),
+                statsDao = db.readingStatsDao(),
+                preferences = ReaderPreferences(this),
+                readAloud = TtsControllerReadAloud(this)
             )
         }
     }

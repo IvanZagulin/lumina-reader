@@ -108,8 +108,12 @@ internal expect object BookFileStamps {
  * to most recently used (a read or a write counts as a use), and after every
  * put the least recently used entries are dropped until the total size is at
  * most [maxSize]. Not thread-safe; callers lock.
+ *
+ * Public, not internal: the reader's illustration cache (ReaderImageCache in
+ * :app, later :sharedUi) replaced its LruCache with it too, and internal is
+ * invisible across modules.
  */
-internal class LruMap<K : Any, V : Any>(private val maxSize: Int, private val sizeOf: (V) -> Int) {
+class LruMap<K : Any, V : Any>(private val maxSize: Int, private val sizeOf: (V) -> Int) {
     /** Insertion order is the use order: a used entry is moved to the end. */
     private val map = LinkedHashMap<K, V>()
 
@@ -137,6 +141,12 @@ internal class LruMap<K : Any, V : Any>(private val maxSize: Int, private val si
         val previous = map.remove(key) ?: return null
         size -= safeSizeOf(previous)
         return previous
+    }
+
+    /** Drops every entry, as LruCache.evictAll() did. */
+    fun clear() {
+        map.clear()
+        size = 0L
     }
 
     private fun trimToSize() {

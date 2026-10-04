@@ -1,8 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.os.Build
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Stable
@@ -57,8 +54,9 @@ internal data class VisibleText(
  *
  * Compose 1.7's SelectionContainer does not expose the selected range. It
  * only hands the toolbar a "copy" callback, so capturing a selection copies
- * it, reads the clipboard, restores the user's previous clipboard and finds
- * the text among the paragraphs on screen.
+ * it, reads the clipboard through [SelectionClipboard] (which restores the
+ * user's previous clipboard where the platform allows) and finds the text
+ * among the paragraphs on screen.
  *
  * The state also keeps a selection dismissible: the next tap after a
  * selection only clears it instead of turning the page.
@@ -66,7 +64,7 @@ internal data class VisibleText(
 @Stable
 internal class ReaderSelectionState(
     private val platformToolbar: TextToolbar,
-    private val clipboard: ClipboardManager?
+    private val clipboard: SelectionClipboard?
 ) : TextToolbar {
 
     /** Selection containers are keyed by this value; bumping it drops the selection. */
@@ -118,7 +116,7 @@ internal class ReaderSelectionState(
      */
     fun captureSelection(): CapturedSelection? {
         val copy = copyAction ?: return null
-        val text = readThroughClipboard(copy)
+        val text = clipboard?.readThrough(copy)
         clear()
         if (text.isNullOrBlank()) return null
         val visible = visibleTextProvider?.invoke()
@@ -128,35 +126,6 @@ internal class ReaderSelectionState(
             }
         }
         return CapturedSelection(text, location)
-    }
-
-    private fun readThroughClipboard(copy: () -> Unit): String? {
-        val manager = clipboard ?: return null
-        val previous: ClipData? = try {
-            manager.primaryClip
-        } catch (error: SecurityException) {
-            null
-        }
-        copy()
-        val copied = try {
-            manager.primaryClip
-                ?.takeIf { it.itemCount > 0 }
-                ?.getItemAt(0)
-                ?.text
-                ?.toString()
-        } catch (error: SecurityException) {
-            null
-        }
-        try {
-            if (previous != null) {
-                manager.setPrimaryClip(previous)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                manager.clearPrimaryClip()
-            }
-        } catch (error: Exception) {
-            // Restoring is best effort; the selection itself was read.
-        }
-        return copied
     }
 
     /**

@@ -104,7 +104,7 @@ private const val MAX_FONT_SIZE = 36
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReaderSettingsSheet(
+fun ReaderSettingsSheet(
     settings: ReaderSettings,
     colors: ReaderChromeColors,
     reducedMotion: Boolean,
@@ -609,7 +609,7 @@ private fun ModeCard(
 }
 
 /** «1,45», «2», «1,5». */
-internal fun formatDecimal(value: Float): String {
+fun formatDecimal(value: Float): String {
     val rounded = (value * 100).roundToInt()
     return if (rounded % 100 == 0) {
         (rounded / 100).toString()

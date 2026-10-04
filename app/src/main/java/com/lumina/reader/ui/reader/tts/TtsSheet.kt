@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.tts.TtsPlaybackState
 import com.lumina.reader.core.tts.TtsStatus
+import com.lumina.reader.platform.AppClock
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.reader.chrome.ReaderModalSheet
 import kotlinx.coroutines.delay
@@ -164,10 +165,10 @@ internal fun TtsSheet(
                 modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
             )
             val endsAt = state.sleepTimerEndsAt
-            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            var now by remember { mutableLongStateOf(AppClock.nowMillis()) }
             LaunchedEffect(endsAt) {
                 while (endsAt != null) {
-                    now = System.currentTimeMillis()
+                    now = AppClock.nowMillis()
                     delay(15_000)
                 }
             }

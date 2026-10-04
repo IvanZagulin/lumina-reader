@@ -49,6 +49,9 @@ object AppServices {
     private var factory: (() -> LibraryServices)? = null
     private var installed: LibraryServices? = null
 
+    private var readerFactory: (() -> ReaderServices)? = null
+    private var installedReader: ReaderServices? = null
+
     /**
      * Registers how to build the services; [factory] runs on first use, not
      * here. Nothing may be built eagerly: opening the database and the
@@ -59,8 +62,22 @@ object AppServices {
         this.factory = factory
     }
 
+    /**
+     * Registers how to build the reader's services, lazily for the same
+     * reasons as [install]; on Android building them also initialises
+     * read-aloud, which used to happen when the first book opened.
+     */
+    fun installReader(factory: () -> ReaderServices) {
+        this.readerFactory = factory
+    }
+
     val library: LibraryServices
         get() = installed ?: (factory?.invoke() ?: defaultLibraryServices()).also { installed = it }
+
+    val reader: ReaderServices
+        get() = installedReader ?: (readerFactory?.invoke() ?: defaultReaderServices()).also { installedReader = it }
 }
 
 internal expect fun defaultLibraryServices(): LibraryServices
+
+internal expect fun defaultReaderServices(): ReaderServices

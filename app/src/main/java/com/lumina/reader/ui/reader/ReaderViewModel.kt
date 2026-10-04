@@ -1,13 +1,12 @@
 package com.lumina.reader.ui.reader
 
-import android.app.Application
-import android.util.Log
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
+import com.lumina.reader.core.library.AppServices
+import com.lumina.reader.core.library.ReaderServices
+import com.lumina.reader.core.library.errorMessageOf
+import com.lumina.reader.core.library.isOutOfMemoryError
+import com.lumina.reader.core.library.resolveStoredLibraryPath
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.Bookmark
@@ -16,15 +15,14 @@ import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReadingHighlight
 import com.lumina.reader.core.model.ReadingStats
-import com.lumina.reader.core.parser.BookParserFactory
-import com.lumina.reader.core.parser.parse
-import com.lumina.reader.core.preferences.ReaderPreferences
-import com.lumina.reader.core.repository.BookCacheRepository
+import com.lumina.reader.core.tts.ReadAloudController
 import com.lumina.reader.core.tts.TtsChapter
 import com.lumina.reader.core.tts.TtsChapterSource
-import com.lumina.reader.core.tts.TtsController
 import com.lumina.reader.core.tts.TtsPlaybackState
 import com.lumina.reader.core.tts.TtsStatus
+import com.lumina.reader.platform.AppClock
+import com.lumina.reader.platform.LuminaLog
+import com.lumina.reader.platform.PlatformLock
 import com.lumina.reader.ui.theme.HighlightPalette
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,19 +41,33 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 
+/**
+ * The reader of one book. Its database, preferences, book cache and
+ * read-aloud come from [ReaderServices] ([AppServices.reader] unless a test
+ * passes its own), which each platform builds its own way.
+ */
+@OptIn(ExperimentalAtomicApi::class)
 class ReaderViewModel(
-    application: Application,
-    private val bookId: Long
-) : AndroidViewModel(application) {
+    private val bookId: Long,
+    services: ReaderServices = AppServices.reader
+) : ViewModel() {
 
-    private val db = AppDatabase.getDatabase(application)
-    private val bookDao = db.bookDao()
-    private val bookmarkDao = db.bookmarkDao()
-    private val statsDao = db.readingStatsDao()
-    private val preferences = ReaderPreferences(application)
+    private val bookDao = services.bookDao
+    private val bookmarkDao = services.bookmarkDao
+    private val statsDao = services.statsDao
+    private val preferences = services.preferences
+    private val bookCache = services.bookCache
+    private val parserFor = services.parserFor
+    private val fileSystem = services.fileSystem
+    private val readAloud: ReadAloudController = services.readAloud
+
+    /** Database and file work (Dispatchers.IO). */
+    private val io = services.ioDispatcher
 
     private val storedSettings: Flow<ReaderSettings?> = preferences.settingsFlow
 
@@ -203,8 +215,8 @@ class ReaderViewModel(
 
     // ---- Session statistics -------------------------------------------------
 
-    private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val sessionLock = Any()
+    private val persistenceScope = CoroutineScope(SupervisorJob() + io)
+    private val sessionLock = PlatformLock()
     private var sessionStartTime: Long? = null
     private var wordsReadInSession: Int = 0
     private val wordTracker = SessionWordTracker()
@@ -232,7 +244,6 @@ class ReaderViewModel(
     val progressPercent: StateFlow<Float> = _progressPercent.asStateFlow()
 
     init {
-        TtsController.init(application)
         loadBook()
         loadReadingSpeed()
         followReadAloud()
@@ -242,7 +253,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             _loadError.value = null
-            withContext(Dispatchers.IO) {
+            withContext(io) {
                 try {
                     val currentBook = bookDao.getBookById(bookId)
                     if (currentBook == null) {
@@ -250,24 +261,25 @@ class ReaderViewModel(
                         return@withContext
                     }
                     _book.value = currentBook
-                    val file = File(currentBook.filePath)
-                    if (!file.isFile) {
+                    // The iPhone stores the path relative to the app container.
+                    val path = resolveStoredLibraryPath(currentBook.filePath)
+                    if (fileSystem.metadataOrNull(path)?.isRegularFile != true) {
                         _loadError.value = "Файл книги больше недоступен"
                         return@withContext
                     }
 
                     // The cache entry is only used while it matches the file on
                     // disk and the current parser version.
-                    val parsed = BookCacheRepository.get(file.absolutePath)
-                        ?: BookParserFactory.getParser(currentBook.format).parse(file).also {
-                            BookCacheRepository.put(file.absolutePath, it)
+                    val parsed = bookCache.get(path.toString())
+                        ?: parserFor(currentBook.format).parse(path).also {
+                            bookCache.put(path.toString(), it)
                         }
                     if (parsed.chapters.isEmpty()) {
                         _loadError.value = "В книге не найден текст"
                         return@withContext
                     }
                     if (currentBook.format == BookFormat.PDF) {
-                        _pdfDocument.value = PdfDocumentRenderer.open(file)
+                        _pdfDocument.value = openPdfDocument(path)
                     }
                     val restored = restoreReaderPosition(
                         chapters = parsed.chapters,
@@ -275,7 +287,7 @@ class ReaderViewModel(
                         paragraphIndex = currentBook.currentParagraphIndex,
                         charOffset = currentBook.currentCharOffset
                     )
-                    Log.d(TAG, "Opened book: chapters=${parsed.chapters.size}, images=${parsed.images.size}")
+                    LuminaLog.d(TAG, "Opened book: chapters=${parsed.chapters.size}, images=${parsed.images.size}")
                     val lengths = chapterTextLengths(parsed.chapters)
                     chapterLengths = lengths
                     _textInfo.value = BookTextInfo(
@@ -287,7 +299,7 @@ class ReaderViewModel(
                     _position.value = position
                     _currentChapterIndex.value = position.chapterIndex
                     _navigationRequest.value = NavigationRequest(
-                        id = navigationIds.incrementAndGet(),
+                        id = navigationIds.incrementAndFetch(),
                         chapterIndex = position.chapterIndex,
                         paragraphIndex = position.paragraphIndex,
                         charOffset = position.charOffset,
@@ -301,15 +313,21 @@ class ReaderViewModel(
                             parsed.chapters[index].paragraphs.sumOf { countWords(paragraphPlainText(it)) }
                         }
                     }
-                } catch (e: OutOfMemoryError) {
-                    // Heavily illustrated books can exceed the heap; show an error
-                    // instead of letting the Error crash the process.
-                    Log.e(TAG, "Book $bookId is too large to open", e)
-                    _book.value?.let { BookCacheRepository.remove(File(it.filePath).absolutePath) }
-                    _loadError.value = "Книга слишком большая для этого устройства: не хватает памяти, чтобы открыть её"
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to open book $bookId", e)
-                    _loadError.value = "Не удалось открыть книгу: ${e.localizedMessage ?: "ошибка чтения файла"}"
+                } catch (e: Throwable) {
+                    // OutOfMemoryError exists only on the JVM, so it is told apart
+                    // here instead of by a catch clause of its own.
+                    if (isOutOfMemoryError(e)) {
+                        // Heavily illustrated books can exceed the heap; show an error
+                        // instead of letting the Error crash the process.
+                        LuminaLog.e(TAG, "Book $bookId is too large to open", e)
+                        _book.value?.let { bookCache.remove(resolveStoredLibraryPath(it.filePath).toString()) }
+                        _loadError.value = "Книга слишком большая для этого устройства: не хватает памяти, чтобы открыть её"
+                    } else if (e is Exception) {
+                        LuminaLog.e(TAG, "Failed to open book $bookId", e)
+                        _loadError.value = "Не удалось открыть книгу: ${errorMessageOf(e) ?: "ошибка чтения файла"}"
+                    } else {
+                        throw e
+                    }
                 } finally {
                     _isLoading.value = false
                 }
@@ -318,7 +336,7 @@ class ReaderViewModel(
     }
 
     private fun loadReadingSpeed() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             val sessions: List<ReadingStats> = try {
                 statsDao.getRecentReadingSessions(limit = 20, minSeconds = 30)
             } catch (e: Exception) {
@@ -382,7 +400,7 @@ class ReaderViewModel(
         _position.value = ReaderPosition(chapterIndex, paragraph, offset)
         _currentChapterIndex.value = chapterIndex
         _navigationRequest.value = NavigationRequest(
-            id = navigationIds.incrementAndGet(),
+            id = navigationIds.incrementAndFetch(),
             chapterIndex = chapterIndex,
             paragraphIndex = paragraph,
             charOffset = offset,
@@ -443,7 +461,7 @@ class ReaderViewModel(
         if (chapter.paragraphs.isEmpty()) return
         val first = range.start.paragraphIndex.coerceIn(0, chapter.paragraphs.lastIndex)
         val last = minOf(range.end.paragraphIndex, chapter.paragraphs.lastIndex)
-        synchronized(sessionLock) {
+        sessionLock.withLock {
             var added = 0
             for (paragraphIndex in first..last) {
                 val text = paragraphPlainText(chapter.paragraphs[paragraphIndex])
@@ -473,7 +491,7 @@ class ReaderViewModel(
 
     private fun scheduleProgressUpdate() {
         progressUpdateJob?.cancel()
-        progressUpdateJob = viewModelScope.launch(Dispatchers.IO) {
+        progressUpdateJob = viewModelScope.launch(io) {
             delay(400) // debounce DB write
             val position = _position.value
             val percent = calculateProgress(position)
@@ -565,7 +583,7 @@ class ReaderViewModel(
         }
         val chapter = parsed.chapters.getOrNull(position.chapterIndex) ?: return
         val isPdf = _book.value?.format == BookFormat.PDF
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             if (onPage.isNotEmpty()) {
                 onPage.forEach { bookmarkDao.deleteBookmark(it) }
             } else {
@@ -584,14 +602,14 @@ class ReaderViewModel(
     }
 
     fun deleteBookmark(bookmark: Bookmark) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.deleteBookmark(bookmark)
         }
     }
 
     /** Puts back a bookmark removed a moment ago (undo). */
     fun restoreBookmark(bookmark: Bookmark) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.insertBookmark(bookmark)
         }
     }
@@ -609,7 +627,7 @@ class ReaderViewModel(
         note: String? = null
     ) {
         if (endOffset <= startOffset) return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.insertHighlight(
                 ReadingHighlight(
                     bookId = bookId,
@@ -626,13 +644,13 @@ class ReaderViewModel(
     }
 
     fun updateHighlightNote(highlightId: Long, note: String?) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.updateHighlightNote(highlightId, note?.trim()?.takeIf { it.isNotEmpty() })
         }
     }
 
     fun deleteHighlight(highlight: ReadingHighlight) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.deleteHighlight(highlight)
         }
     }
@@ -640,14 +658,14 @@ class ReaderViewModel(
     /** Changes the colour of a highlight (the row is replaced in place). */
     fun updateHighlightColor(highlight: ReadingHighlight, colorHex: String) {
         if (highlight.colorHex.equals(colorHex, ignoreCase = true)) return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.insertHighlight(highlight.copy(colorHex = colorHex))
         }
     }
 
     /** Saves a new colour and note of a highlight in one write (the note editor). */
     fun updateHighlight(highlight: ReadingHighlight, colorHex: String, note: String?) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.insertHighlight(
                 highlight.copy(colorHex = colorHex, note = note?.trim()?.takeIf { it.isNotEmpty() })
             )
@@ -656,7 +674,7 @@ class ReaderViewModel(
 
     /** Puts back a highlight removed a moment ago (undo). */
     fun restoreHighlight(highlight: ReadingHighlight) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(io) {
             bookmarkDao.insertHighlight(highlight)
         }
     }
@@ -697,16 +715,16 @@ class ReaderViewModel(
     // ---- Text to speech -------------------------------------------------------
 
     /** Read-aloud state of the whole app; [isTtsActiveHere] tells whether it is this book. */
-    val ttsState: StateFlow<TtsPlaybackState> = TtsController.state
+    val ttsState: StateFlow<TtsPlaybackState> = readAloud.state
 
     /** True when [state] belongs to this book and is not idle. */
-    fun isTtsActiveHere(state: TtsPlaybackState = TtsController.state.value): Boolean =
+    fun isTtsActiveHere(state: TtsPlaybackState = readAloud.state.value): Boolean =
         state.bookId == bookId && state.status != TtsStatus.IDLE
 
     /** «Слушать»: pauses or resumes this book, or starts reading at the current page. */
     fun toggleTts() {
         if (isTtsActiveHere()) {
-            TtsController.togglePlayPause()
+            readAloud.togglePlayPause()
         } else {
             val position = _position.value
             startTtsAt(position.chapterIndex, position.paragraphIndex)
@@ -715,18 +733,19 @@ class ReaderViewModel(
 
     /**
      * Starts reading aloud from [paragraphIndex] of [chapterIndex] and on
-     * into the following chapters. Playback lives in [TtsController] and its
-     * service, so it continues after the reader is closed.
+     * into the following chapters. Playback lives in the app-wide
+     * [ReadAloudController] (on Android TtsController and its service), so it
+     * continues after the reader is closed.
      */
     fun startTtsAt(chapterIndex: Int, paragraphIndex: Int) {
         val parsed = _parsedBook.value ?: return
         if (_book.value?.format == BookFormat.PDF) return
         val chapter = parsed.chapters.getOrNull(chapterIndex) ?: return
         val current = settings.value
-        TtsController.setSpeechRate(current?.ttsSpeed ?: 1f)
-        TtsController.setPitch(current?.ttsPitch ?: 1f)
+        readAloud.setSpeechRate(current?.ttsSpeed ?: 1f)
+        readAloud.setPitch(current?.ttsPitch ?: 1f)
         lastSpokenAnchor = null
-        TtsController.start(
+        readAloud.start(
             bookId = bookId,
             bookTitle = _book.value?.title.orEmpty(),
             chapter = ttsChapterOf(chapterIndex, chapter),
@@ -736,38 +755,38 @@ class ReaderViewModel(
     }
 
     fun ttsNextParagraph() {
-        if (isTtsActiveHere()) TtsController.nextParagraph()
+        if (isTtsActiveHere()) readAloud.nextParagraph()
     }
 
     fun ttsPreviousParagraph() {
-        if (isTtsActiveHere()) TtsController.previousParagraph()
+        if (isTtsActiveHere()) readAloud.previousParagraph()
     }
 
     fun stopTts() {
-        if (isTtsActiveHere()) TtsController.stop()
+        if (isTtsActiveHere()) readAloud.stop()
     }
 
     /** Speech rate, remembered for the next session. */
     fun setTtsSpeed(rate: Float) {
-        TtsController.setSpeechRate(rate)
+        readAloud.setSpeechRate(rate)
         updateSettings { it.copy(ttsSpeed = rate) }
     }
 
     fun setTtsPitch(pitch: Float) {
-        TtsController.setPitch(pitch)
+        readAloud.setPitch(pitch)
         updateSettings { it.copy(ttsPitch = pitch) }
     }
 
     /** Sleep timer in minutes; null switches it off. Replaces «до конца главы». */
     fun setTtsSleepTimer(minutes: Int?) {
-        TtsController.setSleepTimer(minutes)
-        if (minutes != null) TtsController.setStopAtChapterEnd(false)
+        readAloud.setSleepTimer(minutes)
+        if (minutes != null) readAloud.setStopAtChapterEnd(false)
     }
 
     /** «До конца главы»; replaces a running sleep timer. */
     fun setTtsStopAtChapterEnd(enabled: Boolean) {
-        TtsController.setStopAtChapterEnd(enabled)
-        if (enabled) TtsController.setSleepTimer(null)
+        readAloud.setStopAtChapterEnd(enabled)
+        if (enabled) readAloud.setSleepTimer(null)
     }
 
     /** Where the previous spoken sentence started, to tell following from browsing. */
@@ -781,7 +800,7 @@ class ReaderViewModel(
      */
     private fun followReadAloud() {
         viewModelScope.launch {
-            TtsController.state.collect { state -> onReadAloudProgress(state) }
+            readAloud.state.collect { state -> onReadAloudProgress(state) }
         }
     }
 
@@ -814,8 +833,8 @@ class ReaderViewModel(
     // ---- Session ------------------------------------------------------------
 
     fun startSession() {
-        synchronized(sessionLock) {
-            if (sessionStartTime == null) sessionStartTime = System.currentTimeMillis()
+        sessionLock.withLock {
+            if (sessionStartTime == null) sessionStartTime = AppClock.nowMillis()
         }
     }
 
@@ -829,13 +848,13 @@ class ReaderViewModel(
     fun saveSessionData() {
         progressUpdateJob?.cancel()
         val bookLoaded = _parsedBook.value != null
-        val snapshot = synchronized(sessionLock) {
-            val startedAt = sessionStartTime ?: return
+        val snapshot = sessionLock.withLock {
+            val startedAt = sessionStartTime ?: return@withLock null
             val position = _position.value
             SessionSnapshot(
                 position = position,
                 progressPercent = calculateProgress(position),
-                durationSeconds = ((System.currentTimeMillis() - startedAt) / 1_000L).coerceAtLeast(0L),
+                durationSeconds = ((AppClock.nowMillis() - startedAt) / 1_000L).coerceAtLeast(0L),
                 words = wordsReadInSession
             ).also {
                 // A second ON_STOP/onDispose callback becomes a no-op instead of
@@ -844,7 +863,7 @@ class ReaderViewModel(
                 wordsReadInSession = 0
                 wordTracker.clear()
             }
-        }
+        } ?: return
 
         persistenceScope.launch {
             if (bookLoaded) {
@@ -916,14 +935,4 @@ private fun ttsChapterOf(index: Int, chapter: Chapter): TtsChapter =
 private class BookTtsSource(private val chapters: List<Chapter>) : TtsChapterSource {
     override suspend fun chapter(index: Int): TtsChapter? =
         chapters.getOrNull(index)?.let { ttsChapterOf(index, it) }
-}
-
-class ReaderViewModelFactory(
-    private val application: Application,
-    private val bookId: Long
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return ReaderViewModel(application, bookId) as T
-    }
 }

@@ -1,8 +1,5 @@
 package com.lumina.reader.ui.reader.settings
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,30 +22,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.lumina.reader.core.preferences.AppDisplayController
+import com.lumina.reader.ui.reader.MIN_SCREEN_BRIGHTNESS
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
+import com.lumina.reader.ui.reader.rememberScreenBrightness
 import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /**
  * Screen brightness (§7.3): small sun · slider · large sun · «Авто». Uses
- * the app-wide [AppDisplayController]: the window follows the slider while
- * dragging and the value is saved when the drag ends.
+ * the app-wide [com.lumina.reader.ui.reader.ScreenBrightness]: the screen
+ * follows the slider while dragging and the value is saved when the drag ends.
  */
 @Composable
-internal fun BrightnessRow(
+fun BrightnessRow(
     colors: ReaderChromeColors,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    // Inside a ModalBottomSheet LocalContext is the sheet dialog's themed
-    // wrapper, not the activity whose window brightness has to change.
-    val activity = remember(context) { context.findActivity() }
-    var useSystem by remember { mutableStateOf(AppDisplayController.useSystemBrightness(context)) }
-    var brightness by remember { mutableFloatStateOf(AppDisplayController.savedBrightness(context)) }
+    val screenBrightness = rememberScreenBrightness()
+    var useSystem by remember { mutableStateOf(screenBrightness.useSystem()) }
+    var brightness by remember { mutableFloatStateOf(screenBrightness.savedLevel()) }
 
     Row(
         modifier = modifier
@@ -70,14 +64,12 @@ internal fun BrightnessRow(
                     // Moving the slider means the reader wants manual brightness.
                     useSystem = false
                 }
-                activity?.let {
-                    AppDisplayController.applyBrightness(it, useSystemBrightness = false, brightness = value)
-                }
+                screenBrightness.apply(useSystem = false, level = value)
             },
             onValueChangeFinished = {
-                AppDisplayController.saveBrightness(context, useSystemBrightness = useSystem, brightness = brightness)
+                screenBrightness.save(useSystem = useSystem, level = brightness)
             },
-            valueRange = 0.05f..1f,
+            valueRange = MIN_SCREEN_BRIGHTNESS..1f,
             colors = SliderDefaults.colors(
                 thumbColor = colors.accent,
                 activeTrackColor = if (useSystem) colors.muted else colors.accent,
@@ -99,10 +91,8 @@ internal fun BrightnessRow(
             onClick = {
                 val enabled = !useSystem
                 useSystem = enabled
-                AppDisplayController.saveBrightness(context, useSystemBrightness = enabled, brightness = brightness)
-                activity?.let {
-                    AppDisplayController.applyBrightness(it, useSystemBrightness = enabled, brightness = brightness)
-                }
+                screenBrightness.save(useSystem = enabled, level = brightness)
+                screenBrightness.apply(useSystem = enabled, level = brightness)
             },
             label = { Text("Авто") },
             colors = FilterChipDefaults.filterChipColors(
@@ -113,14 +103,4 @@ internal fun BrightnessRow(
             border = LegacyM3Defaults.filterChipBorder(selected = useSystem)
         )
     }
-}
-
-/** The activity behind [this] context, unwrapping ContextWrappers (dialogs, themed contexts). */
-internal fun Context.findActivity(): Activity? {
-    var current: Context? = this
-    while (current != null) {
-        if (current is Activity) return current
-        current = (current as? ContextWrapper)?.baseContext
-    }
-    return null
 }

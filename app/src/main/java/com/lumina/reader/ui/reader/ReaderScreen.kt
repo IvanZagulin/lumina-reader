@@ -1,10 +1,5 @@
 package com.lumina.reader.ui.reader
 
-import android.content.Context
-import android.content.Intent
-import android.view.WindowManager
-import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateIntAsState
@@ -46,18 +41,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -69,6 +59,7 @@ import com.lumina.reader.core.model.ReadingHighlight
 import com.lumina.reader.core.model.effectiveTheme
 import com.lumina.reader.core.model.toggledDayNight
 import com.lumina.reader.core.tts.TtsStatus
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.reader.chrome.BookmarkRibbon
 import com.lumina.reader.ui.reader.chrome.ReaderBottomBar
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
@@ -87,23 +78,27 @@ import com.lumina.reader.ui.reader.navigation.quoteShareText
 import com.lumina.reader.ui.reader.pageturn.rememberCurlSupported
 import com.lumina.reader.ui.reader.search.InBookSearchPanel
 import com.lumina.reader.ui.reader.search.SearchNavigatorCapsule
+import com.lumina.reader.ui.reader.selection.AskAiMessage
 import com.lumina.reader.ui.reader.selection.AskAiSheet
 import com.lumina.reader.ui.reader.selection.NoteEditorSheet
-import com.lumina.reader.ui.reader.settings.findActivity
 import com.lumina.reader.ui.reader.tts.TtsMiniPlayer
 import com.lumina.reader.ui.reader.tts.TtsSheet
 import com.lumina.reader.ui.reader.tts.isSpeaking
 import com.lumina.reader.ui.reader.tts.nextTtsSpeed
-import com.lumina.reader.ui.theme.LuminaHaptics
 import com.lumina.reader.ui.theme.LuminaMotion
+import com.lumina.reader.ui.theme.rememberLuminaHaptics
 import com.lumina.reader.ui.theme.rememberReducedMotion
-import com.lumina.reader.ui.theme.Lumina
 import kotlinx.coroutines.delay
 
 @Composable
 fun ReaderScreen(
     viewModel: ReaderViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /**
+     * Answers «Спросить ИИ» about a quote. Android passes its AiClient; the
+     * iPhone has no network client for it yet, so it reports that instead.
+     */
+    askAi: suspend (messages: List<AskAiMessage>) -> String
 ) {
     val storedSettings by viewModel.settings.collectAsState()
     val loadedSettings = storedSettings
@@ -119,7 +114,8 @@ fun ReaderScreen(
         ReaderScreenContent(
             viewModel = viewModel,
             storedSettings = loadedSettings,
-            onBack = onBack
+            onBack = onBack,
+            askAi = askAi
         )
     }
 }
@@ -145,7 +141,8 @@ private val FooterClearance = 64.dp
 private fun ReaderScreenContent(
     viewModel: ReaderViewModel,
     storedSettings: ReaderSettings,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    askAi: suspend (messages: List<AskAiMessage>) -> String
 ) {
     val systemInDarkMode = isSystemInDarkTheme()
     val effectiveTheme = storedSettings.effectiveTheme(systemInDarkMode)
@@ -161,8 +158,8 @@ private fun ReaderScreenContent(
     }
     val chrome = rememberReaderChromeColors(settings.theme)
     val reducedMotion = rememberReducedMotion()
-    val context = LocalContext.current
-    val view = LocalView.current
+    val haptics = rememberLuminaHaptics()
+    val shareText = rememberTextSharer()
     val density = LocalDensity.current
     val curlSupported = rememberCurlSupported()
 
@@ -217,7 +214,7 @@ private fun ReaderScreenContent(
     }
 
     fun toggleBookmark() {
-        if (!isPageBookmarked) LuminaHaptics.confirm(view)
+        if (!isPageBookmarked) haptics.confirm()
         viewModel.toggleBookmarkAtCurrentPosition()
     }
 
@@ -229,47 +226,11 @@ private fun ReaderScreenContent(
         }
     }
 
-    // Keep screen on management
-    DisposableEffect(settings.keepScreenOn) {
-        val window = context.findActivity()?.window
-        if (settings.keepScreenOn) {
-            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
-
-    // Keep the Android status bar visible in reading mode so the clock,
-    // battery level and system indicators stay available. Only the navigation
-    // bar remains immersive while the reader controls are hidden.
-    val appIsDark = Lumina.colors.isDark
-    DisposableEffect(showControls, settings.theme, appIsDark) {
-        val window = context.findActivity()?.window
-        if (window != null) {
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.isAppearanceLightStatusBars = !settings.theme.isDark
-            insetsController.show(WindowInsetsCompat.Type.statusBars())
-            if (showControls) {
-                insetsController.show(WindowInsetsCompat.Type.navigationBars())
-            } else {
-                insetsController.hide(WindowInsetsCompat.Type.navigationBars())
-            }
-        }
-        onDispose {
-            val currentWindow = context.findActivity()?.window
-            if (currentWindow != null) {
-                val controller = WindowCompat.getInsetsController(currentWindow, view)
-                // Hand the status bar back in the app's colours, or a light reading
-                // theme would leave dark-on-dark icons in the library.
-                controller.isAppearanceLightStatusBars = !appIsDark
-                controller.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }
+    KeepScreenOn(settings.keepScreenOn)
+    ReaderBrightness()
+    // The status bar stays visible while reading (clock, battery); only the
+    // navigation bar hides together with the reader controls.
+    ReaderSystemBars(chromeVisible = showControls, pageTheme = settings.theme)
 
     val lifecycleOwner = LocalLifecycleOwner.current
     val isReaderReady = !isLoading && book != null && parsedBook != null
@@ -292,7 +253,7 @@ private fun ReaderScreenContent(
     }
 
     // The search panel is this screen's own overlay: Back closes it (and only then).
-    BackHandler(enabled = searchOpen) { searchOpen = false }
+    PlatformBackHandler(enabled = searchOpen) { searchOpen = false }
 
     val selectionActions = remember(viewModel) {
         ReaderSelectionActions(
@@ -309,7 +270,7 @@ private fun ReaderScreenContent(
             onNote = { text, location, colorHex -> noteRequest = NoteRequest.New(text, location, colorHex) },
             onShare = { text ->
                 val currentBook = viewModel.book.value
-                shareText(context, quoteShareText(text, currentBook?.title.orEmpty(), currentBook?.author.orEmpty()))
+                shareText(quoteShareText(text, currentBook?.title.orEmpty(), currentBook?.author.orEmpty()))
             },
             onAskAi = { text -> askAiQuote = text },
             onFind = { text ->
@@ -463,7 +424,7 @@ private fun ReaderScreenContent(
                         val current = book
                         if (current != null) {
                             val author = current.author.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
-                            shareText(context, "Читаю «${current.title}»$author")
+                            shareText("Читаю «${current.title}»$author")
                         }
                     }
                 )
@@ -662,7 +623,7 @@ private fun ReaderScreenContent(
                 onDeleteHighlight = viewModel::deleteHighlight,
                 onRestoreHighlight = viewModel::restoreHighlight,
                 onEditHighlight = { highlight -> noteRequest = NoteRequest.Existing(highlight) },
-                onShareText = { text -> shareText(context, text) },
+                onShareText = shareText,
                 onDismiss = { navigationTab = null }
             )
         }
@@ -728,6 +689,7 @@ private fun ReaderScreenContent(
                 bookTitle = book?.title.orEmpty(),
                 author = book?.author.orEmpty(),
                 colors = chrome,
+                ask = askAi,
                 onDismiss = { askAiQuote = null }
             )
         }
@@ -748,18 +710,6 @@ private fun ReaderScreenContent(
 
 /** Longest query «Найти» puts into the search field. */
 private const val MAX_FIND_QUERY_LENGTH = 60
-
-private fun shareText(context: Context, text: String) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
-    }
-    try {
-        context.startActivity(Intent.createChooser(intent, "Поделиться").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (e: Exception) {
-        Toast.makeText(context, "Не удалось поделиться", Toast.LENGTH_SHORT).show()
-    }
-}
 
 /** §7.1 loading: the page colour with a 96×2dp accent line at 72 % of the height. */
 @Composable

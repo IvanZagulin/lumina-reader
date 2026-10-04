@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.sp
 import com.lumina.reader.core.model.Chapter
 import com.lumina.reader.core.model.ParagraphMarkup
 import com.lumina.reader.core.model.ReaderSettings
+import com.lumina.reader.platform.PlatformLock
 import kotlin.math.roundToInt
 
 /**
@@ -150,13 +151,13 @@ internal class ChapterPaginator(
  * cannot pollute the cache. Thread-safe.
  */
 internal class ChapterPageCache {
-    private val lock = Any()
+    private val lock = PlatformLock()
     private var activeSpec: PageLayoutSpec? = null
     private val chapters = HashMap<Int, ChapterPages>()
 
     /** Makes [spec] current, forgetting pages of any other spec. */
     fun activate(spec: PageLayoutSpec) {
-        synchronized(lock) {
+        lock.withLock {
             if (activeSpec != spec) {
                 activeSpec = spec
                 chapters.clear()
@@ -164,12 +165,12 @@ internal class ChapterPageCache {
         }
     }
 
-    fun get(spec: PageLayoutSpec, chapterIndex: Int): ChapterPages? = synchronized(lock) {
+    fun get(spec: PageLayoutSpec, chapterIndex: Int): ChapterPages? = lock.withLock {
         if (activeSpec == spec) chapters[chapterIndex] else null
     }
 
     fun put(spec: PageLayoutSpec, pages: ChapterPages) {
-        synchronized(lock) {
+        lock.withLock {
             if (activeSpec == spec) chapters[pages.chapterIndex] = pages
         }
     }
@@ -177,13 +178,17 @@ internal class ChapterPageCache {
     /** The whole-book page map once every chapter has been paginated. */
     fun bookPageMap(spec: PageLayoutSpec, chapterCount: Int): BookPageMap? {
         val all = ArrayList<ChapterPages>(chapterCount.coerceAtLeast(0))
-        synchronized(lock) {
-            if (activeSpec != spec || chapterCount <= 0) return null
+        // withLock is not inline, so a missing chapter is reported as false
+        // instead of returning from bookPageMap inside the lock.
+        val complete = lock.withLock {
+            if (activeSpec != spec || chapterCount <= 0) return@withLock false
             for (index in 0 until chapterCount) {
-                val pages = chapters[index] ?: return null
+                val pages = chapters[index] ?: return@withLock false
                 all += pages
             }
+            true
         }
+        if (!complete) return null
         return BookPageMap(
             pageStartParagraphs = all.map { chapter ->
                 IntArray(chapter.pages.size) { chapter.pages[it].start.paragraphIndex }

@@ -1,6 +1,6 @@
 package com.lumina.reader.core.tts
 
-/** Lifecycle of the read-aloud session exposed by [TtsController.state]. */
+/** Lifecycle of the read-aloud session exposed by [ReadAloudController.state]. */
 enum class TtsStatus { IDLE, PREPARING, PLAYING, PAUSED, ERROR }
 
 /**

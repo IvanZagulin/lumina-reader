@@ -7,7 +7,8 @@ enum class TtsLanguageSupport { AVAILABLE, MISSING_DATA, NOT_SUPPORTED }
 
 /**
  * The parts of a speech engine [TtsPlayer] needs. The Android implementation
- * is AndroidSpeechEngine (in :app); tests use a fake.
+ * is AndroidSpeechEngine (in :app), the iPhone one IosSpeechEngine (iosMain);
+ * tests use a fake.
  *
  * Methods other than [shutdown] are only called after
  * [SpeechEngineCallbacks.onInit] reported success.
