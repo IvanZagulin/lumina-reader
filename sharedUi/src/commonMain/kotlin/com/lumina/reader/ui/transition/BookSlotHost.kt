@@ -3,6 +3,7 @@ package com.lumina.reader.ui.transition
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import com.lumina.reader.ui.components.BookCoverModel
 
 /**
  * What shelf books need from the book-opening transition: the book whose
@@ -18,8 +19,26 @@ interface BookSlotHost {
     /** The book whose shelf slot is drawn transparent while the clone flies (snapshot state). */
     val hiddenBookId: Long?
 
+    /**
+     * The scale the live library draws at: it grows back to 1 while the reader
+     * closes onto it, and is 1 at rest (snapshot state).
+     */
+    val libraryScale: Float
+        get() = 1f
+
     /** Registers the bounds of this element as the slot [key] of [bookId]. */
     fun slotModifier(key: String, bookId: Long): Modifier
+
+    /** A slot this book is currently shown in, if any; the flight starts there. */
+    fun findSlotKey(bookId: Long): String? = null
+
+    /**
+     * Flies [cover] from [slotKey] into the reader and calls [navigate] at the
+     * right moment. Without a host the caller just navigates.
+     */
+    fun open(cover: BookCoverModel, slotKey: String?, mode: OpenAnimation, navigate: () -> Unit) {
+        navigate()
+    }
 }
 
 /** Provided by the app shell; null outside it (previews, sheets in other windows, iOS for now). */

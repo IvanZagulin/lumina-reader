@@ -27,9 +27,6 @@ import kotlinx.coroutines.launch
 /** The app-wide snackbar state (spec §3.1); screens may show their own messages on it. */
 val LocalAppSnackbar = staticCompositionLocalOf { SnackbarHostState() }
 
-/** Nested-scroll connection that collapses the dock; top-level screens attach it to their lists. */
-val LocalDockScroll = staticCompositionLocalOf<NestedScrollConnection> { object : NestedScrollConnection {} }
-
 /**
  * Drives the dock collapse (spec §3.3): scrolling content down shrinks the
  * capsule to 52 dp and fades the labels, scrolling up restores it. [collapse]

@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.library
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +35,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import com.lumina.reader.core.library.AppServices
@@ -44,6 +42,7 @@ import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.ReadingStatus
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.preferences.LibraryViewMode
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.components.BookcaseRow
 import com.lumina.reader.ui.components.GhostBooksRow
 import com.lumina.reader.ui.components.ShelfBookSize
@@ -55,10 +54,10 @@ import com.lumina.reader.ui.components.rememberShelfBookSize
 import com.lumina.reader.ui.components.toCoverModel
 import com.lumina.reader.ui.components.toShelfBookUi
 import com.lumina.reader.ui.shell.LocalDockScroll
+import com.lumina.reader.ui.components.screenWidthDp
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
-import com.lumina.reader.ui.transition.BookTransitionState
-import com.lumina.reader.ui.transition.LocalBookTransition
+import com.lumina.reader.ui.transition.LocalBookSlotHost
 
 /**
  * The library (spec §5): one LazyColumn over the warm wall with a lamp glow —
@@ -95,7 +94,7 @@ fun LibraryScreen(
     val seriesNames by viewModel.seriesNames.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
-    val transition = LocalBookTransition.current
+    val transition = LocalBookSlotHost.current
     val uiPreferences = remember { AppServices.library.uiPreferences }
     val openAnimation by uiPreferences.openAnimation.collectAsState()
 
@@ -113,11 +112,11 @@ fun LibraryScreen(
         searchActive = false
         viewModel.onSearchQueryChanged("")
     }
-    BackHandler(enabled = searchActive) { closeSearch() }
+    PlatformBackHandler(enabled = searchActive) { closeSearch() }
 
     val booksById = remember(allBooks) { allBooks.associateBy(Book::id) }
     val bookSize = rememberShelfBookSize()
-    val screenWidth = LocalConfiguration.current.screenWidthDp.toFloat()
+    val screenWidth = screenWidthDp().toFloat()
     val caseLayout = remember(screenWidth, bookSize) { bookcaseLayout(screenWidth, bookSize.width.value) }
     val caseColumns = caseLayout.first
     val caseSize = remember(caseLayout) { ShelfBookSize(caseLayout.second.dp, (caseLayout.second * 1.5f).dp) }
@@ -165,9 +164,7 @@ fun LibraryScreen(
             .fillMaxSize()
             .graphicsLayer {
                 // While the reader closes onto the library it grows from 0.94 to 1.
-                val closing = transition?.phase == BookTransitionState.Phase.Closing
-                val p = if (closing) transition?.libraryBackdrop?.value ?: 0f else 0f
-                scaleX = 1f - BookTransitionState.LIBRARY_SCALE_DEPTH * p
+                scaleX = transition?.libraryScale ?: 1f
                 scaleY = scaleX
             }
             .drawWithCache {

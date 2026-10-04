@@ -73,6 +73,13 @@ class BookTransitionState internal constructor(
     override fun slotModifier(key: String, bookId: Long): Modifier =
         Modifier.bookTransitionSlot(this, key, bookId)
 
+    /**
+     * The library grows from [LIBRARY_SCALE_DEPTH] below 1 back to 1 while the
+     * reader closes onto it; at rest it draws at its own size.
+     */
+    override val libraryScale: Float
+        get() = if (phase == Phase.Closing) librarySourceScale() else 1f
+
     /** NavHost transitions are skipped while the overlay animates. */
     val suppressNavAnimation: Boolean get() = phase != Phase.Idle
 
@@ -187,7 +194,7 @@ class BookTransitionState internal constructor(
     }
 
     /** Any visible slot that shows [bookId] (opening from a sheet or a deep link). */
-    fun findSlotKey(bookId: Long): String? {
+    override fun findSlotKey(bookId: Long): String? {
         val size = rootSize
         return slots.entries.firstOrNull { (_, entry) ->
             entry.bookId == bookId &&
@@ -217,7 +224,7 @@ class BookTransitionState internal constructor(
      * the reader once it reports ready. With [OpenAnimation.OFF], reduced
      * motion or while another transition runs, it only navigates.
      */
-    fun open(cover: BookCoverModel, slotKey: String?, mode: OpenAnimation, navigate: () -> Unit) {
+    override fun open(cover: BookCoverModel, slotKey: String?, mode: OpenAnimation, navigate: () -> Unit) {
         val bookId = cover.bookId
         if (busy || phase != Phase.Idle) return
         if (bookId == null || mode == OpenAnimation.OFF || reducedMotion || rootSize == IntSize.Zero) {
