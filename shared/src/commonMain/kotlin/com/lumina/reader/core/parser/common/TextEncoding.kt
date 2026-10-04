@@ -10,9 +10,9 @@ import okio.use
 /**
  * Character-set detection shared by the text based parsers.
  *
- * Charsets are [TextCharset]s, decoded by java.nio on Android (the parsers
- * still in :app turn them into the same java.nio.charset.Charset as before
- * with toJavaCharset) and by the common decoders on iOS.
+ * Charsets are [TextCharset]s, decoded by java.nio on Android (Android's FB2
+ * reader turns them into the same java.nio.charset.Charset as before with
+ * toJavaCharset) and by the common decoders on iOS.
  */
 object TextEncoding {
 

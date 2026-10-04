@@ -17,6 +17,7 @@ import com.lumina.reader.core.download.describeNetworkError
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.parser.BookParserFactory
+import com.lumina.reader.core.parser.parse
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.repository.BookCacheRepository
 import kotlinx.coroutines.CancellationException
