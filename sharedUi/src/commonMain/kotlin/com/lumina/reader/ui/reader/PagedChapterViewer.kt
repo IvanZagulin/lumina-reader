@@ -93,7 +93,7 @@ private val TitleSpacing = 12.dp
  * first and last pages lead into the neighbouring chapters.
  */
 @Composable
-internal fun PagedChapterViewer(
+fun PagedChapterViewer(
     chapterIndex: Int,
     chapter: Chapter,
     parsedBook: ParsedBook,

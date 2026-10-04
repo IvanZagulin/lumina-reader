@@ -54,9 +54,10 @@ import com.lumina.reader.ui.reader.displayChapterTitle
 import com.lumina.reader.ui.reader.formatTimeLeft
 import com.lumina.reader.ui.theme.LuminaShape
 import kotlinx.coroutines.launch
+import okio.SYSTEM
 
 /** Contents of a book: its own table of contents, or one entry per chapter. */
-internal fun navigationTocItems(book: ParsedBook): List<TocItem> =
+fun navigationTocItems(book: ParsedBook): List<TocItem> =
     book.tableOfContents.ifEmpty {
         book.chapters.mapIndexed { index, chapter ->
             TocItem(id = "chapter_$index", title = displayChapterTitle(chapter.title, index), chapterIndex = index)
@@ -69,7 +70,7 @@ internal fun navigationTocItems(book: ParsedBook): List<TocItem> =
  * bookmark or quote offers «Вернуть» in the sheet's own snackbar.
  */
 @Composable
-internal fun BookNavigationSheet(
+fun BookNavigationSheet(
     book: Book?,
     parsedBook: ParsedBook,
     position: ReaderPosition,

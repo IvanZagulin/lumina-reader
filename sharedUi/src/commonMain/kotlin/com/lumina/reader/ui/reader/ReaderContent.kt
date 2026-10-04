@@ -57,7 +57,7 @@ import com.lumina.reader.ui.theme.HighlightPalette
  * [onVisibleRangeChanged] (countWords is false for jumps).
  */
 @Composable
-internal fun ReaderContent(
+fun ReaderContent(
     book: Book,
     parsedBook: ParsedBook,
     chapterIndex: Int,
@@ -376,7 +376,7 @@ private class OffsetHolder {
 }
 
 /** «12» for a footnote id like "note_12"; empty when the id has no number. */
-internal fun footnoteNumber(noteId: String): String = noteId.takeLastWhile { it.isDigit() }
+fun footnoteNumber(noteId: String): String = noteId.takeLastWhile { it.isDigit() }
 
 private fun showSelectionError() {
     AppMessages.post("Не удалось прочитать выделенный текст", isError = true)

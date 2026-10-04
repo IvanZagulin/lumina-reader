@@ -17,7 +17,7 @@ import kotlin.math.roundToInt
  * Everything pagination depends on. Two equal specs produce identical pages,
  * so the spec is also the key of [ChapterPageCache].
  */
-internal data class PageLayoutSpec(
+data class PageLayoutSpec(
     val contentWidthPx: Int,
     val contentHeightPx: Int,
     val paragraphSpacingPx: Int,
@@ -28,13 +28,13 @@ internal data class PageLayoutSpec(
 )
 
 /** Start and end margins of a block in pixels. */
-internal data class BlockMargins(
+data class BlockMargins(
     val start: Int,
     val end: Int
 )
 
 /** Block margins of [rendered]; measuring and drawing must both use this. */
-internal fun blockMarginsPx(
+fun blockMarginsPx(
     rendered: RenderedParagraph,
     typography: ReaderTypography,
     density: Density
@@ -57,7 +57,7 @@ internal fun blockMarginsPx(
  * Space after a paragraph in pixels: [ReaderSettings.paragraphSpacingEm] of
  * the reading font size. Both viewers and the paginator use it.
  */
-internal fun paragraphSpacingPx(settings: ReaderSettings, density: Density): Int = with(density) {
+fun paragraphSpacingPx(settings: ReaderSettings, density: Density): Int = with(density) {
     (settings.paragraphSpacingEm.coerceAtLeast(0f) * settings.fontSizeSp).sp.toPx().roundToInt()
 }
 
@@ -65,11 +65,11 @@ internal fun paragraphSpacingPx(settings: ReaderSettings, density: Density): Int
  * Height of the blank space an empty paragraph (stanza break, blank line)
  * stands for: about half a line. Both viewers use it.
  */
-internal fun blankParagraphGapPx(typography: ReaderTypography, density: Density): Int = with(density) {
+fun blankParagraphGapPx(typography: ReaderTypography, density: Density): Int = with(density) {
     (typography.fontSizeSp * typography.lineSpacing.coerceAtLeast(1f) * 0.5f).sp.toPx().roundToInt()
 }
 
-internal fun TextLayoutResult.toParagraphLines(): ParagraphLines {
+fun TextLayoutResult.toParagraphLines(): ParagraphLines {
     val count = lineCount
     return ParagraphLines(
         lineTops = FloatArray(count) { getLineTop(it) },
@@ -91,7 +91,7 @@ private val MEASURE_COLORS = ReaderTextColors(
  * pages. The [measurer] must belong to the calling thread: TextMeasurer is
  * not thread-safe, so background work creates its own instance.
  */
-internal class ChapterPaginator(
+class ChapterPaginator(
     private val measurer: TextMeasurer,
     private val density: Density,
     private val spec: PageLayoutSpec
@@ -150,7 +150,7 @@ internal class ChapterPaginator(
  * for any other spec are dropped, so a late background job for old settings
  * cannot pollute the cache. Thread-safe.
  */
-internal class ChapterPageCache {
+class ChapterPageCache {
     private val lock = PlatformLock()
     private var activeSpec: PageLayoutSpec? = null
     private val chapters = HashMap<Int, ChapterPages>()

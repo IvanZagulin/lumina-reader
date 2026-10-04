@@ -75,7 +75,7 @@ private class CountingSwitch(var enabled: Boolean)
  * neighbouring chapters at both ends. The position is the first visible line.
  */
 @Composable
-internal fun ScrollChapterViewer(
+fun ScrollChapterViewer(
     chapterIndex: Int,
     chapter: Chapter,
     parsedBook: ParsedBook,

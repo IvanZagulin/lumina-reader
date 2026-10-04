@@ -54,14 +54,14 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /** Sleep-timer choices of the player sheet, in minutes. */
-internal val TTS_SLEEP_MINUTES = listOf(15, 30, 60)
+val TTS_SLEEP_MINUTES = listOf(15, 30, 60)
 
 /** Whole minutes until [endsAt] (rounded up); 0 when it has passed. */
-internal fun minutesUntil(endsAt: Long, now: Long): Int =
+fun minutesUntil(endsAt: Long, now: Long): Int =
     if (endsAt <= now) 0 else ceil((endsAt - now) / 60_000.0).toInt()
 
 /** Snaps a slider value to the [step] grid. */
-internal fun snapToStep(value: Float, step: Float, min: Float): Float =
+fun snapToStep(value: Float, step: Float, min: Float): Float =
     min + ((value - min) / step).roundToInt() * step
 
 /**
@@ -71,7 +71,7 @@ internal fun snapToStep(value: Float, step: Float, min: Float): Float =
  * voice for the book language is used.
  */
 @Composable
-internal fun TtsSheet(
+fun TtsSheet(
     state: TtsPlaybackState,
     colors: ReaderChromeColors,
     onTogglePlay: () -> Unit,

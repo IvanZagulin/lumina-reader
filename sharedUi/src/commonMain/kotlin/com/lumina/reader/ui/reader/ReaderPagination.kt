@@ -8,7 +8,7 @@ import kotlin.math.roundToInt
  * so the page-splitting rules can run (and be tested) without a measurer.
  * Offsets are plain-text offsets of the paragraph.
  */
-internal class ParagraphLines(
+class ParagraphLines(
     val lineTops: FloatArray,
     val lineBottoms: FloatArray,
     val lineStarts: IntArray,
@@ -35,7 +35,7 @@ internal class ParagraphLines(
 }
 
 /** A paragraph prepared for pagination. Blank paragraphs are left out. */
-internal sealed interface MeasuredParagraph {
+sealed interface MeasuredParagraph {
     val paragraphIndex: Int
 
     class Text(
@@ -59,7 +59,7 @@ internal sealed interface MeasuredParagraph {
 }
 
 /** Something drawn on a page. */
-internal sealed interface PageBlock {
+sealed interface PageBlock {
     val paragraphIndex: Int
     val startOffset: Int
 
@@ -98,7 +98,7 @@ internal sealed interface PageBlock {
 }
 
 /** One page of a chapter. The first page of a chapter shows its title. */
-internal data class ReaderPage(
+data class ReaderPage(
     val blocks: List<PageBlock>,
     val showsTitle: Boolean
 ) {
@@ -109,7 +109,7 @@ internal data class ReaderPage(
 }
 
 /** Share of the page that text may fill before an illustration is moved to its own page. */
-internal const val IMAGE_SHARES_PAGE_BELOW = 0.55f
+const val IMAGE_SHARES_PAGE_BELOW = 0.55f
 
 /**
  * Splits measured paragraphs into pages of [contentHeightPx].
@@ -128,7 +128,7 @@ internal const val IMAGE_SHARES_PAGE_BELOW = 0.55f
  *
  * [titleHeightPx] is reserved at the top of the first page (0 for no title).
  */
-internal fun paginateParagraphs(
+fun paginateParagraphs(
     paragraphs: List<MeasuredParagraph>,
     contentHeightPx: Int,
     titleHeightPx: Int,
@@ -210,7 +210,7 @@ internal fun paginateParagraphs(
 }
 
 /** How many lines starting at [fromLine] fit into [availablePx]. */
-internal fun fittingLines(lines: ParagraphLines, fromLine: Int, availablePx: Int): Int {
+fun fittingLines(lines: ParagraphLines, fromLine: Int, availablePx: Int): Int {
     var count = 0
     while (fromLine + count < lines.lineCount &&
         lines.heightPx(fromLine, fromLine + count + 1) <= availablePx
@@ -233,7 +233,7 @@ private fun slice(paragraphIndex: Int, lines: ParagraphLines, from: Int, to: Int
     )
 
 /** Pages of one chapter for one [PageLayoutSpec]. */
-internal class ChapterPages(
+class ChapterPages(
     val chapterIndex: Int,
     val pages: List<ReaderPage>
 ) {
@@ -252,7 +252,7 @@ internal class ChapterPages(
     }
 }
 
-internal fun pageIndexForAnchor(pages: List<ReaderPage>, anchor: TextAnchor): Int {
+fun pageIndexForAnchor(pages: List<ReaderPage>, anchor: TextAnchor): Int {
     if (pages.isEmpty()) return 0
     var low = 0
     var high = pages.lastIndex

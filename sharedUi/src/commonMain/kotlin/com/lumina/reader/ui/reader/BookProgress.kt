@@ -10,7 +10,7 @@ import com.lumina.reader.core.text.formatDecimal
  * opens each of its pages and [pageStartOffsets] the character in it, so a
  * book-wide page number can be turned back into a reader position.
  */
-internal class BookPageMap(
+class BookPageMap(
     private val pageStartParagraphs: List<IntArray>,
     private val pageStartOffsets: List<IntArray> = emptyList()
 ) {
@@ -56,7 +56,7 @@ internal class BookPageMap(
     }
 }
 
-internal data class BookPageLocation(
+data class BookPageLocation(
     val chapterIndex: Int,
     val localPage: Int,
     val paragraphIndex: Int,
@@ -68,14 +68,14 @@ internal data class BookPageLocation(
  * whole book is still being paginated and the numbers are extrapolated from
  * the text length of the chapters.
  */
-internal data class BookPosition(
+data class BookPosition(
     val pageNumber: Int,
     val totalPages: Int,
     val percent: Float,
     val isExact: Boolean
 )
 
-internal fun chapterTextLengths(chapters: List<Chapter>): IntArray =
+fun chapterTextLengths(chapters: List<Chapter>): IntArray =
     IntArray(chapters.size) { index -> chapters[index].paragraphs.sumOf(::visibleTextLength) }
 
 private fun visibleTextLength(paragraph: String): Int =
@@ -85,7 +85,7 @@ private fun visibleTextLength(paragraph: String): Int =
  * Book-wide position of [localPage] of [chapterIndex]. The percentage marks
  * the end of the page, so the final page of the book always reads 100%.
  */
-internal fun bookPosition(
+fun bookPosition(
     chapterIndex: Int,
     localPage: Int,
     chapterPageCount: Int,
@@ -132,7 +132,7 @@ internal fun bookPosition(
  * text keeps a long first chapter from being worth as much as a two-line
  * epigraph. [charOffset] adds the part of the current paragraph already read.
  */
-internal fun paragraphProgressPercent(
+fun paragraphProgressPercent(
     chapters: List<Chapter>,
     chapterLengths: IntArray,
     chapterIndex: Int,
@@ -174,7 +174,7 @@ internal fun paragraphProgressPercent(
  * The reader position at [fraction] of the book text (0 = start, 1 = end),
  * weighted like [paragraphProgressPercent]. Used by the book scrubber.
  */
-internal fun locateBookFraction(
+fun locateBookFraction(
     chapters: List<Chapter>,
     chapterLengths: IntArray,
     fraction: Float
@@ -207,5 +207,5 @@ internal fun locateBookFraction(
     return ReaderPosition(chapters.lastIndex, 0, 0)
 }
 
-internal fun formatBookPercent(percent: Float): String =
+fun formatBookPercent(percent: Float): String =
     formatDecimal(percent.toDouble(), 1) + "%"

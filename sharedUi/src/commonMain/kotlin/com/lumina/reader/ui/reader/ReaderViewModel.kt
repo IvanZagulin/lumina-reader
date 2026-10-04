@@ -93,18 +93,18 @@ class ReaderViewModel(
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
     private val _pdfDocument = MutableStateFlow<PdfDocumentRenderer?>(null)
-    internal val pdfDocument: StateFlow<PdfDocumentRenderer?> = _pdfDocument.asStateFlow()
+    val pdfDocument: StateFlow<PdfDocumentRenderer?> = _pdfDocument.asStateFlow()
 
     /** Pages measured by the paged reader, shared by every chapter and the book map. */
-    internal val pageCache = ChapterPageCache()
+    val pageCache = ChapterPageCache()
 
     /** Decoded illustrations of this book. */
-    internal val imageCache = ReaderImageCache(ReaderImageCache.defaultMaxBytes())
+    val imageCache = ReaderImageCache(ReaderImageCache.defaultMaxBytes())
 
     private val _textInfo = MutableStateFlow(BookTextInfo(IntArray(0), null))
 
     /** Text lengths and language of the book, computed once off the main thread. */
-    internal val textInfo: StateFlow<BookTextInfo> = _textInfo.asStateFlow()
+    val textInfo: StateFlow<BookTextInfo> = _textInfo.asStateFlow()
 
     // ---- Position and navigation ------------------------------------------
 

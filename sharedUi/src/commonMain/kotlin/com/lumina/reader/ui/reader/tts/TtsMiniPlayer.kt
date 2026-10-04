@@ -55,10 +55,10 @@ import kotlin.math.abs
 import kotlin.math.sin
 
 /** Speeds the chip of the mini player steps through. */
-internal val TTS_QUICK_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+val TTS_QUICK_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
 /** The quick speed after [current] (wrapping around); unknown speeds go to the nearest step first. */
-internal fun nextTtsSpeed(current: Float): Float {
+fun nextTtsSpeed(current: Float): Float {
     val nearest = TTS_QUICK_SPEEDS.indices.minByOrNull { abs(TTS_QUICK_SPEEDS[it] - current) } ?: 0
     return if (abs(TTS_QUICK_SPEEDS[nearest] - current) > 0.01f) {
         TTS_QUICK_SPEEDS[nearest]
@@ -68,13 +68,13 @@ internal fun nextTtsSpeed(current: Float): Float {
 }
 
 /** «1,25×». */
-internal fun formatSpeed(speed: Float): String {
+fun formatSpeed(speed: Float): String {
     val text = formatDecimal(speed.toDouble(), 2).trimEnd('0').trimEnd('.')
     return text.replace('.', ',') + "×"
 }
 
 /** True when the spoken text plays or is about to. */
-internal val TtsPlaybackState.isSpeaking: Boolean
+val TtsPlaybackState.isSpeaking: Boolean
     get() = status == TtsStatus.PLAYING || status == TtsStatus.PREPARING
 
 /**
@@ -83,7 +83,7 @@ internal val TtsPlaybackState.isSpeaking: Boolean
  * paragraph and stop. Tapping the text opens the full player sheet.
  */
 @Composable
-internal fun TtsMiniPlayer(
+fun TtsMiniPlayer(
     state: TtsPlaybackState,
     paragraphCount: Int,
     colors: ReaderChromeColors,

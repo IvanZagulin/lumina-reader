@@ -15,26 +15,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.repository.LruMap
 import com.lumina.reader.platform.PlatformLock
 import kotlinx.coroutines.withContext
+import com.lumina.reader.ui.components.screenWidthDp
 
 /** Widest bitmap the reader decodes for a book illustration. */
-internal const val MAX_IMAGE_DECODE_WIDTH = 2048
+const val MAX_IMAGE_DECODE_WIDTH = 2048
 
 /** Tallest bitmap the reader decodes, so very long strips stay affordable. */
-internal const val MAX_IMAGE_DECODE_HEIGHT = 4096
+const val MAX_IMAGE_DECODE_HEIGHT = 4096
 
 /**
  * Largest power-of-two sample size that keeps the decoded image at least
  * [requestedWidth] wide (capped at [MAX_IMAGE_DECODE_WIDTH]) and no taller
  * than [MAX_IMAGE_DECODE_HEIGHT].
  */
-internal fun calculateInSampleSize(sourceWidth: Int, sourceHeight: Int, requestedWidth: Int): Int {
+fun calculateInSampleSize(sourceWidth: Int, sourceHeight: Int, requestedWidth: Int): Int {
     if (sourceWidth <= 0 || sourceHeight <= 0) return 1
     val targetWidth = requestedWidth.coerceIn(1, MAX_IMAGE_DECODE_WIDTH)
     var sample = 1
@@ -50,7 +50,7 @@ internal fun calculateInSampleSize(sourceWidth: Int, sourceHeight: Int, requeste
  * Decoding happens off the main thread through [load]; the platform half
  * (header size, sampled decode, byte count) is in ReaderImagesPlatform.
  */
-internal class ReaderImageCache(maxBytes: Int) {
+class ReaderImageCache(maxBytes: Int) {
     /**
      * Guards [cache] and [bounds]. android.util.LruCache locked itself and
      * LruMap does not, while [load] runs on several decode threads at once and
@@ -103,7 +103,7 @@ internal class ReaderImageCache(maxBytes: Int) {
 
 /** A book illustration that fills the space it is given (paged reader). */
 @Composable
-internal fun BookImageFill(
+fun BookImageFill(
     imageId: String,
     bytes: ByteArray?,
     cache: ReaderImageCache,
@@ -137,7 +137,7 @@ internal fun BookImageFill(
  * jump when the bitmap arrives.
  */
 @Composable
-internal fun BookImageInline(
+fun BookImageInline(
     imageId: String,
     bytes: ByteArray?,
     cache: ReaderImageCache,
@@ -147,7 +147,7 @@ internal fun BookImageInline(
     val density = LocalDensity.current
     // Becomes screenWidthDp() (ui.components, internal to :sharedUi; the same
     // value on Android) when this file moves there.
-    val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
+    val screenWidthPx = with(density) { screenWidthDp().dp.roundToPx() }
     val targetWidth = screenWidthPx.coerceIn(1, MAX_IMAGE_DECODE_WIDTH)
     val size = remember(imageId, bytes) { cache.imageSize(imageId, bytes) } ?: return
     val ratio = (size.width.toFloat() / size.height.toFloat()).coerceIn(0.2f, 5f)

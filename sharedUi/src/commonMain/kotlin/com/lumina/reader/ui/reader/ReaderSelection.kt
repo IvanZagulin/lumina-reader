@@ -26,7 +26,7 @@ data class SelectionLocation(
  * What the selection menu and the highlight menu do, implemented by the
  * reader screen. Colours are palette hex values (HighlightPalette).
  */
-internal class ReaderSelectionActions(
+class ReaderSelectionActions(
     val onHighlight: (text: String, location: SelectionLocation, colorHex: String) -> Unit,
     val onNote: (text: String, location: SelectionLocation, colorHex: String) -> Unit,
     val onShare: (text: String) -> Unit,
@@ -38,13 +38,13 @@ internal class ReaderSelectionActions(
 )
 
 /** Selected text read back from the selection, and where it is if it was found. */
-internal data class CapturedSelection(
+data class CapturedSelection(
     val text: String,
     val location: SelectionLocation?
 )
 
 /** The paragraphs a viewer currently shows, for locating a selection. */
-internal data class VisibleText(
+data class VisibleText(
     val chapterIndex: Int,
     val paragraphs: List<VisibleParagraphText>
 )
@@ -62,7 +62,7 @@ internal data class VisibleText(
  * selection only clears it instead of turning the page.
  */
 @Stable
-internal class ReaderSelectionState(
+class ReaderSelectionState(
     private val platformToolbar: TextToolbar,
     private val clipboard: SelectionClipboard?
 ) : TextToolbar {
@@ -151,7 +151,7 @@ internal class ReaderSelectionState(
 }
 
 /** Records the selection state at the start of every gesture, without consuming it. */
-internal fun Modifier.trackSelectionGestures(selection: ReaderSelectionState): Modifier =
+fun Modifier.trackSelectionGestures(selection: ReaderSelectionState): Modifier =
     pointerInput(selection) {
         awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)

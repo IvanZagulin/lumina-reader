@@ -29,17 +29,17 @@ import com.lumina.reader.ui.reader.BookPosition
 import com.lumina.reader.ui.reader.formatTimeLeft
 
 /** «214 / 530», or «≈ 214 / 530» while the book is still being paginated. */
-internal fun formatPageLabel(position: BookPosition): String {
+fun formatPageLabel(position: BookPosition): String {
     val approximate = if (position.isExact) "" else "≈ "
     return "$approximate${position.pageNumber} / ${position.totalPages}"
 }
 
 /** «42,3 %». */
-internal fun formatPercentLabel(percent: Float): String =
+fun formatPercentLabel(percent: Float): String =
     formatDecimal(percent.coerceIn(0f, 100f).toDouble(), 1, decimalSeparator = ',') + " %"
 
 /** «≈ 12 мин до конца главы»; null when unknown. */
-internal fun timeLeftLabel(minutesLeft: Int?): String? =
+fun timeLeftLabel(minutesLeft: Int?): String? =
     formatTimeLeft(minutesLeft)?.let { "≈ $it до конца главы" }
 
 private val FooterStyle = TextStyle(fontSize = 11.sp, fontFeatureSettings = "tnum")
@@ -51,7 +51,7 @@ private val FooterStyle = TextStyle(fontSize = 11.sp, fontFeatureSettings = "tnu
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ReaderPageFooter(
+fun ReaderPageFooter(
     position: BookPosition,
     showPages: Boolean,
     timeLeft: String?,

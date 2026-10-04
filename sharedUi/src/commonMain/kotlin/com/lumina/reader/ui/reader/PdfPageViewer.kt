@@ -74,7 +74,7 @@ private fun clampPan(offset: Offset, scale: Float, size: IntSize): Offset {
  * zones turn pages only while the page is not zoomed.
  */
 @Composable
-internal fun PdfPageViewer(
+fun PdfPageViewer(
     document: PdfDocumentRenderer?,
     pageIndex: Int,
     settings: ReaderSettings,

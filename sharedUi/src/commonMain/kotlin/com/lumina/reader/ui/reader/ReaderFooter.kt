@@ -15,7 +15,7 @@ import com.lumina.reader.ui.theme.LegacyM3Defaults
 
 /** Jump to a book-wide page number, or to a percentage when [byPages] is false. */
 @Composable
-internal fun BookJumpDialog(
+fun BookJumpDialog(
     position: BookPosition,
     byPages: Boolean,
     onDismiss: () -> Unit,
