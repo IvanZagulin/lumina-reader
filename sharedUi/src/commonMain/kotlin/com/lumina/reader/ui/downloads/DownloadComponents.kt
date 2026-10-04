@@ -49,7 +49,7 @@ import com.lumina.reader.ui.components.toNetworkHeaders
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** Spine-side-tight book shape at thumbnail size (same proportions as LuminaShape.Book). */
-internal val ThumbShape = RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 4.dp, bottomEnd = 4.dp)
+val ThumbShape = RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp, topEnd = 4.dp, bottomEnd = 4.dp)
 
 /**
  * A tiny cover for download rows and the island: the catalogue thumbnail
@@ -57,7 +57,7 @@ internal val ThumbShape = RoundedCornerShape(topStart = 2.dp, bottomStart = 2.dp
  * image loads or when there is none.
  */
 @Composable
-internal fun DownloadCover(
+fun DownloadCover(
     coverUrl: String?,
     coverHeaders: Map<String, String>,
     formatLabel: String?,
@@ -112,7 +112,7 @@ internal fun DownloadCover(
 
 /** Determinate ring, or an indeterminate one (static under reduced motion). */
 @Composable
-internal fun DownloadRing(
+fun DownloadRing(
     fraction: Float?,
     size: Dp,
     color: Color,

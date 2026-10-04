@@ -68,7 +68,7 @@ import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 
 /** The 8 cloth colours of generated covers and monograms (spec §4.3). */
-internal val CatalogCloth = listOf(
+val CatalogCloth = listOf(
     Color(0xFF6E1F2A), // Бордо
     Color(0xFF4E2A4F), // Слива
     Color(0xFF1F4D3A), // Изумруд
@@ -82,25 +82,25 @@ private const val OCHRE_INDEX = 6
 private val Foil = Color(0xFFF0D69A)
 private val Deboss = Color(0xFF2A1A0C)
 
-internal fun clothColor(seed: String): Color = CatalogCloth[CatalogUi.clothIndex(seed)]
-internal fun onClothColor(seed: String): Color = if (CatalogUi.clothIndex(seed) == OCHRE_INDEX) Deboss else Foil
+fun clothColor(seed: String): Color = CatalogCloth[CatalogUi.clothIndex(seed)]
+fun onClothColor(seed: String): Color = if (CatalogUi.clothIndex(seed) == OCHRE_INDEX) Deboss else Foil
 
 /** True when the Material scheme is dark (works before and after LuminaReaderTheme provides its locals). */
 @Composable
 @ReadOnlyComposable
-internal fun catalogIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+fun catalogIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 /** Search pill / chip fill: `surfaceSunken`, or the closest Material role if the extended palette is not provided. */
 @Composable
 @ReadOnlyComposable
-internal fun sunkenColor(): Color {
+fun sunkenColor(): Color {
     val extended = Lumina.colors
     return if (extended.isDark == catalogIsDark()) extended.surfaceSunken else MaterialTheme.colorScheme.surfaceContainerHighest
 }
 
 /** Spec «LuminaCard»: surface, radius 20, 1dp outlineVariant hairline, no elevation. */
 @Composable
-internal fun HairlineCard(
+fun HairlineCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     shape: androidx.compose.ui.graphics.Shape = LuminaShape.Card,
@@ -132,7 +132,7 @@ internal fun HairlineCard(
 
 /** Small caps section label («МОИ КАТАЛОГИ»). */
 @Composable
-internal fun Eyebrow(text: String, modifier: Modifier = Modifier) {
+fun Eyebrow(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text.uppercase(),
         style = MaterialTheme.typography.labelSmall.copy(
@@ -146,7 +146,7 @@ internal fun Eyebrow(text: String, modifier: Modifier = Modifier) {
 
 /** 48dp search field in a sunken pill. */
 @Composable
-internal fun CatalogSearchPill(
+fun CatalogSearchPill(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
@@ -217,7 +217,7 @@ internal fun CatalogSearchPill(
  * over a generated cloth cover, clipped to the book shape with a hinge groove.
  */
 @Composable
-internal fun CatalogCover(
+fun CatalogCover(
     url: String?,
     authHeaders: Map<String, String>,
     title: String,
@@ -334,7 +334,7 @@ internal fun CatalogCover(
 
 /** Indeterminate progress line; a static partial line under reduced motion (no infinite animation, spec §11). */
 @Composable
-internal fun LoadingLine(modifier: Modifier = Modifier) {
+fun LoadingLine(modifier: Modifier = Modifier) {
     if (rememberReducedMotion()) {
         LinearProgressIndicator(progress = { 0.3f }, modifier = modifier, gapSize = 0.dp, drawStopIndicator = {})
     } else {
@@ -344,7 +344,7 @@ internal fun LoadingLine(modifier: Modifier = Modifier) {
 
 /** Indeterminate spinner; a static arc under reduced motion (spec §11). */
 @Composable
-internal fun LoadingSpinner(modifier: Modifier = Modifier, strokeWidth: Dp = 2.dp) {
+fun LoadingSpinner(modifier: Modifier = Modifier, strokeWidth: Dp = 2.dp) {
     if (rememberReducedMotion()) {
         CircularProgressIndicator(progress = { 0.25f }, modifier = modifier, strokeWidth = strokeWidth)
     } else {
@@ -354,7 +354,7 @@ internal fun LoadingSpinner(modifier: Modifier = Modifier, strokeWidth: Dp = 2.d
 
 /** Inline card for empty and error states («Каталог не ответил: …» + «Повторить»). */
 @Composable
-internal fun CatalogMessageCard(
+fun CatalogMessageCard(
     message: String,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
@@ -404,7 +404,7 @@ internal fun CatalogMessageCard(
 
 /** Static placeholder rows while the first page loads (no shimmer: nothing animates). */
 @Composable
-internal fun CatalogSkeleton(modifier: Modifier = Modifier) {
+fun CatalogSkeleton(modifier: Modifier = Modifier) {
     val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
     Column(
         modifier = modifier

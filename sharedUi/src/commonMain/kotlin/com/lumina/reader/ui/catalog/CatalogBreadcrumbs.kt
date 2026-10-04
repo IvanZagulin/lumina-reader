@@ -28,7 +28,7 @@ import com.lumina.reader.ui.theme.LuminaShape
  * an earlier one returns to that level.
  */
 @Composable
-internal fun CatalogBreadcrumbs(
+fun CatalogBreadcrumbs(
     crumbs: List<Pair<Long, String>>,
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier

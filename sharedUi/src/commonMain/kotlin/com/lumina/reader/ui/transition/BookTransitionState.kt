@@ -44,7 +44,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path
 
 /** Where the page starts when the reader closes (predictive back may have shrunk it). */
-internal data class CloseStart(val scale: Float = 1f, val translationX: Float = 0f, val cornerPx: Float = 0f)
+data class CloseStart(val scale: Float = 1f, val translationX: Float = 0f, val cornerPx: Float = 0f)
 
 /**
  * State of the root-level book-open overlay (spec §6). The reader is navigated
@@ -105,45 +105,45 @@ class BookTransitionState internal constructor(
     val libraryBackdrop = Animatable(0f)
 
     /** Close without a target slot: the book shrinks to 0.6 and fades. */
-    internal val vanish = Animatable(0f)
+    val vanish = Animatable(0f)
 
     /** Closing: 1 shows the reader snapshot, 0 the cover it fades into. */
-    internal val readerFade = Animatable(0f)
+    val readerFade = Animatable(0f)
 
     /** True while closing (the live library is under the overlay). */
-    internal var closing by mutableStateOf(false)
+    var closing by mutableStateOf(false)
         private set
 
     /** The library snapshot is ready to be drawn behind the opening book. */
-    internal var backdropReady by mutableStateOf(false)
+    var backdropReady by mutableStateOf(false)
         private set
 
     /** The reader is slow: show «Открываю книгу…». */
-    internal var waitingVisible by mutableStateOf(false)
+    var waitingVisible by mutableStateOf(false)
         private set
 
     /** Slot bounds (open) or close target; unscaled while [sourceFollowsLibraryScale]. */
     var sourceRect: Rect = Rect.Zero
-        internal set
+        set
 
     /**
      * While closing, the live library grows from [LIBRARY_SCALE_DEPTH] below 1 back
      * to 1; the target slot is kept unscaled and re-scaled every frame so the book
      * lands exactly on it.
      */
-    internal var sourceFollowsLibraryScale = false
+    var sourceFollowsLibraryScale = false
         private set
     var stageRect: Rect = Rect.Zero
-        internal set
+        set
 
     /** Root bounds; the page expands to it. */
-    internal var fullRect: Rect = Rect.Zero
+    var fullRect: Rect = Rect.Zero
         private set
 
     /** Page rect and corner at expand = 1 (full window, or the predictive-back preview). */
-    internal var endRect: Rect = Rect.Zero
+    var endRect: Rect = Rect.Zero
         private set
-    internal var endCornerPx: Float = 0f
+    var endCornerPx: Float = 0f
         private set
 
     /** Full-resolution library while opening; then only [libraryShotSmall] is kept. */
@@ -167,7 +167,7 @@ class BookTransitionState internal constructor(
     /** The root's density, kept current by the shell like [rootSize]; it records the downscaled snapshot. */
     var density: Density = Density(1f)
 
-    internal val slots = HashMap<String, SlotEntry>()
+    val slots = HashMap<String, SlotEntry>()
     private val readerReady = MutableStateFlow<Long?>(null)
     private var originSlotKey: String? = null
     private var job: Job? = null
@@ -175,27 +175,27 @@ class BookTransitionState internal constructor(
     /** Set synchronously by [open] / [close] so a second tap or back press is ignored. */
     private var busy = false
 
-    internal class SlotEntry(val bookId: Long, val coordinates: LayoutCoordinates, val owner: Any)
+    class SlotEntry(val bookId: Long, val coordinates: LayoutCoordinates, val owner: Any)
 
     fun onReaderReady(bookId: Long) {
         readerReady.value = bookId
     }
 
     /** Back pressed while the page waits for a slow reader: fade onto it now. */
-    internal fun skipWaiting() {
+    fun skipWaiting() {
         if (phase == Phase.WaitingReader) hiddenBookId?.let { readerReady.value = it }
     }
 
-    internal fun registerSlot(key: String, bookId: Long, coordinates: LayoutCoordinates, owner: Any) {
+    fun registerSlot(key: String, bookId: Long, coordinates: LayoutCoordinates, owner: Any) {
         slots[key] = SlotEntry(bookId, coordinates, owner)
     }
 
-    internal fun unregisterSlot(key: String, owner: Any) {
+    fun unregisterSlot(key: String, owner: Any) {
         if (slots[key]?.owner === owner) slots.remove(key)
     }
 
     /** Root-space bounds of a registered slot (position + size, not clipped by its LazyRow). */
-    internal fun slotRect(key: String): Rect? {
+    fun slotRect(key: String): Rect? {
         val entry = slots[key] ?: return null
         return entry.rectOrNull()
     }
@@ -329,7 +329,7 @@ class BookTransitionState internal constructor(
      * Falls back to a plain [popBack] when animations are off or nothing is
      * known about the book.
      */
-    internal fun close(
+    fun close(
         readerLayer: GraphicsLayer,
         bookId: Long,
         cover: BookCoverModel?,
@@ -415,7 +415,7 @@ class BookTransitionState internal constructor(
     }
 
     /** Scale of the live library while closing (1 − depth·backdrop). */
-    internal fun librarySourceScale(): Float = 1f - LIBRARY_SCALE_DEPTH * libraryBackdrop.value
+    fun librarySourceScale(): Float = 1f - LIBRARY_SCALE_DEPTH * libraryBackdrop.value
 
     private fun findCloseTarget(bookId: Long): SlotCandidate? {
         val candidates = slots.mapNotNull { (key, entry) ->
@@ -464,7 +464,7 @@ class BookTransitionState internal constructor(
         }
     }
 
-    internal companion object {
+    companion object {
         /** The library behind the overlay is scaled down by this much (spec §5.1, §6.5). */
         const val LIBRARY_SCALE_DEPTH = 0.06f
 

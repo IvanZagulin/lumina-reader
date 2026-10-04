@@ -91,36 +91,36 @@ data class StatsPalette(
 /** True when the app scheme is dark (works with or without the extended Lumina colours). */
 @Composable
 @ReadOnlyComposable
-internal fun statsIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+fun statsIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 @Composable
 @ReadOnlyComposable
-internal fun statsPalette(): StatsPalette = if (statsIsDark()) StatsPalette.Dark else StatsPalette.Light
+fun statsPalette(): StatsPalette = if (statsIsDark()) StatsPalette.Dark else StatsPalette.Light
 
 /** Lamp glow of the hero, or a faint primary wash when the extended palette is not provided. */
 @Composable
 @ReadOnlyComposable
-internal fun statsLampGlow(): Color {
+fun statsLampGlow(): Color {
     val extended = Lumina.colors
     return if (extended.isDark == statsIsDark()) extended.lampGlow else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
 }
 
 /** Brass medallion gradient (foilLight → foilDark). */
-internal val MedallionLight = Color(0xFFF0D69A)
-internal val MedallionDark = Color(0xFFB98D3E)
+val MedallionLight = Color(0xFFF0D69A)
+val MedallionDark = Color(0xFFB98D3E)
 
 /** Flat «LuminaCard» look: radius 20 (24 for big cards) and a 1dp outlineVariant hairline. */
-internal val StatsCardShape = LuminaShape.Card
-internal val StatsBigCardShape = RoundedCornerShape(24.dp)
+val StatsCardShape = LuminaShape.Card
+val StatsBigCardShape = RoundedCornerShape(24.dp)
 
 @Composable
 @ReadOnlyComposable
-internal fun statsCardBorder(): BorderStroke = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+fun statsCardBorder(): BorderStroke = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
 
 /** Big numbers: `LuminaType.numeralLarge` (Lora SemiBold 34/40, tabular) = displayMedium + "tnum". */
 @Composable
 @ReadOnlyComposable
-internal fun statsNumeralStyle(): androidx.compose.ui.text.TextStyle =
+fun statsNumeralStyle(): androidx.compose.ui.text.TextStyle =
     MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum")
 
 /**
@@ -128,7 +128,7 @@ internal fun statsNumeralStyle(): androidx.compose.ui.text.TextStyle =
  * a dark icon; locked ones are outlineVariant at 40%.
  */
 @Composable
-internal fun BrassMedallion(
+fun BrassMedallion(
     icon: ImageVector,
     size: Dp,
     modifier: Modifier = Modifier,

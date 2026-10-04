@@ -53,7 +53,7 @@ import com.lumina.reader.ui.theme.LuminaShape
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun OpdsBookDetailsSheet(
+fun OpdsBookDetailsSheet(
     selected: SelectedPublication,
     downloads: Map<String, DownloadState>,
     libraryBookId: Long?,

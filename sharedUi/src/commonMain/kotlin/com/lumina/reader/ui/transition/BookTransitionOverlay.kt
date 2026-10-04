@@ -47,7 +47,7 @@ import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** One frame of the transition geometry, derived from the animatables (draw phase only). */
-internal class TransitionFrame(
+class TransitionFrame(
     /** The cover's bounds. */
     val page: Rect,
     /** The reader snapshot's bounds while closing. */
@@ -65,7 +65,7 @@ internal class TransitionFrame(
     val greetingAlpha: Float
 )
 
-internal fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): TransitionFrame {
+fun BookTransitionState.frame(arcPx: Float, closedCornerPx: Float): TransitionFrame {
     val f = flight.value
     val e = expand.value
     val v = vanish.value

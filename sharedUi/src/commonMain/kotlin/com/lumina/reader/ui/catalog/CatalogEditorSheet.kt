@@ -70,7 +70,7 @@ private val FieldShape = RoundedCornerShape(16.dp)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CatalogEditorSheet(
+fun CatalogEditorSheet(
     form: CatalogForm,
     onChange: ((CatalogForm) -> CatalogForm) -> Unit,
     onCheck: () -> Unit,
@@ -267,7 +267,7 @@ internal fun CatalogEditorSheet(
 
 /** «✓ …» in secondary or the error text, announced politely to TalkBack. */
 @Composable
-internal fun CheckResultLine(check: ConnectionCheck, modifier: Modifier = Modifier) {
+fun CheckResultLine(check: ConnectionCheck, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     val (text, color) = when (check) {
         ConnectionCheck.Running -> "Проверяем соединение…" to colors.onSurfaceVariant

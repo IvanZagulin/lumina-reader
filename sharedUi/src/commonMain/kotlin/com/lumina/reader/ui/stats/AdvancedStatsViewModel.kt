@@ -218,7 +218,7 @@ class AdvancedStatsViewModel(
         )
 }
 
-internal object AdvancedStatsCalculator {
+object AdvancedStatsCalculator {
     private const val MAX_SESSION_SECONDS = 86_400L
     private const val MAX_FUTURE_SKEW = 5L * 60L * 1_000L
 

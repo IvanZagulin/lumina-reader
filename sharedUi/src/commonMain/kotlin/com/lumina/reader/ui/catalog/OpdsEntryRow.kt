@@ -29,7 +29,7 @@ import com.lumina.reader.core.opds.OpdsEntry
  * two lines of description and one download chip per format.
  */
 @Composable
-internal fun OpdsEntryRow(
+fun OpdsEntryRow(
     publication: OpdsEntry.Publication,
     authHeaders: Map<String, String>,
     chips: FormatChips,
@@ -109,7 +109,7 @@ internal fun OpdsEntryRow(
 
 /** The chips of [chips] in a scrollable row, or why there is nothing to download. */
 @Composable
-internal fun FormatChipRow(
+fun FormatChipRow(
     publication: OpdsEntry.Publication,
     chips: FormatChips,
     callbacks: ChipCallbacks,

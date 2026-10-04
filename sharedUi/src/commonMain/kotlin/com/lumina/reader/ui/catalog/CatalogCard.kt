@@ -66,7 +66,7 @@ class CatalogCardActions(
  * a ⋯ menu («Проверить», «Изменить»/«Удалить», built-ins «Скрыть»).
  */
 @Composable
-internal fun CatalogCard(
+fun CatalogCard(
     catalog: OpdsCatalogConfig,
     check: ConnectionCheck?,
     onClick: () -> Unit,
@@ -195,7 +195,7 @@ internal fun CatalogCard(
 
 /** 48dp tile with the catalogue's first letter on its cloth colour. */
 @Composable
-internal fun CatalogMonogram(name: String, modifier: Modifier = Modifier) {
+fun CatalogMonogram(name: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(48.dp)
@@ -241,7 +241,7 @@ private fun CheckDot(check: ConnectionCheck) {
 
 /** Dashed «+ Добавить каталог» card. */
 @Composable
-internal fun AddCatalogCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun AddCatalogCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val outline = MaterialTheme.colorScheme.outline
     Row(
         modifier = modifier
@@ -279,7 +279,7 @@ internal fun AddCatalogCard(onClick: () -> Unit, modifier: Modifier = Modifier) 
 /** `success` from the extended palette, or `secondary` (same hue family) when it is not provided. */
 @Composable
 @androidx.compose.runtime.ReadOnlyComposable
-internal fun successColor(): androidx.compose.ui.graphics.Color {
+fun successColor(): androidx.compose.ui.graphics.Color {
     val extended = Lumina.colors
     return if (extended.isDark == catalogIsDark()) extended.success else MaterialTheme.colorScheme.secondary
 }

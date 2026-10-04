@@ -17,7 +17,7 @@ import kotlinx.datetime.toLocalDateTime
  * English month names, so the four CLDR month tables are written out here.
  * StatsDatesTest pins every month of every form against the JVM formatter.
  */
-internal object RussianDates {
+object RussianDates {
     /** CLDR format-wide (genitive) months: "d MMMM". */
     private val genitive = arrayOf(
         "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -74,7 +74,7 @@ internal object RussianDates {
  * java.time but a transition-table search in Kotlin/Native's kotlinx-datetime,
  * and the statistics recalculate every minute.
  */
-internal class LocalTimes(private val timeZone: TimeZone) {
+class LocalTimes(private val timeZone: TimeZone) {
     private val cache = HashMap<Long, LocalDateTime>()
 
     @OptIn(ExperimentalTime::class)
@@ -86,9 +86,9 @@ internal class LocalTimes(private val timeZone: TimeZone) {
 }
 
 /** java.time's `LocalDate.lengthOfYear()`: 365, or 366 in a leap year. */
-internal fun LocalDate.lengthOfYear(): Int = LocalDate(year, 1, 1).daysUntil(LocalDate(year + 1, 1, 1))
+fun LocalDate.lengthOfYear(): Int = LocalDate(year, 1, 1).daysUntil(LocalDate(year + 1, 1, 1))
 
 /** java.time's `LocalDate.now()`: today in the device's time zone. */
 @OptIn(ExperimentalTime::class)
-internal fun statsToday(): LocalDate =
+fun statsToday(): LocalDate =
     Instant.fromEpochMilliseconds(AppClock.nowMillis()).toLocalDateTime(TimeZone.currentSystemDefault()).date

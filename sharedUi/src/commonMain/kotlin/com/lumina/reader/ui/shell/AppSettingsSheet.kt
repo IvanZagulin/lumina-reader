@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** «20:00» */
-internal fun formatReminderTime(hour: Int, minute: Int): String =
+fun formatReminderTime(hour: Int, minute: Int): String =
     "${hour.coerceIn(0, 23).toString().padStart(2, '0')}:${minute.coerceIn(0, 59).toString().padStart(2, '0')}"
 
 /**

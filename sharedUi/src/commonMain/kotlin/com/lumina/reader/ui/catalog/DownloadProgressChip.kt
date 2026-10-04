@@ -50,7 +50,7 @@ import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.rememberReducedMotion
 
 /** What a format's download control does. */
-internal class ChipCallbacks(
+class ChipCallbacks(
     val onDownload: (OpdsAcquisition) -> Unit,
     val onCancel: (String) -> Unit,
     val onRetry: (String) -> Unit,
@@ -78,7 +78,7 @@ private val ChipState.kind: ChipKind
  * («Скачать FB2 · 1,2 МБ»).
  */
 @Composable
-internal fun DownloadProgressChip(
+fun DownloadProgressChip(
     acquisition: OpdsAcquisition,
     state: ChipState,
     isBest: Boolean,

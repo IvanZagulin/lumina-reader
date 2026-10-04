@@ -49,7 +49,7 @@ private fun OpdsNavKind.icon(): ImageVector = when (this) {
 
 /** A folder of a feed (spec §7.9 «OpdsNavigationRow», 64dp). */
 @Composable
-internal fun OpdsNavigationRow(
+fun OpdsNavigationRow(
     entry: OpdsEntry.Navigation,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -107,7 +107,7 @@ internal fun OpdsNavigationRow(
 
 /** A 48dp letter tile of an alphabet feed («А», «Б», «Ба»…). */
 @Composable
-internal fun LetterTile(
+fun LetterTile(
     entry: OpdsEntry.Navigation,
     onClick: () -> Unit,
     modifier: Modifier = Modifier

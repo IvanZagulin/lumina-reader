@@ -243,7 +243,7 @@ class CatalogScreenActions(
     val onOpenDownloads: () -> Unit = {},
     val onDismissDownload: (String) -> Unit = {}
 ) {
-    internal fun chipCallbacks(catalog: OpdsCatalogConfig, publication: OpdsEntry.Publication) = ChipCallbacks(
+    fun chipCallbacks(catalog: OpdsCatalogConfig, publication: OpdsEntry.Publication) = ChipCallbacks(
         onDownload = { acquisition -> onDownload(catalog, publication, acquisition) },
         onCancel = onCancelDownload,
         onRetry = onRetryDownload,
@@ -559,7 +559,7 @@ private fun ScopeChips(selected: CatalogSearchScope, onSelect: (CatalogSearchSco
 // ---- Feed --------------------------------------------------------------------------
 
 @Composable
-internal fun CatalogTopBar(
+fun CatalogTopBar(
     title: String,
     subtitle: String?,
     onBack: () -> Unit,
@@ -1015,7 +1015,7 @@ private fun SearchSectionHeader(
 }
 
 @Composable
-internal fun DeleteCatalogDialog(
+fun DeleteCatalogDialog(
     catalog: OpdsCatalogConfig,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit

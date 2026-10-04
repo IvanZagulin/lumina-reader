@@ -7,7 +7,7 @@ import kotlinx.datetime.DayOfWeek
  * calculated stats state. Keeping them here avoids duplicating raw database
  * aggregation just for badge conditions.
  */
-internal object AchievementCompat {
+object AchievementCompat {
     var activeSundayCount: Int = 0
         private set
     var fridayEveningSessionCount: Int = 0
@@ -33,11 +33,11 @@ internal object AchievementCompat {
     }
 }
 
-internal val HabitSignals.activeSundayCount: Int
+val HabitSignals.activeSundayCount: Int
     get() = AchievementCompat.activeSundayCount
 
-internal val HabitSignals.fridayEveningSessionCount: Int
+val HabitSignals.fridayEveningSessionCount: Int
     get() = AchievementCompat.fridayEveningSessionCount
 
-internal val HabitSignals.maxBooksSameAuthor: Int
+val HabitSignals.maxBooksSameAuthor: Int
     get() = AchievementCompat.maxBooksSameAuthor

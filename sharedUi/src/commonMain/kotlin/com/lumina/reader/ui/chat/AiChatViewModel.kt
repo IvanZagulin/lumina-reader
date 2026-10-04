@@ -293,7 +293,7 @@ class AiChatViewModel(
 }
 
 /** Only the real conversation (user and model turns) goes to the model, plus the system prompt. */
-internal fun messagesForRequest(messages: List<AiMessage>): List<AiMessage> {
+fun messagesForRequest(messages: List<AiMessage>): List<AiMessage> {
     val systemMessage = messages.firstOrNull { it.role == "system" }
     val recentConversation = messages
         .filter { it.role == "user" || it.role == "assistant" }
@@ -301,13 +301,13 @@ internal fun messagesForRequest(messages: List<AiMessage>): List<AiMessage> {
     return listOfNotNull(systemMessage) + recentConversation
 }
 
-internal fun needsBibliographicVerification(userText: String): Boolean {
+fun needsBibliographicVerification(userText: String): Boolean {
     val normalized = userText.lowercase()
     return BIBLIOGRAPHIC_QUERY_MARKERS.any(normalized::contains)
 }
 
 /** Extracts [DOWNLOAD:...] and [ORGANIZE:series:a|b] commands, downloads first. */
-internal fun parseAiActions(content: String): List<AiAction> {
+fun parseAiActions(content: String): List<AiAction> {
     val downloads = DOWNLOAD_COMMAND.findAll(content)
         .map { it.groupValues[1].trim() }
         .filter { it.isNotEmpty() }
@@ -329,7 +329,7 @@ internal fun parseAiActions(content: String): List<AiAction> {
  * with a supported format first, then one whose title contains the query,
  * then any downloadable result.
  */
-internal fun pickBestPublication(query: String, found: List<FoundPublication>): FoundPublication? {
+fun pickBestPublication(query: String, found: List<FoundPublication>): FoundPublication? {
     val downloadable = found.filter { it.publication.acquisitions.isNotEmpty() }
     val key = normalizeTitleForMatch(query)
     return downloadable.firstOrNull { normalizeTitleForMatch(it.publication.title) == key }
@@ -337,7 +337,7 @@ internal fun pickBestPublication(query: String, found: List<FoundPublication>): 
         ?: downloadable.firstOrNull()
 }
 
-internal fun buildLibraryContext(books: List<Book>): String =
+fun buildLibraryContext(books: List<Book>): String =
     books.joinToString("\n") { book ->
         val series = if (book.seriesName.isNotBlank()) {
             book.seriesName + (book.seriesOrder.takeIf { it > 0 }?.let { " #$it" } ?: "")
@@ -357,7 +357,7 @@ internal fun buildLibraryContext(books: List<Book>): String =
  * Active days are calendar days in [timeZone] (the device's zone, as before).
  */
 @OptIn(ExperimentalTime::class)
-internal fun buildStatsContext(stats: List<ReadingStats>, timeZone: TimeZone = TimeZone.currentSystemDefault()): String {
+fun buildStatsContext(stats: List<ReadingStats>, timeZone: TimeZone = TimeZone.currentSystemDefault()): String {
     val wordsRead = stats.sumOf { it.wordsReadCount.toLong() }
     val pages = if (wordsRead == 0L) 0L else (wordsRead + WORDS_PER_PAGE - 1) / WORDS_PER_PAGE
     val measured = stats.filter { it.wordsReadCount > 0 && it.sessionDurationSeconds > 0 }

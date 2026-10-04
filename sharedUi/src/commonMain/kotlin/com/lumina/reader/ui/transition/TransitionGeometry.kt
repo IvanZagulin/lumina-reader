@@ -8,13 +8,13 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /** A registered book slot as the close animation sees it (root coordinates, px). */
-internal data class SlotCandidate(val key: String, val bookId: Long, val rect: Rect)
+data class SlotCandidate(val key: String, val bookId: Long, val rect: Rect)
 
 /**
  * Pure geometry of the book-open transition (spec §6.4–§6.5). All values are
  * in root pixels; the overlay converts dp before calling.
  */
-internal object TransitionGeometry {
+object TransitionGeometry {
 
     const val HERO_SLOT_KEY = HeroSlotKey
 

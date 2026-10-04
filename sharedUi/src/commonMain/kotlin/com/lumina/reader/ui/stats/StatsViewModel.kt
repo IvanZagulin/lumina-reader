@@ -298,7 +298,7 @@ private class StatsGoalPreferences(private val store: StatsGoalStore) {
     }
 }
 
-internal object ReadingStatsCalculator {
+object ReadingStatsCalculator {
     private const val MAX_SESSION_SECONDS = 24L * 60L * 60L
     private const val MAX_FUTURE_SKEW_MILLIS = 5L * 60L * 1_000L
     private const val RECENT_SESSION_LIMIT = 8
@@ -798,7 +798,7 @@ internal object ReadingStatsCalculator {
         }
     }
 
-    internal fun weekdayLabel(day: DayOfWeek): String = when (day) {
+    fun weekdayLabel(day: DayOfWeek): String = when (day) {
         DayOfWeek.MONDAY -> "понедельник"
         DayOfWeek.TUESDAY -> "вторник"
         DayOfWeek.WEDNESDAY -> "среда"
