@@ -20,8 +20,15 @@ on:
       - 'gradle.properties'
       - '.github/workflows/ios-release.yml'
   # On main: build and publish. On any other branch: build and upload the .ipa
-  # as a workflow artifact only.
+  # as a workflow artifact only — unless `publish` is ticked, which puts a
+  # preview of that branch on the AltStore source without touching main (and so
+  # without the Android release that a push to main triggers).
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish this branch's build to the AltStore source"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -166,7 +173,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish the prerelease
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || inputs.publish
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -188,7 +195,7 @@ jobs:
           fi
 
       - name: Update the AltStore source
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || inputs.publish
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -16,7 +16,7 @@
       "bundleIdentifier": "com.lumina.reader",
       "developerName": "IvanZagulin",
       "subtitle": "Читалка электронных книг",
-      "localizedDescription": "Lumina Reader — читалка электронных книг EPUB, FB2, PDF и TXT. Это предварительные сборки для iPhone: перенос приложения с Android идёт по этапам, и пока сборка показывает только экран-заглушку.",
+      "localizedDescription": "Lumina Reader — читалка электронных книг EPUB, FB2, PDF и TXT. Это предварительные сборки для iPhone: перенос приложения с Android идёт по этапам. Уже работает библиотека — полки, серии, поиск, обложки, добавление книг из «Файлов» и «Открыть в Lumina» из Telegram и Почты; чтение книг появится в одном из ближайших обновлений.",
       "iconURL": "https://raw.githubusercontent.com/{repository}/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
       "tintColor": "#A64A23",
       "category": "lifestyle",
