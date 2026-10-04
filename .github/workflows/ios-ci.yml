@@ -89,13 +89,21 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
+          # Two Gradle runs, each with a fresh JVM and a larger heap: the Kotlin/Native
+          # compiler runs inside it, and compiling, testing and the release link in one
+          # run ran it out of memory while it built the material-icons-extended cache.
+          status=0
           ./gradlew \
             :shared:compileKotlinIosArm64 \
             :sharedUi:compileKotlinIosArm64 \
-            :sharedUi:linkReleaseFrameworkIosArm64 \
             :shared:iosSimulatorArm64Test \
             :sharedUi:iosSimulatorArm64Test \
-            --no-daemon --stacktrace --continue
+            -Dorg.gradle.jvmargs=-Xmx5g \
+            --no-daemon --stacktrace --continue || status=1
+          ./gradlew :sharedUi:linkReleaseFrameworkIosArm64 \
+            -Dorg.gradle.jvmargs=-Xmx5g \
+            --no-daemon --stacktrace || status=1
+          exit $status
 
       - name: Upload test reports
         if: failure()
