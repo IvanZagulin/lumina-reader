@@ -16,7 +16,7 @@ internal data class SlotCandidate(val key: String, val bookId: Long, val rect: R
  */
 internal object TransitionGeometry {
 
-    const val HERO_SLOT_KEY = "hero"
+    const val HERO_SLOT_KEY = HeroSlotKey
 
     /**
      * The closed book on the stage: width `min(0.44·W, maxWidth)`, height

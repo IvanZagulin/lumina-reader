@@ -25,6 +25,13 @@ interface BookSlotHost {
 /** Provided by the app shell; null outside it (previews, sheets in other windows, iOS for now). */
 val LocalBookSlotHost = staticCompositionLocalOf<BookSlotHost?> { null }
 
+/**
+ * Slot key of the cover on the «Продолжить чтение» card — the one slot that is
+ * not built from a section and a book id, so both the shared card and the app
+ * shell's transition name it from here.
+ */
+const val HeroSlotKey = "hero"
+
 /** [BookSlotHost.slotModifier] of [host], or nothing without a host. */
 fun Modifier.bookSlot(host: BookSlotHost?, key: String, bookId: Long): Modifier =
     if (host == null) this else this then host.slotModifier(key, bookId)

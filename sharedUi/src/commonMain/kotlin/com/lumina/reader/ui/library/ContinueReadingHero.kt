@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.library
 
-import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -45,20 +43,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.ui.components.BookOnShelf
 import com.lumina.reader.ui.components.ClothPalette
+import com.lumina.reader.ui.components.coverBitmapPolicy
+import com.lumina.reader.ui.components.coverImageOf
 import com.lumina.reader.ui.components.paperGrainBrush
 import com.lumina.reader.ui.components.rememberCoverColors
 import com.lumina.reader.ui.components.rememberPaperGrain
 import com.lumina.reader.ui.components.toShelfBookUi
 import com.lumina.reader.ui.theme.LoraFamily
+import com.lumina.reader.ui.transition.HeroSlotKey
 import com.lumina.reader.ui.theme.LuminaType
-import com.lumina.reader.ui.transition.TransitionGeometry
-import java.io.File
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -94,13 +93,13 @@ fun ContinueReadingHero(
     val vibrant = coverColors?.vibrant ?: cloth
     val scrimAlpha = ((base.luminance() - 0.12f) / 0.5f).coerceIn(0.25f, 0.6f)
     val grain = rememberPaperGrain()
-    val context = LocalContext.current
+    val context = LocalPlatformContext.current
     val glowRequest = remember(book.coverPath) {
-        book.coverPath?.takeIf { it.isNotBlank() }?.let { path ->
+        coverImageOf(book.coverPath)?.let { image ->
             ImageRequest.Builder(context)
-                .data(File(path))
+                .data(image)
                 .size(24, 36)
-                .allowHardware(Build.VERSION.SDK_INT >= 28)
+                .coverBitmapPolicy()
                 .build()
         }
     }
@@ -134,7 +133,7 @@ fun ContinueReadingHero(
                         drawRect(gradient)
                     }
                 }
-                .clickable(role = Role.Button, onClickLabel = "Читать") { onOpen(TransitionGeometry.HERO_SLOT_KEY) }
+                .clickable(role = Role.Button, onClickLabel = "Читать") { onOpen(HeroSlotKey) }
                 .semantics(mergeDescendants = true) { contentDescription = description }
         ) {
             if (glowRequest != null) {
@@ -145,7 +144,7 @@ fun ContinueReadingHero(
                     alpha = 0.45f,
                     modifier = Modifier
                         .matchParentSize()
-                        .then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(24.dp) else Modifier)
+                        .then(if (coverGlowBlurSupported) Modifier.blur(24.dp) else Modifier)
                 )
             }
             Box(
@@ -205,7 +204,7 @@ fun ContinueReadingHero(
                 )
                 Spacer(Modifier.height(10.dp))
                 Surface(
-                    onClick = { onOpen(TransitionGeometry.HERO_SLOT_KEY) },
+                    onClick = { onOpen(HeroSlotKey) },
                     shape = RoundedCornerShape(50),
                     color = Color.White,
                     contentColor = Color(0xFF2A211B),
@@ -229,8 +228,8 @@ fun ContinueReadingHero(
             height = 156.dp,
             // Straight and fully inside the card, vertically centred (188 − 156 = 32 dp).
             modifier = Modifier.offset(x = 20.dp, y = 16.dp),
-            slotKey = TransitionGeometry.HERO_SLOT_KEY,
-            onClick = { onOpen(TransitionGeometry.HERO_SLOT_KEY) },
+            slotKey = HeroSlotKey,
+            onClick = { onOpen(HeroSlotKey) },
             onLongClick = onLongPress
         )
     }
