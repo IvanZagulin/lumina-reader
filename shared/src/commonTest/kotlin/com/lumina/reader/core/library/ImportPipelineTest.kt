@@ -160,7 +160,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    fun sourcesAreCheckedAndTheirOwnFailuresExplained() = pipelineTest {
+    fun aSourceOverTheSizeLimitIsRejectedWithoutOpeningIt() = pipelineTest {
         val tooLarge = object : ImportSource {
             override val displayName = "huge.pdf"
             override val sizeBytes = ImportLimits.MAX_BOOK_BYTES + 1
@@ -168,7 +168,11 @@ class ImportPipelineTest {
             override fun open(): Source = error("must not be opened")
         }
         assertEquals(ImportResult.Failed(ImportLimits.TOO_LARGE_MESSAGE), pipeline.importSource(tooLarge))
+        assertEquals(emptyList(), fileNames(files.incomingDir))
+    }
 
+    @Test
+    fun aSourceExplainsItsOwnFailure() = pipelineTest {
         val denied = object : ImportSource {
             override val displayName: String? = null
             override val sizeBytes: Long? = null
@@ -178,7 +182,11 @@ class ImportPipelineTest {
                 if (error is IllegalStateException) "Нет доступа к файлу" else null
         }
         assertEquals(ImportResult.Failed("Нет доступа к файлу"), pipeline.importSource(denied))
+        assertEquals(emptyList(), fileNames(files.incomingDir))
+    }
 
+    @Test
+    fun anImportExceptionKeepsItsUserMessage() = pipelineTest {
         val unopenable = object : ImportSource {
             override val displayName: String? = null
             override val sizeBytes: Long? = null
@@ -186,7 +194,11 @@ class ImportPipelineTest {
             override fun open(): Source = throw ImportException("Не удалось открыть файл")
         }
         assertEquals(ImportResult.Failed("Не удалось открыть файл"), pipeline.importSource(unopenable))
+        assertEquals(emptyList(), fileNames(files.incomingDir))
+    }
 
+    @Test
+    fun anUnexpectedFailureFallsBackToItsMessage() = pipelineTest {
         val broken = object : ImportSource {
             override val displayName: String? = null
             override val sizeBytes: Long? = null
