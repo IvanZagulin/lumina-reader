@@ -30,7 +30,8 @@ fun bookChapterNumber(title: String): String? {
     val after = rest.substring(token.length)
     return when {
         token.length <= 3 && token.all { it.isDigit() } -> token
-        token.length <= 8 && token.all { it in "IVXLCDM" } &&
+        // I, V, X, L, C only: D and M would turn words like «MIX» into chapters.
+        token.length <= 6 && token.all { it in "IVXLC" } &&
             (word != null || after.isEmpty() || after[0] == '.' || after[0] == ')') -> token
         else -> null
     }
@@ -44,7 +45,12 @@ fun chapterNumberLabel(items: List<TocItem>, tocIndex: Int, chapterIndex: Int): 
     return when {
         name.isEmpty() -> "Гл. ${tocIndex + 1}"
         name.length <= 12 -> name
-        else -> name.take(11).trimEnd() + "…"
+        else -> {
+            // Cut at a word end when there is one, not through the middle of a word.
+            var cut = name.take(12)
+            if (name[12] != ' ' && ' ' in cut) cut = cut.substringBeforeLast(' ')
+            cut.trimEnd() + "…"
+        }
     }
 }
 
