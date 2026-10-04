@@ -5,6 +5,8 @@ import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.plugins.HttpRedirect
 import io.ktor.client.plugins.HttpTimeout
 import platform.Foundation.NSURLRequestReloadIgnoringLocalCacheData
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * NSURLSession underneath (Ktor's Darwin engine). Ktor's engine turns off
@@ -28,7 +30,7 @@ import platform.Foundation.NSURLRequestReloadIgnoringLocalCacheData
  * Security exceptions in the app's Info.plist; without them NSURLSession
  * refuses the request (reported as a secure-connection error).
  */
-actual fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient = HttpClient(Darwin) {
+actual fun luminaHttpClient(timeouts: HttpTimeouts, proxy: ProxySettings?): HttpClient = HttpClient(Darwin) {
     expectSuccess = false
     useDefaultTransformers = false
     followRedirects = true
@@ -39,12 +41,42 @@ actual fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient = HttpClient(Dar
         socketTimeoutMillis = timeouts.readMillis.takeIf { it > 0 }
         requestTimeoutMillis = timeouts.callMillis.takeIf { it > 0 }
     }
+    val activeProxy = proxy?.takeIf { it.usable }
     engine {
         configureSession {
             URLCache = null
             requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData
             HTTPCookieStorage = null
             HTTPShouldSetCookies = false
+            if (activeProxy != null) {
+                connectionProxyDictionary = proxyDictionary(activeProxy)
+                // NSURLSession sends this header to the proxy, also in the CONNECT that opens
+                // an https tunnel (an HTTP proxy's login; SOCKS5 has no login here).
+                if (activeProxy.hasCredentials && activeProxy.type == ProxyType.HTTP) {
+                    HTTPAdditionalHeaders = mapOf<Any?, Any?>("Proxy-Authorization" to basicAuth(activeProxy))
+                }
+            }
         }
     }
 }
+
+/**
+ * CFNetwork's proxy dictionary for the session. The keys are the documented
+ * string values of the kCFNetworkProxies... constants, which iOS does not export
+ * for HTTPS. HTTPS requests tunnel through an HTTP proxy with CONNECT.
+ */
+private fun proxyDictionary(proxy: ProxySettings): Map<Any?, Any?> {
+    val host = proxy.host.trim()
+    return if (proxy.type == ProxyType.SOCKS5) {
+        mapOf("SOCKSEnable" to 1, "SOCKSProxy" to host, "SOCKSPort" to proxy.port)
+    } else {
+        mapOf(
+            "HTTPEnable" to 1, "HTTPProxy" to host, "HTTPPort" to proxy.port,
+            "HTTPSEnable" to 1, "HTTPSProxy" to host, "HTTPSPort" to proxy.port
+        )
+    }
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun basicAuth(proxy: ProxySettings): String =
+    "Basic " + Base64.encode("${proxy.username}:${proxy.password}".encodeToByteArray())

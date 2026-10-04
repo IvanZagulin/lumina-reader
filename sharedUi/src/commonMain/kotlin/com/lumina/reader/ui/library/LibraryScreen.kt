@@ -373,12 +373,18 @@ fun LibraryScreen(
                 .filterNot { it.equals(LibraryPreferences.MAIN_SHELF, ignoreCase = true) }
                 .map { name -> ShelfEntry(name, allBooks.count { it.shelfName().equals(name, ignoreCase = true) }) }
         }
+        val seriesEntries = remember(shelves) {
+            shelves.filter { it.kind == ShelfKind.SERIES }.map { ShelfEntry(it.title, it.totalCount) }
+        }
         ShelfManagerSheet(
             shelves = entries,
             onCreate = viewModel::createShelf,
             onRename = viewModel::renameShelf,
             onDelete = viewModel::deleteShelf,
-            onDismiss = { showShelfManager = false }
+            onDismiss = { showShelfManager = false },
+            series = seriesEntries,
+            onRenameSeries = viewModel::renameSeries,
+            onDisbandSeries = viewModel::disbandSeries
         )
     }
 

@@ -76,6 +76,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 
 /**
  * Fixed chrome around the page body; every page has exactly the same body
@@ -684,6 +687,10 @@ private fun PageFrame(
     footer: @Composable () -> Unit,
     body: @Composable BoxScope.() -> Unit
 ) {
+    // The header zone is sized for a status bar of an Android phone. Under the iPhone's
+    // Dynamic Island (59 pt of safe area) the book title in it sat right behind the
+    // cutout, so the zone is never shorter than the top inset plus the title's own room.
+    val headerHeight = maxOf(PageHeaderHeight, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 34.dp)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -692,7 +699,7 @@ private fun PageFrame(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(PageHeaderHeight)
+                .height(headerHeight)
                 .padding(bottom = 10.dp),
             contentAlignment = Alignment.BottomCenter
         ) {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -80,6 +81,7 @@ import com.lumina.reader.ui.transition.LocalBookSlotHost
 import com.lumina.reader.ui.transition.LocalBookTransition
 import com.lumina.reader.ui.transition.ReaderTransitionHost
 import com.lumina.reader.ui.transition.rememberBookTransitionState
+import androidx.compose.material3.Surface
 
 /**
  * The iPhone app: the same screens as Android, over the services iOS builds
@@ -169,12 +171,16 @@ fun LuminaIosApp() {
             LocalBookTransition provides transition,
             LocalBookSlotHost provides transition
         ) {
-            Box(
+            // A Surface, not a bare Box: it sets the content colour that icons and text without
+            // an explicit one take (a bare Box left them black, invisible in the dark themes).
+            Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Lumina.colors.wall)
-                    .onSizeChanged { transition.rootSize = it }
+                    .onSizeChanged { transition.rootSize = it },
+                color = Lumina.colors.wall,
+                contentColor = MaterialTheme.colorScheme.onBackground
             ) {
+              Box(modifier = Modifier.fillMaxSize()) {
               Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -291,6 +297,7 @@ fun LuminaIosApp() {
                         .safeDrawingPadding()
                         .padding(bottom = if (openBookId == null && !managingCatalogs) LuminaDimens.DockHeight + 24.dp else 12.dp)
                 )
+              }
             }
 
             if (showDownloads) {

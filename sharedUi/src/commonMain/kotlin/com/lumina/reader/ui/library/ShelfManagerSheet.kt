@@ -54,8 +54,14 @@ fun ShelfManagerSheet(
     onCreate: (String) -> Unit,
     onRename: (old: String, new: String) -> Unit,
     onDelete: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** The series of the library: they are shelves on the main screen too, built from the books' series. */
+    series: List<ShelfEntry> = emptyList(),
+    onRenameSeries: (old: String, new: String) -> Unit = { _, _ -> },
+    onDisbandSeries: (String) -> Unit = {}
 ) {
+    var renamingSeries by rememberSaveable { mutableStateOf<String?>(null) }
+    var disbanding by rememberSaveable { mutableStateOf<String?>(null) }
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
     var deleting by rememberSaveable { mutableStateOf<String?>(null) }
     var newName by rememberSaveable { mutableStateOf("") }
@@ -81,7 +87,7 @@ fun ShelfManagerSheet(
             )
             if (shelves.isEmpty()) {
                 Text(
-                    "Своих полок пока нет.",
+                    if (series.isEmpty()) "Своих полок пока нет." else "Своих полок пока нет; серии — ниже.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 12.dp)
@@ -120,6 +126,45 @@ fun ShelfManagerSheet(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
+            if (series.isNotEmpty()) {
+                Text(
+                    "Серии",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 20.dp)
+                )
+                Text(
+                    "Серия собирается из книг, у которых она указана. Можно переименовать её или расформировать: книги останутся в библиотеке.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                )
+                series.forEach { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${entry.bookCount} ${russianPlural(entry.bookCount, "книга", "книги", "книг")}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { renamingSeries = entry.name }) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "Переименовать серию «${entry.name}»")
+                        }
+                        IconButton(onClick = { disbanding = entry.name }) {
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                contentDescription = "Расформировать серию «${entry.name}»",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -146,6 +191,32 @@ fun ShelfManagerSheet(
         }
     }
 
+    renamingSeries?.let { name ->
+        RenameShelfDialog(
+            shelfName = name,
+            title = "Переименовать серию",
+            label = "Название серии",
+            onRename = { target ->
+                onRenameSeries(name, target)
+                renamingSeries = null
+            },
+            onDismiss = { renamingSeries = null }
+        )
+    }
+    disbanding?.let { name ->
+        AlertDialog(
+            onDismissRequest = { disbanding = null },
+            title = { Text("Расформировать серию «$name»?") },
+            text = { Text("Книги останутся в библиотеке, но больше не будут собраны в серию.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDisbandSeries(name)
+                    disbanding = null
+                }) { Text("Расформировать", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { disbanding = null }) { Text("Отмена") } }
+        )
+    }
     renaming?.let { name ->
         RenameShelfDialog(
             shelfName = name,
@@ -170,16 +241,22 @@ fun ShelfManagerSheet(
 
 /** Rename a user shelf. */
 @Composable
-fun RenameShelfDialog(shelfName: String, onRename: (String) -> Unit, onDismiss: () -> Unit) {
+fun RenameShelfDialog(
+    shelfName: String,
+    onRename: (String) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "Переименовать полку",
+    label: String = "Название полки"
+) {
     var name by rememberSaveable(shelfName) { mutableStateOf(shelfName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Переименовать полку") },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Название полки") },
+                label = { Text(label) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )

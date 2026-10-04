@@ -5,6 +5,7 @@ import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.preferences.CatalogPreferences
 import kotlinx.coroutines.flow.StateFlow
+import com.lumina.reader.core.network.NetworkProxy
 
 /**
  * The catalogue downloads as the assistant's chat uses them: it starts a
@@ -56,7 +57,11 @@ class ChatServices(
     val catalogPreferences: CatalogPreferences,
     val readingStatsDao: ReadingStatsDao,
     val downloads: ChatDownloads
-)
+) {
+    init {
+        NetworkProxy.bind(catalogPreferences)
+    }
+}
 
 /**
  * The chat's services of this process, kept apart from [AppServices] so the

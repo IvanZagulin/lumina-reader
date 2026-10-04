@@ -56,7 +56,7 @@ class HttpTimeouts(
  * The clients live as long as the process and are never closed, like the
  * OkHttpClients before them.
  */
-expect fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient
+expect fun luminaHttpClient(timeouts: HttpTimeouts, proxy: ProxySettings? = null): HttpClient
 
 /**
  * Response header in which the Android engine reports the URL OkHttp finally

@@ -94,6 +94,10 @@ fun CatalogSourcesScreen(
             item(key = "add", contentType = "add") {
                 AddCatalogCard(onClick = viewModel::startAdding)
             }
+            item(key = "proxy", contentType = "proxy") {
+                val proxy by viewModel.proxy.collectAsState()
+                ProxyCard(saved = proxy, onSave = viewModel::saveProxy)
+            }
         }
     }
 

@@ -13,6 +13,12 @@ import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import okhttp3.Credentials
+import okhttp3.OkHttpClient
+import java.net.Authenticator
+import java.net.InetSocketAddress
+import java.net.PasswordAuthentication
+import java.net.Proxy
 
 /**
  * OkHttp underneath, set up as the app's own OkHttpClients were before Ktor,
@@ -26,7 +32,7 @@ import java.util.concurrent.TimeUnit
  * The timeouts go to OkHttp directly rather than through Ktor's HttpTimeout:
  * that keeps OkHttp's call timeout and its exceptions exactly as they were.
  */
-actual fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient = HttpClient(OkHttp) {
+actual fun luminaHttpClient(timeouts: HttpTimeouts, proxy: ProxySettings?): HttpClient = HttpClient(OkHttp) {
     expectSuccess = false
     useDefaultTransformers = false
     followRedirects = false
@@ -42,6 +48,7 @@ actual fun luminaHttpClient(timeouts: HttpTimeouts): HttpClient = HttpClient(OkH
             callTimeout(timeouts.callMillis, TimeUnit.MILLISECONDS)
             followRedirects(true)
             followSslRedirects(true)
+            if (proxy != null && proxy.usable) applyProxy(proxy)
         }
         addInterceptor(LuminaOkHttpInterceptor)
     }
@@ -126,3 +133,37 @@ private object LuminaOkHttpInterceptor : Interceptor {
  * through, so both read exactly as before Ktor.
  */
 private class OkHttpFailure(cause: IOException) : IOException(cause.message, cause)
+
+/**
+ * Sends everything through [proxy]. The address is left unresolved, so the proxy
+ * looks the host up itself (also what a blocked name needs). An HTTP proxy asks
+ * for its login with a Proxy-Authorization challenge, which OkHttp answers; a
+ * SOCKS5 proxy asks through the JVM's default authenticator, set only when a
+ * login was typed in.
+ */
+private fun OkHttpClient.Builder.applyProxy(proxy: ProxySettings) {
+    val type = if (proxy.type == ProxyType.SOCKS5) Proxy.Type.SOCKS else Proxy.Type.HTTP
+    proxy(Proxy(type, InetSocketAddress.createUnresolved(proxy.host.trim(), proxy.port)))
+    if (!proxy.hasCredentials) return
+    if (proxy.type == ProxyType.HTTP) {
+        proxyAuthenticator { _, response ->
+            // A second 407 means the login was refused: give up instead of looping.
+            if (response.request.header("Proxy-Authorization") != null) {
+                null
+            } else {
+                response.request.newBuilder()
+                    .header("Proxy-Authorization", Credentials.basic(proxy.username, proxy.password))
+                    .build()
+            }
+        }
+    } else {
+        Authenticator.setDefault(object : Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication? =
+                if (requestingProtocol?.startsWith("SOCKS", ignoreCase = true) == true) {
+                    PasswordAuthentication(proxy.username, proxy.password.toCharArray())
+                } else {
+                    null
+                }
+        })
+    }
+}

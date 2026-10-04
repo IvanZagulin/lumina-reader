@@ -81,4 +81,44 @@ class LuminaHttpSmokeTest {
             assertEquals(20 * 64 * 1024, bytes?.size)
         }
     }
+
+    @Test
+    fun aProxyReceivesTheRequestWithItsLogin() {
+        // The "proxy" is a server that answers any absolute-form request (what an HTTP
+        // proxy is sent) and records the login it was given.
+        var seenAuth: String? = null
+        var seenPath: String? = null
+        val proxy = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        proxy.createContext("/") { ex ->
+            seenPath = ex.requestURI.toString()
+            seenAuth = ex.requestHeaders.getFirst("Proxy-Authorization")
+            if (seenAuth == null) {
+                ex.responseHeaders.add("Proxy-Authenticate", "Basic realm=\"test\"")
+                ex.sendResponseHeaders(407, -1)
+            } else {
+                val body = "via proxy".toByteArray()
+                ex.sendResponseHeaders(200, body.size.toLong())
+                ex.responseBody.use { it.write(body) }
+            }
+            ex.close()
+        }
+        proxy.start()
+        try {
+            runBlocking {
+                val settings = ProxySettings(
+                    enabled = true, type = ProxyType.HTTP, host = "127.0.0.1",
+                    port = proxy.address.port, username = "me", password = "secret"
+                )
+                luminaHttpClient(timeouts, settings).use { client ->
+                    val response = client.get("http://catalogue.invalid/opds")
+                    assertEquals(200, response.status.value)
+                    assertEquals("via proxy", response.readBodyText())
+                }
+            }
+            assertEquals("http://catalogue.invalid/opds", seenPath)
+            assertEquals("Basic bWU6c2VjcmV0", seenAuth) // "me:secret"
+        } finally {
+            proxy.stop(0)
+        }
+    }
 }
