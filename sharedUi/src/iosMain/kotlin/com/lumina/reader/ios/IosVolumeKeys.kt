@@ -4,7 +4,6 @@ import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.tts.TtsStatus
 import com.lumina.reader.ui.reader.PageTurnDirection
 import com.lumina.reader.ui.reader.ReaderPageNavigation
-import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,13 +12,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryAmbient
+import platform.AVFAudio.outputVolume
+import platform.AVFAudio.setActive
 import platform.CoreGraphics.CGRectMake
-import platform.Foundation.NSKeyValueObservingOptionNew
-import platform.Foundation.addObserver
 import platform.MediaPlayer.MPVolumeView
 import platform.UIKit.UIApplication
 import platform.UIKit.UISlider
-import platform.darwin.NSObject
 import kotlin.math.abs
 
 /**
@@ -27,7 +25,9 @@ import kotlin.math.abs
  * MainActivity does (volume down = next page, up = previous).
  *
  * iOS has no API for the buttons. The known way is to watch the system output
- * volume: each press changes it, and a press is a press. Two things keep that
+ * volume: each press changes it, and a press is a press. It is read on a short
+ * timer while a reader is open (the KVO route needs an NSObject override that
+ * Kotlin/Native does not expose for this category). Two things keep that
  * usable for reading:
  *
  * - The volume is put back after every press, through the slider of a
@@ -46,9 +46,10 @@ import kotlin.math.abs
 object IosVolumeKeys {
     private const val LOWEST = 0.15f
     private const val HIGHEST = 0.85f
+    private const val POLL_READING_MILLIS = 80L
+    private const val POLL_IDLE_MILLIS = 500L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val observer = VolumeObserver { volume -> onVolumeChanged(volume) }
     private var started = false
     private var volumeView: MPVolumeView? = null
     private var lastVolume = 0.5f
@@ -62,13 +63,19 @@ object IosVolumeKeys {
         // Ambient: music and podcasts keep playing, and the session is only
         // here so that outputVolume is reported.
         session.setCategory(AVAudioSessionCategoryAmbient, error = null)
-        session.setActive(true, error = null)
+        session.setActive(true, null)
         lastVolume = session.outputVolume
-        session.addObserver(observer, forKeyPath = "outputVolume", options = NSKeyValueObservingOptionNew, context = null)
         scope.launch {
             while (true) {
-                delay(1_000)
-                if (readerIsListening()) keepHeadroom()
+                if (readerIsListening()) {
+                    delay(POLL_READING_MILLIS)
+                    onVolumeChanged(session.outputVolume)
+                    keepHeadroom()
+                } else {
+                    // Follow the volume, so the first press in a book has a right "before".
+                    delay(POLL_IDLE_MILLIS)
+                    lastVolume = session.outputVolume
+                }
             }
         }
     }
@@ -119,18 +126,5 @@ object IosVolumeKeys {
             }
         }
         return view.subviews.filterIsInstance<UISlider>().firstOrNull()
-    }
-}
-
-/** KVO needs an NSObject to call; it only forwards the new volume. */
-@OptIn(ExperimentalForeignApi::class)
-private class VolumeObserver(private val onVolume: (Float) -> Unit) : NSObject() {
-    override fun observeValueForKeyPath(
-        keyPath: String?,
-        ofObject: Any?,
-        change: Map<Any?, *>?,
-        context: COpaquePointer?
-    ) {
-        if (keyPath == "outputVolume") onVolume(AVAudioSession.sharedInstance().outputVolume)
     }
 }
