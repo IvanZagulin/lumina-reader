@@ -281,9 +281,11 @@ private fun TextTab(
     onSettingsChangedDebounced: ((ReaderSettings) -> ReaderSettings) -> Unit
 ) {
     SectionTitle("Шрифт", colors)
-    val selectedFont = ReaderFonts.byId(settings.fontFamily)
+    // Read once here: the LazyRow content lambda below is not composable.
+    val fonts = ReaderFonts
+    val selectedFont = fonts.byId(settings.fontFamily)
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(ReaderFonts.all, key = { it.id }) { font ->
+        items(fonts.all, key = { it.id }) { font ->
             FontPreviewChip(
                 font = font,
                 selected = font.id == selectedFont.id,

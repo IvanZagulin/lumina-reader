@@ -9,6 +9,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.LocaleList
@@ -34,6 +35,12 @@ internal data class ReaderTypography(
     val fontSizeSp: Int,
     val lineSpacing: Float,
     val fontFamilyName: String,
+    /**
+     * [fontFamilyName] resolved through the reading-font catalogue of the
+     * composition: the paginator and the pages take it from here, so both
+     * measure and draw with the same typeface.
+     */
+    val fontFamily: FontFamily,
     val justify: Boolean,
     val hyphenation: Boolean,
     val firstLineIndentEm: Float,
@@ -42,10 +49,11 @@ internal data class ReaderTypography(
     val localeTag: String?
 )
 
-internal fun ReaderSettings.toTypography(localeTag: String?): ReaderTypography = ReaderTypography(
+internal fun ReaderSettings.toTypography(localeTag: String?, fonts: ReaderFontCatalog): ReaderTypography = ReaderTypography(
     fontSizeSp = fontSizeSp,
     lineSpacing = lineSpacingMultiplier,
     fontFamilyName = ReaderFontIds.migrate(fontFamily),
+    fontFamily = fonts.byId(fontFamily).family,
     justify = textAlign == ReaderTextAlign.JUSTIFY,
     hyphenation = hyphenation,
     firstLineIndentEm = firstLineIndentEm.coerceAtLeast(0f),
@@ -246,7 +254,7 @@ internal fun paragraphTextStyle(
         fontSize = fontSize.sp,
         fontWeight = fontWeight,
         fontStyle = fontStyle,
-        fontFamily = readerFontFamily(typography.fontFamilyName),
+        fontFamily = typography.fontFamily,
         localeList = typography.localeTag?.let { LocaleList(it) },
         textAlign = textAlign,
         lineHeight = typography.lineSpacing.em,
@@ -261,7 +269,7 @@ internal fun chapterTitleStyle(typography: ReaderTypography, textColor: Color): 
     color = textColor,
     fontSize = (typography.fontSizeSp + 3).sp,
     fontWeight = FontWeight.Bold,
-    fontFamily = readerFontFamily(typography.fontFamilyName),
+    fontFamily = typography.fontFamily,
     localeList = typography.localeTag?.let { LocaleList(it) },
     textAlign = TextAlign.Start,
     lineHeight = typography.lineSpacing.em,

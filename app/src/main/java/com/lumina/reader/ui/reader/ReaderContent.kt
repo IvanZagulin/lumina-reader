@@ -104,7 +104,8 @@ internal fun ReaderContent(
     val navigationOwner = remember { Any() }
     val chapterLengths = textInfo.chapterLengths
     val localeTag = textInfo.localeTag
-    val typography = remember(settings, localeTag) { settings.toTypography(localeTag) }
+    val fonts = ReaderFonts
+    val typography = remember(settings, localeTag, fonts) { settings.toTypography(localeTag, fonts) }
     val theme = settings.theme
     val colors = remember(theme) {
         ReaderTextColors(

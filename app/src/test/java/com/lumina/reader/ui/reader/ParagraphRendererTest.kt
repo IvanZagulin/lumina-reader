@@ -30,10 +30,18 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ParagraphRendererTest {
 
+    /** Stand-in faces: what is tested is how ids resolve, not loading the font files. */
+    private val fonts = ReaderFontCatalog(
+        literata = androidx.compose.ui.text.font.FontFamily.Serif,
+        ptSerif = androidx.compose.ui.text.font.FontFamily.Cursive,
+        golos = androidx.compose.ui.text.font.FontFamily.SansSerif
+    )
+
     private val typography = ReaderTypography(
         fontSizeSp = 18,
         lineSpacing = 1.5f,
         fontFamilyName = "literata",
+        fontFamily = fonts.Literata.family,
         justify = true,
         hyphenation = true,
         firstLineIndentEm = 1.5f,
@@ -242,7 +250,7 @@ class ParagraphRendererTest {
             firstLineIndentEm = 2f,
             isBionicReadingEnabled = true
         )
-        val mapped = settings.toTypography("ru")
+        val mapped = settings.toTypography("ru", fonts)
         assertEquals(21, mapped.fontSizeSp)
         assertEquals(false, mapped.justify)
         assertEquals(false, mapped.hyphenation)
@@ -254,14 +262,16 @@ class ParagraphRendererTest {
     @Test
     fun fontIdsResolveThroughTheCatalogue() {
         // Legacy names and unknown values use the catalogue's default, Literata.
-        assertEquals(readerFontFamily("literata"), readerFontFamily("Serif"))
-        assertEquals(readerFontFamily("literata"), readerFontFamily("Cursive"))
-        assertEquals(readerFontFamily("literata"), readerFontFamily(""))
-        assertEquals(readerFontFamily("golos"), readerFontFamily("SansSerif"))
-        assertEquals(androidx.compose.ui.text.font.FontFamily.Monospace, readerFontFamily("Monospace"))
-        assertTrue(readerFontFamily("golos") != readerFontFamily("literata"))
+        fun family(id: String) = fonts.byId(id).family
+        assertEquals(family("literata"), family("Serif"))
+        assertEquals(family("literata"), family("Cursive"))
+        assertEquals(family("literata"), family(""))
+        assertEquals(family("golos"), family("SansSerif"))
+        assertEquals(androidx.compose.ui.text.font.FontFamily.Monospace, family("Monospace"))
+        assertTrue(family("golos") != family("literata"))
         // The same id always gives the same family, so pages and pagination agree.
-        assertTrue(readerFontFamily("ptserif") === readerFontFamily("ptserif"))
-        assertEquals(6, ReaderFonts.all.map { it.id }.distinct().size)
+        assertTrue(family("ptserif") === family("ptserif"))
+        assertEquals(fonts.PtSerif.family, ReaderSettings(fontFamily = "ptserif").toTypography(null, fonts).fontFamily)
+        assertEquals(6, fonts.all.map { it.id }.distinct().size)
     }
 }
