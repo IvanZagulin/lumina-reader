@@ -1,5 +1,6 @@
 package com.lumina.reader.core.library
 
+import com.lumina.reader.platform.AppClock
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -16,10 +17,10 @@ data class AppMessage(
     val actionLabel: String? = null,
     val action: AppMessageAction? = null,
     val isError: Boolean = false,
-    val createdAtMillis: Long = System.currentTimeMillis()
+    val createdAtMillis: Long = AppClock.nowMillis()
 ) {
     /** Messages that waited too long (the app was in the background) are not shown. */
-    fun isFresh(nowMillis: Long = System.currentTimeMillis()): Boolean =
+    fun isFresh(nowMillis: Long = AppClock.nowMillis()): Boolean =
         nowMillis - createdAtMillis <= MAX_AGE_MILLIS
 
     companion object {

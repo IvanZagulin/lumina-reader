@@ -1,22 +1,34 @@
 package com.lumina.reader.core.library
 
-import android.content.Context
-import androidx.room.withTransaction
 import com.lumina.reader.core.database.AppDatabase
-import com.lumina.reader.core.database.getDatabase
+import com.lumina.reader.core.database.BookDao
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.preferences.LibraryPreferences
 import com.lumina.reader.core.repository.BookCacheRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import java.io.File
 
-/** Library changes shared by the library screen and the AI assistant. */
-class LibraryRepository(context: Context) {
-    private val appContext = context.applicationContext
-    private val database = AppDatabase.getDatabase(appContext)
-    private val bookDao = database.bookDao()
-    private val preferences = LibraryPreferences(appContext)
+/**
+ * Library changes shared by the library screen and the AI assistant. On
+ * Android `LibraryRepository(context)` (androidMain) builds it for the app.
+ */
+class LibraryRepository internal constructor(
+    private val bookDao: BookDao,
+    private val preferences: LibraryPreferences,
+    private val files: LibraryFiles,
+    /** Runs a block in one database transaction. */
+    private val transaction: suspend (suspend () -> Unit) -> Unit,
+    private val ioDispatcher: CoroutineDispatcher
+) {
+    constructor(database: AppDatabase, preferences: LibraryPreferences, files: LibraryFiles) : this(
+        bookDao = database.bookDao(),
+        preferences = preferences,
+        files = files,
+        transaction = { block -> database.withLibraryTransaction(block) },
+        ioDispatcher = Dispatchers.IO
+    )
 
     /**
      * Removes a book with everything that belongs to it: bookmarks, highlights,
@@ -24,13 +36,13 @@ class LibraryRepository(context: Context) {
      * library entry still uses the same file).
      */
     suspend fun deleteBook(book: Book) {
-        withContext(Dispatchers.IO) {
-            database.withTransaction {
+        withContext(ioDispatcher) {
+            transaction {
                 bookDao.deleteBookmarksOfBook(book.id)
                 bookDao.deleteHighlightsOfBook(book.id)
                 bookDao.deleteBookById(book.id)
             }
-            BookCacheRepository.remove(book.filePath)
+            BookCacheRepository.remove(files.resolve(book.filePath).toString())
             if (bookDao.countBooksWithPath(book.filePath) == 0) {
                 deleteQuietly(book.filePath)
             }
@@ -43,10 +55,10 @@ class LibraryRepository(context: Context) {
     }
 
     /** Stores the full order of a series in one go. */
-    suspend fun organizeSeries(seriesName: String, orderedBooks: List<Book>): Boolean = withContext(Dispatchers.IO) {
+    suspend fun organizeSeries(seriesName: String, orderedBooks: List<Book>): Boolean = withContext(ioDispatcher) {
         val normalizedSeries = normalizeShelf(seriesName)
         if (normalizedSeries.isBlank() || orderedBooks.isEmpty()) return@withContext false
-        database.withTransaction {
+        transaction {
             orderedBooks.forEachIndexed { index, book ->
                 bookDao.updateOrganization(
                     id = book.id,
@@ -70,7 +82,7 @@ class LibraryRepository(context: Context) {
     }
 
     /** Renames a shelf and moves its books. The main shelf cannot be renamed. */
-    suspend fun renameShelf(oldName: String, newName: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun renameShelf(oldName: String, newName: String): Boolean = withContext(ioDispatcher) {
         val from = normalizeShelf(oldName)
         val to = normalizeShelf(newName)
         if (from.isEmpty() || to.isEmpty() || from.equals(LibraryPreferences.MAIN_SHELF, ignoreCase = true)) {
@@ -86,7 +98,7 @@ class LibraryRepository(context: Context) {
     }
 
     /** Deletes a shelf; its books move to the main shelf. */
-    suspend fun deleteShelf(name: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun deleteShelf(name: String): Boolean = withContext(ioDispatcher) {
         val shelf = normalizeShelf(name)
         if (shelf.isEmpty() || shelf.equals(LibraryPreferences.MAIN_SHELF, ignoreCase = true)) {
             return@withContext false
@@ -96,10 +108,10 @@ class LibraryRepository(context: Context) {
         true
     }
 
-    private fun deleteQuietly(path: String) {
+    private fun deleteQuietly(stored: String) {
         try {
-            val file = File(path)
-            if (file.exists()) file.delete()
+            val path = files.resolve(stored)
+            if (files.fileSystem.exists(path)) files.fileSystem.delete(path)
         } catch (e: Exception) {
             // A leftover file is harmless; the library entry is gone.
         }
@@ -107,3 +119,9 @@ class LibraryRepository(context: Context) {
 
     private fun normalizeShelf(value: String): String = value.trim().replace(Regex("\\s+"), " ")
 }
+
+/**
+ * Runs [block] in one database transaction. Android: Room's `withTransaction`,
+ * as the library always did; iOS: an IMMEDIATE transaction on the writer connection.
+ */
+internal expect suspend fun AppDatabase.withLibraryTransaction(block: suspend () -> Unit)

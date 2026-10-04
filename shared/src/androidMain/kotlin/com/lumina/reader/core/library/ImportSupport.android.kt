@@ -1,37 +1,20 @@
 package com.lumina.reader.core.library
 
+import okio.Path
+import okio.Sink
+import okio.Source
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
 
-/** Hard limits that keep a single import from exhausting storage or memory. */
-object ImportLimits {
-    /** Largest book file the library accepts (downloaded or copied). */
-    const val MAX_BOOK_BYTES: Long = 300L * 1024 * 1024
-
-    /** Largest FB2 text unpacked from an `.fb2.zip` archive. */
-    const val MAX_FB2_UNPACKED_BYTES: Long = 200L * 1024 * 1024
-
-    /** Upper bound for the uncompressed size an EPUB archive declares. */
-    const val MAX_EPUB_DECLARED_BYTES: Long = 1024L * 1024 * 1024
-
-    /** Archives with more entries than this are rejected (zip bomb guard). */
-    const val MAX_ZIP_ENTRIES = 10_000
-
-    /** How many leading bytes are inspected to recognise a file format. */
-    const val HEADER_BYTES = 8 * 1024
-
-    const val TOO_LARGE_MESSAGE = "Файл слишком большой: можно добавить книгу до 300 МБ"
-}
-
-/** Thrown when an import cannot continue; [userMessage] is shown to the user as is. */
-class ImportException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
-
-/** Number of bytes copied and their SHA-256 (lower-case hex). */
-data class CopyResult(val bytes: Long, val sha256: String)
-
-object StreamCopier {
+/**
+ * The java.io copier the app has always used (moved verbatim from :app):
+ * downloads (`BookDownloader`) and copies of shared documents call the
+ * InputStream overload, and the import pipeline's file reads go through
+ * [sha256] / [readHeader] on java.io.File.
+ */
+actual object StreamCopier {
     private const val BUFFER_SIZE = 64 * 1024
 
     /**
@@ -89,6 +72,19 @@ object StreamCopier {
             return if (filled == count) buffer else buffer.copyOf(filled)
         }
     }
+
+    actual fun copy(
+        source: Source,
+        sink: Sink,
+        maxBytes: Long,
+        tooLargeMessage: String,
+        beforeChunk: (() -> Unit)?,
+        onProgress: ((Long) -> Unit)?
+    ): CopyResult = PortableStreams.copy(source, sink, maxBytes, tooLargeMessage, beforeChunk, onProgress)
+
+    actual fun sha256(path: Path): String? = sha256(path.toFile())
+
+    actual fun readHeader(path: Path, count: Int): ByteArray = readHeader(path.toFile(), count)
 }
 
 internal fun ByteArray.toHexString(): String {
@@ -107,3 +103,7 @@ private object DiscardingOutputStream : OutputStream() {
     override fun write(b: Int) = Unit
     override fun write(b: ByteArray, off: Int, len: Int) = Unit
 }
+
+internal actual fun localizedMessageOf(error: Throwable): String? = error.localizedMessage
+
+internal actual fun isOutOfMemory(error: Throwable): Boolean = error is OutOfMemoryError

@@ -1,9 +1,8 @@
 package com.lumina.reader.core.library
 
 import com.lumina.reader.core.model.BookFormat
-import java.net.URI
-import java.net.URLDecoder
-import java.util.UUID
+import com.lumina.reader.core.text.parseUrl
+import com.lumina.reader.platform.Ids
 
 /**
  * File naming for stored books. Books are kept as `books/<uuid>.<ext>` so a
@@ -24,7 +23,7 @@ object BookFileNames {
         BookFormat.TXT -> "txt"
     }
 
-    fun newStoredName(format: BookFormat, id: String = UUID.randomUUID().toString()): String =
+    fun newStoredName(format: BookFormat, id: String = Ids.randomUuid()): String =
         "$id.${extensionFor(format)}"
 
     /** True for names produced by [newStoredName]. */
@@ -63,7 +62,7 @@ object BookFileNames {
             val parts = value.split("'", limit = 3)
             if (parts.size == 3) {
                 val charset = parts[0].ifBlank { "UTF-8" }
-                val decoded = runCatching { URLDecoder.decode(parts[2].replace("+", "%2B"), charset) }.getOrNull()
+                val decoded = runCatching { decodeUrlComponent(parts[2].replace("+", "%2B"), charset) }.getOrNull()
                 sanitizeDisplayName(decoded)?.let { return it }
             }
         }
@@ -77,15 +76,23 @@ object BookFileNames {
     /** Last path segment of a URL, percent-decoded; null when there is none. */
     fun fileNameFromUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
-        val path = runCatching { URI(url).rawPath }.getOrNull()
+        val path = parseUrl(url)?.rawPath
             ?: url.substringBefore('?').substringBefore('#')
         val segment = path.trimEnd('/').substringAfterLast('/')
         if (segment.isBlank()) return null
-        val decoded = runCatching { URLDecoder.decode(segment.replace("+", "%2B"), "UTF-8") }
+        val decoded = runCatching { decodeUrlComponent(segment.replace("+", "%2B"), "UTF-8") }
             .getOrDefault(segment)
         return sanitizeDisplayName(decoded)
     }
 }
+
+/**
+ * `java.net.URLDecoder.decode(value, charset)`: "+" becomes a space, each run of
+ * `%XX` escapes is decoded as bytes in [charset], other characters stay; throws
+ * for a malformed escape or an unknown charset. Android: the JDK class, as
+ * before; iOS: [UrlDecoding].
+ */
+internal expect fun decodeUrlComponent(value: String, charset: String): String
 
 /** Picks the title and author stored for an imported book. */
 object ImportMetadata {
