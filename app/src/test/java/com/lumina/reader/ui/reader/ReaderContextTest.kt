@@ -3,7 +3,6 @@ package com.lumina.reader.ui.reader
 import android.app.Activity
 import android.content.ContextWrapper
 import android.view.ContextThemeWrapper
-import com.lumina.reader.ui.reader.settings.findActivity
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test

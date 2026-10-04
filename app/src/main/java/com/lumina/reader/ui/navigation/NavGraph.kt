@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.navigation
 
-import android.app.Application
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -65,6 +64,8 @@ import androidx.navigation.navArgument
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.model.effectiveTheme
+import com.lumina.reader.core.network.AiClient
+import com.lumina.reader.core.network.AiMessage
 import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.ui.catalog.CatalogScreen
 import com.lumina.reader.ui.catalog.CatalogSourcesScreen
@@ -79,7 +80,6 @@ import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
 import com.lumina.reader.ui.reader.ReaderScreen
 import com.lumina.reader.ui.reader.ReaderViewModel
-import com.lumina.reader.ui.reader.ReaderViewModelFactory
 import com.lumina.reader.ui.shell.AppSettingsSheet
 import com.lumina.reader.ui.shell.DockDestination
 import com.lumina.reader.ui.shell.LocalAppSnackbar
@@ -159,7 +159,6 @@ fun LuminaNavGraph(
     updateAvailable: Boolean = false
 ) {
     val context = LocalContext.current
-    val application = context.applicationContext as Application
     val density = LocalDensity.current
     val importer = remember(context) { BookImporter.get(context.applicationContext) }
 
@@ -275,10 +274,9 @@ fun LuminaNavGraph(
                         arguments = listOf(navArgument("bookId") { type = NavType.LongType })
                     ) { entry ->
                         val bookId = entry.arguments?.getLong("bookId") ?: 0L
-                        val readerViewModel: ReaderViewModel = viewModel(
-                            key = "reader_$bookId",
-                            factory = ReaderViewModelFactory(application, bookId)
-                        )
+                        val readerViewModel: ReaderViewModel = viewModel(key = "reader_$bookId") {
+                            ReaderViewModel(bookId)
+                        }
                         // "Reader ready" without reader cooperation (seam S1): loading finished
                         // and two frames drawn, then the overlay fades onto the real page.
                         val loading by readerViewModel.isLoading.collectAsState()
@@ -299,9 +297,15 @@ fun LuminaNavGraph(
                                 }
                             }
                         ) { requestClose ->
+                            val aiClient = remember { AiClient() }
                             ReaderScreen(
                                 viewModel = readerViewModel,
-                                onBack = requestClose
+                                onBack = requestClose,
+                                askAi = { messages ->
+                                    aiClient.askAssistant(
+                                        messages.map { AiMessage(role = it.role, content = it.content) }
+                                    ).content
+                                }
                             )
                         }
                     }

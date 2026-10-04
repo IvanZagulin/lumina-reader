@@ -3,39 +3,30 @@ package com.lumina.reader.core.preferences
 import android.app.Activity
 import android.content.Context
 import android.os.Build
-import android.view.WindowManager
+import com.lumina.reader.ui.reader.WindowBrightness
 
 /**
  * Centralizes display-related preferences that apply to the whole app.
  * Brightness is stored separately from reader typography settings because it
- * controls the Android window rather than book layout.
+ * controls the Android window rather than book layout. The brightness code
+ * itself is [WindowBrightness] in :sharedUi, which the reader's brightness
+ * slider uses too; this object keeps MainActivity's entry points.
  */
 object AppDisplayController {
-    private const val PREFS_NAME = "display_settings"
-    private const val KEY_USE_SYSTEM_BRIGHTNESS = "use_system_brightness"
-    private const val KEY_SCREEN_BRIGHTNESS = "screen_brightness"
-    private const val DEFAULT_BRIGHTNESS = 0.70f
-    private const val MIN_BRIGHTNESS = 0.05f
     private const val TARGET_REFRESH_RATE = 120f
 
     fun useSystemBrightness(context: Context): Boolean =
-        preferences(context).getBoolean(KEY_USE_SYSTEM_BRIGHTNESS, true)
+        WindowBrightness.useSystemBrightness(context)
 
     fun savedBrightness(context: Context): Float =
-        preferences(context)
-            .getFloat(KEY_SCREEN_BRIGHTNESS, DEFAULT_BRIGHTNESS)
-            .coerceIn(MIN_BRIGHTNESS, 1f)
+        WindowBrightness.savedBrightness(context)
 
     fun saveBrightness(
         context: Context,
         useSystemBrightness: Boolean,
         brightness: Float
     ) {
-        preferences(context)
-            .edit()
-            .putBoolean(KEY_USE_SYSTEM_BRIGHTNESS, useSystemBrightness)
-            .putFloat(KEY_SCREEN_BRIGHTNESS, brightness.coerceIn(MIN_BRIGHTNESS, 1f))
-            .apply()
+        WindowBrightness.saveBrightness(context, useSystemBrightness, brightness)
     }
 
     fun applySavedBrightness(activity: Activity) {
@@ -51,13 +42,7 @@ object AppDisplayController {
         useSystemBrightness: Boolean,
         brightness: Float
     ) {
-        val params = activity.window.attributes
-        params.screenBrightness = if (useSystemBrightness) {
-            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        } else {
-            brightness.coerceIn(MIN_BRIGHTNESS, 1f)
-        }
-        activity.window.attributes = params
+        WindowBrightness.applyBrightness(activity, useSystemBrightness, brightness)
     }
 
     /**
@@ -97,7 +82,4 @@ object AppDisplayController {
             activity.window.setFrameRatePowerSavingsBalanced(false)
         }
     }
-
-    private fun preferences(context: Context) =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }

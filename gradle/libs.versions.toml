@@ -101,6 +101,7 @@ jb-compose-ui-text = { group = "org.jetbrains.compose.ui", name = "ui-text", ver
 
 # JetBrains multiplatform ViewModel and Navigation for the shared screens
 # (:sharedUi, Android and iOS). `viewModel { }` and NavHost in common code.
+jb-lifecycle-runtime-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "jbLifecycle" }
 jb-lifecycle-viewmodel-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "jbLifecycle" }
 jb-navigation-compose = { group = "org.jetbrains.androidx.navigation", name = "navigation-compose", version.ref = "jbNavigation" }
 
