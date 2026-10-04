@@ -40,6 +40,9 @@ jobs:
       IOS_BUILD: "${{ github.run_number }}"
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      # For the whole job: Xcode's build phase runs Gradle again, and a Gradle run without
+      # this variable would rebuild the Kotlin framework with no built-in proxy.
+      LUMINA_FLIBUSTA_PROXY: ${{ secrets.LUMINA_FLIBUSTA_PROXY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,8 +98,6 @@ jobs:
 
       - name: Link the Kotlin framework for devices
         shell: bash
-        env:
-          LUMINA_FLIBUSTA_PROXY: ${{ secrets.LUMINA_FLIBUSTA_PROXY }}
         run: |
           chmod +x gradlew
           ./gradlew :sharedUi:linkReleaseFrameworkIosArm64 --no-daemon --stacktrace
@@ -117,6 +118,24 @@ jobs:
             CURRENT_PROJECT_VERSION="$IOS_BUILD" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build
+
+      - name: Check the built-in proxy is in the app
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys
+          spec = os.environ.get("LUMINA_FLIBUSTA_PROXY", "").strip()
+          if not spec:
+              print("No proxy secret: the app is built without a built-in proxy.")
+              sys.exit(0)
+          host = spec.rsplit("@", 1)[-1].rsplit(":", 1)[0]
+          binary = glob.glob("build/ios/Build/Products/Release-iphoneos/LuminaReader.app/LuminaReader")[0]
+          data = open(binary, "rb").read()
+          if host.encode("utf-16-le") not in data:
+              print("The built-in proxy is missing from the app binary.")
+              sys.exit(1)
+          print("The built-in proxy is in the app binary.")
+          PY
 
       - name: Package and check the IPA
         shell: bash
