@@ -63,7 +63,7 @@ import com.lumina.reader.ui.theme.HighlightPalette
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun QuoteList(
+fun QuoteList(
     highlights: List<ReadingHighlight>,
     colors: ReaderChromeColors,
     chapterTitle: (Int) -> String,

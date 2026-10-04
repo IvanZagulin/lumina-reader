@@ -84,7 +84,7 @@ import com.lumina.reader.ui.reader.chrome.rememberReaderChromeColors
 import com.lumina.reader.ui.reader.chrome.scrubberStateDescription
 import com.lumina.reader.ui.reader.navigation.BookNavigationSheet
 import com.lumina.reader.ui.reader.navigation.quoteShareText
-import com.lumina.reader.ui.reader.pageturn.isCurlSupported
+import com.lumina.reader.ui.reader.pageturn.rememberCurlSupported
 import com.lumina.reader.ui.reader.search.InBookSearchPanel
 import com.lumina.reader.ui.reader.search.SearchNavigatorCapsule
 import com.lumina.reader.ui.reader.selection.AskAiSheet
@@ -164,7 +164,7 @@ private fun ReaderScreenContent(
     val context = LocalContext.current
     val view = LocalView.current
     val density = LocalDensity.current
-    val curlSupported = remember(context) { isCurlSupported(context) }
+    val curlSupported = rememberCurlSupported()
 
     val book by viewModel.book.collectAsState()
     val parsedBook by viewModel.parsedBook.collectAsState()

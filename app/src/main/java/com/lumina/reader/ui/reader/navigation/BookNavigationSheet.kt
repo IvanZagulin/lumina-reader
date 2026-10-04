@@ -45,6 +45,7 @@ import com.lumina.reader.core.model.Bookmark
 import com.lumina.reader.core.model.ParsedBook
 import com.lumina.reader.core.model.ReadingHighlight
 import com.lumina.reader.core.model.TocItem
+import com.lumina.reader.ui.components.coverImageOf
 import com.lumina.reader.ui.reader.ReaderPosition
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
 import com.lumina.reader.ui.reader.chrome.ReaderModalSheet
@@ -53,7 +54,6 @@ import com.lumina.reader.ui.reader.displayChapterTitle
 import com.lumina.reader.ui.reader.formatTimeLeft
 import com.lumina.reader.ui.theme.LuminaShape
 import kotlinx.coroutines.launch
-import java.io.File
 
 /** Contents of a book: its own table of contents, or one entry per chapter. */
 internal fun navigationTocItems(book: ParsedBook): List<TocItem> =
@@ -221,7 +221,9 @@ private fun NavigationHeader(
                 .background(colors.accent.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center
         ) {
-            val cover = coverPath?.let(::File)?.takeIf { it.isFile }
+            val cover = coverImageOf(coverPath)
+                ?.let { it as? okio.Path }
+                ?.takeIf { okio.FileSystem.SYSTEM.metadataOrNull(it)?.isRegularFile == true }
             if (cover != null) {
                 AsyncImage(
                     model = cover,

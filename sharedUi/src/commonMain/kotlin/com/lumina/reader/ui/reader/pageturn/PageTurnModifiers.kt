@@ -1,7 +1,5 @@
 package com.lumina.reader.ui.reader.pageturn
 
-import android.app.ActivityManager
-import android.content.Context
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -25,14 +23,14 @@ import kotlin.math.abs
  * the viewport (outgoing or previous), `o < 0` right of it (incoming or next).
  * Read it only inside graphicsLayer or draw lambdas.
  */
-internal fun PagerState.pageOffsetOf(page: Int): Float =
+fun PagerState.pageOffsetOf(page: Int): Float =
     (currentPage - page) + currentPageOffsetFraction
 
 /**
  * The animation actually used: the curl needs a capable device and is not
  * used while read-aloud turns the pages.
  */
-internal fun effectivePageTurn(
+fun effectivePageTurn(
     selected: PageTurnAnimation,
     curlSupported: Boolean,
     readAloudDriving: Boolean
@@ -41,17 +39,11 @@ internal fun effectivePageTurn(
     else -> selected
 }
 
-/** The curl is off on low-RAM devices (§4.2 PageTurnStyleCard). */
-internal fun isCurlSupported(context: Context): Boolean {
-    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-    return manager?.isLowRamDevice != true
-}
-
 /**
  * Animation of a tap or volume-key turn; null means an instant jump
  * (NONE, the curl's own path, or reduced motion).
  */
-internal fun tapTurnSpec(style: PageTurnAnimation, reducedMotion: Boolean): AnimationSpec<Float>? = when {
+fun tapTurnSpec(style: PageTurnAnimation, reducedMotion: Boolean): AnimationSpec<Float>? = when {
     reducedMotion -> null
     style == PageTurnAnimation.SLIDE -> tween(
         durationMillis = LuminaMotion.PageTurnTapMs,
@@ -62,7 +54,7 @@ internal fun tapTurnSpec(style: PageTurnAnimation, reducedMotion: Boolean): Anim
 }
 
 /** Alpha of a page in curl mode: the curled page and the page under it, otherwise only the current page. */
-internal fun curlPageAlpha(page: Int, offset: Float, activePage: Int): Float =
+fun curlPageAlpha(page: Int, offset: Float, activePage: Int): Float =
     if (activePage >= 0) {
         if (page == activePage || page == activePage + 1) 1f else 0f
     } else {
@@ -74,7 +66,7 @@ internal fun curlPageAlpha(page: Int, offset: Float, activePage: Int): Float =
  * moves 30 % (parallax) and brightens; the moving edge casts a 16dp shadow.
  * Lower indices draw on top, which gives a correct stack in both directions.
  */
-internal fun Modifier.slidePage(
+fun Modifier.slidePage(
     pagerState: PagerState,
     page: Int,
     pageColor: Color,
@@ -122,7 +114,7 @@ internal fun Modifier.slidePage(
  * swings around the spine (left edge) towards the reader and darkens, the
  * page beneath lightens as it is uncovered.
  */
-internal fun Modifier.flipPage(
+fun Modifier.flipPage(
     pagerState: PagerState,
     page: Int,
     pageColor: Color
@@ -164,7 +156,7 @@ private fun Modifier.flipShading(pagerState: PagerState, page: Int, pageColor: C
     }
 
 /** §9.4 «Без анимации» (and the default drag of the pager): opaque pages in a plain row. */
-internal fun Modifier.plainPage(page: Int, pageColor: Color): Modifier = this
+fun Modifier.plainPage(page: Int, pageColor: Color): Modifier = this
     .zIndex(-page.toFloat())
     .drawWithCache {
         onDrawWithContent {

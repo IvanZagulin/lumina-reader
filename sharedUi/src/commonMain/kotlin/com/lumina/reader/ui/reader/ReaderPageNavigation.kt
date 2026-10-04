@@ -1,5 +1,7 @@
 package com.lumina.reader.ui.reader
 
+import kotlin.concurrent.Volatile
+
 /** Direction of a physical or on-screen page turn. */
 enum class PageTurnDirection {
     PREVIOUS,

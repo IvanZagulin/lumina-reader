@@ -5,7 +5,7 @@ package com.lumina.reader.ui.reader
  * previous/next chapter boundary page. Keeping this math outside Compose makes
  * the edge behaviour deterministic and easy to regression-test.
  */
-internal data class ChapterPagerLayout(
+data class ChapterPagerLayout(
     val contentPageCount: Int,
     val hasPreviousChapter: Boolean,
     val hasNextChapter: Boolean

@@ -48,7 +48,7 @@ import kotlin.math.hypot
  * Everything the drawing reads is snapshot state read in the draw phase only.
  */
 @Stable
-internal class CurlState {
+class CurlState {
     /** Pager page drawn curled, or -1. */
     var activePage by mutableIntStateOf(-1)
         private set
@@ -158,7 +158,7 @@ internal class CurlState {
 }
 
 /** Paths, matrix and brushes of the curl, reused every frame. */
-internal class CurlPainter {
+class CurlPainter {
     val frontPath = Path()
     val flapPath = Path()
     val reflectedPath = Path()
@@ -224,7 +224,7 @@ internal class CurlPainter {
  * flat part, shadows on the page underneath, the mirrored back of the flap
  * with a paper tint, and the shading along the fold.
  */
-internal fun DrawScope.drawCurl(layer: GraphicsLayer, curl: CurlState, pageColor: Color) {
+fun DrawScope.drawCurl(layer: GraphicsLayer, curl: CurlState, pageColor: Color) {
     val g = curl.geometry
     val painter = curl.painter
     painter.ensure(this)
@@ -312,7 +312,7 @@ internal fun DrawScope.drawCurl(layer: GraphicsLayer, curl: CurlState, pageColor
  * is the current page or part of an active curl, drawn through [layer] while
  * it is curled.
  */
-internal fun Modifier.curlPage(
+fun Modifier.curlPage(
     pagerState: PagerState,
     page: Int,
     curl: CurlState,
@@ -355,7 +355,7 @@ internal fun Modifier.curlPage(
  * back. Long presses (text selection) and taps are left to the other
  * detectors: a gesture becomes a curl only after the touch slop.
  */
-internal fun Modifier.curlDragGestures(
+fun Modifier.curlDragGestures(
     curl: CurlState,
     pagerState: PagerState,
     pageCount: Int,

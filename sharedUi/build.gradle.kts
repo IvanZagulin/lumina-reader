@@ -47,6 +47,9 @@ kotlin {
             implementation(libs.jb.compose.material.icons.extended)
             implementation(libs.jb.compose.resources)
             implementation(libs.coil3.compose)
+            // Calendar dates in common code (reader bookmark and quote dates); api because
+            // relativeDateLabel takes a kotlinx.datetime.TimeZone.
+            api(libs.kotlinx.datetime)
             // Multiplatform ViewModel (`viewModel { }`) for the shared screens (stage 8b+).
             implementation(libs.jb.lifecycle.viewmodel.compose)
         }

@@ -1,8 +1,12 @@
 package com.lumina.reader.ui.reader.navigation
 
 import com.lumina.reader.core.model.ReadingHighlight
-import java.util.Calendar
-import java.util.TimeZone
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 
 private val MonthsShort = arrayOf(
     "янв.", "февр.", "марта", "апр.", "мая", "июня",
@@ -10,34 +14,28 @@ private val MonthsShort = arrayOf(
 )
 
 /** «сегодня», «вчера», «12 сент.», «12 сент. 2024» for a past moment. */
-internal fun relativeDateLabel(
+@OptIn(ExperimentalTime::class)
+fun relativeDateLabel(
     timestamp: Long,
     now: Long,
-    timeZone: TimeZone = TimeZone.getDefault()
+    timeZone: TimeZone = TimeZone.currentSystemDefault()
 ): String {
-    val then = Calendar.getInstance(timeZone).apply { timeInMillis = timestamp }
-    val today = Calendar.getInstance(timeZone).apply { timeInMillis = now }
-    val sameYear = then.get(Calendar.YEAR) == today.get(Calendar.YEAR)
-    if (sameYear && then.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)) return "сегодня"
-    val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
-    if (then.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
-        then.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)
-    ) {
-        return "вчера"
-    }
-    val day = then.get(Calendar.DAY_OF_MONTH)
-    val month = MonthsShort[then.get(Calendar.MONTH)]
-    return if (sameYear) "$day $month" else "$day $month ${then.get(Calendar.YEAR)}"
+    val then = Instant.fromEpochMilliseconds(timestamp).toLocalDateTime(timeZone).date
+    val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(timeZone).date
+    if (then == today) return "сегодня"
+    if (then == today.minus(1, DateTimeUnit.DAY)) return "вчера"
+    val month = MonthsShort[then.month.ordinal]
+    return if (then.year == today.year) "${then.day} $month" else "${then.day} $month ${then.year}"
 }
 
 /** «Закладки 4» style tab titles: the count only when there is something. */
-internal fun tabTitle(title: String, count: Int): String = if (count > 0) "$title $count" else title
+fun tabTitle(title: String, count: Int): String = if (count > 0) "$title $count" else title
 
 /**
  * Quotes and notes as Markdown for «Экспорт в Markdown»: a heading with the
  * book, then each quote as a block quote with its chapter and note.
  */
-internal fun highlightsMarkdown(
+fun highlightsMarkdown(
     bookTitle: String,
     author: String,
     highlights: List<ReadingHighlight>,
@@ -61,7 +59,7 @@ internal fun highlightsMarkdown(
 }
 
 /** ««цитата» — Название, Автор» for sharing a quote. */
-internal fun quoteShareText(quote: String, bookTitle: String, author: String): String {
+fun quoteShareText(quote: String, bookTitle: String, author: String): String {
     val source = listOf(bookTitle, author).filter { it.isNotBlank() }.joinToString(", ")
     val body = "«${quote.trim()}»"
     return if (source.isEmpty()) body else "$body — $source"

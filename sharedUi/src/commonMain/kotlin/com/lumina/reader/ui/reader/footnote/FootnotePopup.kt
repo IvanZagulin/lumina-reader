@@ -1,6 +1,5 @@
 package com.lumina.reader.ui.reader.footnote
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumina.reader.ui.PlatformBackHandler
 import com.lumina.reader.ui.reader.ReaderTextColors
 import com.lumina.reader.ui.reader.ReaderTypography
 import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
@@ -42,7 +42,7 @@ import com.lumina.reader.ui.theme.LuminaMotion
 import kotlin.math.roundToInt
 
 /** Where the footnote card goes and whether its caret points up (card below the marker). */
-internal data class FootnotePlacement(
+data class FootnotePlacement(
     val offset: IntOffset,
     val below: Boolean,
     /** Caret x inside the card. */
@@ -53,7 +53,7 @@ internal data class FootnotePlacement(
  * The card prefers the space under the marker; when that is too small it
  * goes above. It stays [margin] inside the container.
  */
-internal fun footnotePlacement(
+fun footnotePlacement(
     anchor: Offset,
     card: IntSize,
     container: IntSize,
@@ -78,7 +78,7 @@ internal fun footnotePlacement(
  * nothing underneath reacts to that tap (the page does not turn).
  */
 @Composable
-internal fun FootnotePopup(
+fun FootnotePopup(
     noteId: String,
     noteNumber: String,
     text: String?,
@@ -89,7 +89,7 @@ internal fun FootnotePopup(
     onNoteClick: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    BackHandler(onBack = onDismiss)
+    PlatformBackHandler(enabled = true, onBack = onDismiss)
     val appear = remember(noteId) { Animatable(if (reducedMotion) 1f else 0f) }
     LaunchedEffect(noteId) {
         if (!reducedMotion) {

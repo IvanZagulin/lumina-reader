@@ -28,7 +28,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -45,25 +44,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
-import com.lumina.reader.ui.theme.LuminaHaptics
+import com.lumina.reader.ui.theme.rememberLuminaHaptics
 import com.lumina.reader.ui.theme.LuminaShape
 import kotlin.math.roundToInt
 
 /** What the drag bubble shows for a position. */
 @Immutable
-internal data class ScrubberLabel(
+data class ScrubberLabel(
     val title: String,
     val detail: String
 )
 
 /** Chapter ticks are drawn only for books with at most this many chapters. */
-internal const val MAX_SCRUBBER_TICKS = 60
+const val MAX_SCRUBBER_TICKS = 60
 
 /**
  * Where each chapter starts as a fraction of the book text. Chapters without
  * text share the book evenly when the whole book has none.
  */
-internal fun chapterStartFractions(chapterLengths: IntArray): FloatArray {
+fun chapterStartFractions(chapterLengths: IntArray): FloatArray {
     val count = chapterLengths.size
     if (count == 0) return FloatArray(0)
     val total = chapterLengths.sumOf { it.coerceAtLeast(0).toLong() }
@@ -77,7 +76,7 @@ internal fun chapterStartFractions(chapterLengths: IntArray): FloatArray {
 }
 
 /** The chapter that contains [fraction] of the book. */
-internal fun chapterAtFraction(starts: FloatArray, fraction: Float): Int {
+fun chapterAtFraction(starts: FloatArray, fraction: Float): Int {
     if (starts.isEmpty()) return 0
     var low = 0
     var high = starts.lastIndex
@@ -95,12 +94,12 @@ internal fun chapterAtFraction(starts: FloatArray, fraction: Float): Int {
 }
 
 /** «42 процента, глава 7» for TalkBack. */
-internal fun scrubberStateDescription(fraction: Float, chapterNumber: Int): String {
+fun scrubberStateDescription(fraction: Float, chapterNumber: Int): String {
     val percent = (fraction.coerceIn(0f, 1f) * 100).roundToInt()
     return "${percent} ${percentWord(percent)}, глава $chapterNumber"
 }
 
-internal fun percentWord(value: Int): String {
+fun percentWord(value: Int): String {
     val mod100 = value % 100
     val mod10 = value % 10
     return when {
@@ -117,7 +116,7 @@ internal fun percentWord(value: Int): String {
  * fractions of the book; [onJump] fires when the finger lifts.
  */
 @Composable
-internal fun ChapterScrubber(
+fun ChapterScrubber(
     value: Float,
     chapterStarts: FloatArray,
     colors: ReaderChromeColors,
@@ -126,7 +125,7 @@ internal fun ChapterScrubber(
     onJump: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val view = LocalView.current
+    val haptics = rememberLuminaHaptics()
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     var widthPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -175,7 +174,7 @@ internal fun ChapterScrubber(
                             val nowChapter = chapterAtFraction(chapterStarts, current)
                             if (nowChapter != chapter) {
                                 chapter = nowChapter
-                                if (showTicks) LuminaHaptics.clock(view)
+                                if (showTicks) haptics.clock()
                             }
                         }
                     }

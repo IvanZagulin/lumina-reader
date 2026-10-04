@@ -40,7 +40,7 @@ import com.lumina.reader.ui.theme.LuminaDimens
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** Everything the book-level scrubber of the bottom bar needs. */
-internal class ScrubberModel(
+class ScrubberModel(
     val value: Float,
     val chapterStarts: FloatArray,
     val chapterLabel: String,
@@ -55,7 +55,7 @@ internal class ScrubberModel(
  * capsule 12dp above the navigation bar; cells are at least 64dp tall.
  */
 @Composable
-internal fun ReaderBottomBar(
+fun ReaderBottomBar(
     colors: ReaderChromeColors,
     scrubber: ScrubberModel?,
     isTtsPlaying: Boolean,

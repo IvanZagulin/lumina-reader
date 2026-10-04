@@ -25,6 +25,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.lumina.reader.core.library.resolveStoredLibraryPath
 import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.ui.theme.LuminaShape
 import okio.Path.Companion.toPath
@@ -59,7 +60,7 @@ fun bookThicknessDp(fileSizeBytes: Long, format: BookFormat): Float =
  * Coil loads as a `file:` URI exactly like a `java.io.File` (a plain string
  * would be parsed as a URI). Null or blank: no image.
  */
-fun coverImageOf(coverPath: String?): Any? = coverPath?.takeIf { it.isNotBlank() }?.toPath()
+fun coverImageOf(coverPath: String?): Any? = coverPath?.takeIf { it.isNotBlank() }?.let(::resolveStoredLibraryPath)
 
 /**
  * The one Coil request shape per surface (spec §4.1). Shelf requests decode at

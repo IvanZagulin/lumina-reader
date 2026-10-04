@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumina.reader.platform.AppClock
 import com.lumina.reader.core.model.Bookmark
 import com.lumina.reader.ui.components.rememberSwipeReleaseGate
 import com.lumina.reader.ui.components.swipeReleaseGate
@@ -45,7 +46,7 @@ import com.lumina.reader.ui.reader.chrome.ReaderChromeColors
  * swipe left to delete (the sheet offers «Вернуть»).
  */
 @Composable
-internal fun BookmarkList(
+fun BookmarkList(
     bookmarks: List<Bookmark>,
     colors: ReaderChromeColors,
     onClick: (Bookmark) -> Unit,
@@ -60,7 +61,7 @@ internal fun BookmarkList(
         )
         return
     }
-    val now = remember { System.currentTimeMillis() }
+    val now = remember { AppClock.nowMillis() }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
@@ -136,7 +137,7 @@ internal fun BookmarkList(
 }
 
 @Composable
-internal fun DeleteBackground(colors: ReaderChromeColors) {
+fun DeleteBackground(colors: ReaderChromeColors) {
     Box(
         modifier = Modifier
             .fillMaxSize()

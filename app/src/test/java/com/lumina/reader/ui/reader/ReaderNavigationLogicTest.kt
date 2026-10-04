@@ -76,14 +76,15 @@ class ReaderNavigationLogicTest {
 
     @Test
     fun datesReadNaturally() {
-        val zone = TimeZone.getTimeZone("Europe/Moscow")
-        val now = Calendar.getInstance(zone).apply { set(2026, Calendar.OCTOBER, 3, 18, 0) }.timeInMillis
+        val zone = kotlinx.datetime.TimeZone.of("Europe/Moscow")
+        val calendarZone = TimeZone.getTimeZone("Europe/Moscow")
+        val now = Calendar.getInstance(calendarZone).apply { set(2026, Calendar.OCTOBER, 3, 18, 0) }.timeInMillis
         val hour = 60 * 60 * 1000L
         assertEquals("сегодня", relativeDateLabel(now - 2 * hour, now, zone))
         assertEquals("вчера", relativeDateLabel(now - 24 * hour, now, zone))
-        val september = Calendar.getInstance(zone).apply { set(2026, Calendar.SEPTEMBER, 12, 10, 0) }.timeInMillis
+        val september = Calendar.getInstance(calendarZone).apply { set(2026, Calendar.SEPTEMBER, 12, 10, 0) }.timeInMillis
         assertEquals("12 сент.", relativeDateLabel(september, now, zone))
-        val lastYear = Calendar.getInstance(zone).apply { set(2025, Calendar.MAY, 1, 10, 0) }.timeInMillis
+        val lastYear = Calendar.getInstance(calendarZone).apply { set(2025, Calendar.MAY, 1, 10, 0) }.timeInMillis
         assertEquals("1 мая 2025", relativeDateLabel(lastYear, now, zone))
         assertEquals("Закладки 4", tabTitle("Закладки", 4))
         assertEquals("Цитаты", tabTitle("Цитаты", 0))
