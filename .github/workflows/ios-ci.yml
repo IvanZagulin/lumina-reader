@@ -94,6 +94,7 @@ jobs:
             :sharedUi:compileKotlinIosArm64 \
             :sharedUi:linkReleaseFrameworkIosArm64 \
             :shared:iosSimulatorArm64Test \
+            :sharedUi:iosSimulatorArm64Test \
             --no-daemon --stacktrace --continue
 
       - name: Upload test reports
@@ -104,6 +105,8 @@ jobs:
           path: |
             shared/build/reports/tests
             shared/build/test-results
+            sharedUi/build/reports/tests
+            sharedUi/build/test-results
           if-no-files-found: ignore
 
   simulator-smoke:
@@ -248,6 +251,11 @@ jobs:
           }
           APP=build/sim/Build/Products/Debug-iphonesimulator/LuminaReader.app
           plutil -p "$APP/Info.plist"
+          # The shared UI fonts are Compose Multiplatform resources, copied into
+          # the bundle by embedAndSignAppleFrameworkForXcode.
+          find "$APP/compose-resources" -type f -print
+          test -n "$(find "$APP/compose-resources" -name 'onest_variable.ttf' -print -quit)"
+          test -n "$(find "$APP/compose-resources" -name 'lora_variable.ttf' -print -quit)"
           mkdir -p shots
           xcrun simctl list devices available | grep -F "$SIM_UDID" || true
           run_with_timeout 300 xcrun simctl boot "$SIM_UDID" || echo "boot returned non-zero (may already be booted)"

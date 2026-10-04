@@ -145,6 +145,13 @@ jobs:
           fi
           lipo -info "$APP/LuminaReader"
           lipo -archs "$APP/LuminaReader" | grep -qw arm64
+          # The shared UI fonts (Compose Multiplatform resources) must be in the bundle.
+          for font in onest_variable.ttf lora_variable.ttf; do
+            if [ -z "$(find "$APP/compose-resources" -name "$font" -print -quit 2>/dev/null)" ]; then
+              echo "::error::$font is missing from $APP/compose-resources"
+              exit 1
+            fi
+          done
           mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/
           (cd dist && zip -qry "LuminaReader-$IOS_VERSION.ipa" Payload)

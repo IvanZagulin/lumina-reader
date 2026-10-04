@@ -41,8 +41,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.network.httpHeaders
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.lumina.reader.ui.components.toNetworkHeaders
 import com.lumina.reader.ui.theme.LuminaShape
 
 /** Spine-side-tight book shape at thumbnail size (same proportions as LuminaShape.Book). */
@@ -91,7 +94,7 @@ internal fun DownloadCover(
             val request = remember(coverUrl, coverHeaders) {
                 ImageRequest.Builder(context)
                     .data(coverUrl)
-                    .apply { coverHeaders.forEach { (name, value) -> addHeader(name, value) } }
+                    .httpHeaders(coverHeaders.toNetworkHeaders())
                     .size(120, 180)
                     .crossfade(false)
                     .build()
