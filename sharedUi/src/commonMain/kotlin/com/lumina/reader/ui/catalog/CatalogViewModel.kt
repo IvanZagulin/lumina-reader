@@ -15,6 +15,7 @@ import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.core.opds.OpdsRepository
 import com.lumina.reader.core.opds.describeOpdsError
 import com.lumina.reader.core.opds.BuiltInCatalogs
+import com.lumina.reader.core.opds.CatalogHealth
 import com.lumina.reader.ui.downloads.DownloadMeta
 import com.lumina.reader.ui.downloads.DownloadMetaRegistry
 import kotlinx.coroutines.CancellationException
@@ -356,7 +357,9 @@ class CatalogViewModel(
             // asked when it found nothing (or could not be reached).
             val primary = catalogs.firstOrNull { it.id == BuiltInCatalogs.FLIBUSTA_ID }
             val others = catalogs.filter { it.id != BuiltInCatalogs.FLIBUSTA_ID }
-            if (primary == null || others.isEmpty()) {
+            if (primary == null || others.isEmpty() || CatalogHealth.isLikelyDown(primary.id)) {
+                // No ranking to do, or Flibusta failed a moment ago (blocked without a VPN):
+                // ask every catalogue at once and let each section fill in on its own.
                 catalogs.forEach { catalog -> launch { searchIn(catalog) } }
             } else if (searchIn(primary)) {
                 mutableState.update { state ->

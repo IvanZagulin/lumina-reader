@@ -303,6 +303,32 @@ class LibraryViewModel(
         }
     }
 
+    /** Renames a series: every book of it gets the new series name, keeping its place in the order. */
+    fun renameSeries(oldName: String, newName: String) {
+        val source = normalizeShelfName(oldName)
+        val target = normalizeShelfName(newName)
+        if (target.isEmpty() || target == source) return
+        viewModelScope.launch(Dispatchers.Default) {
+            val books = bookDao.getAllBooksOnce().filter { normalizeShelfName(it.seriesName).equals(source, ignoreCase = true) }
+            books.forEach { book ->
+                bookDao.updateOrganization(book.id, book.collection, target, book.seriesOrder)
+            }
+            AppMessages.post("Серия переименована в «$target»")
+        }
+    }
+
+    /** Takes the books out of a series; they stay in the library, on their shelves. */
+    fun disbandSeries(name: String) {
+        val source = normalizeShelfName(name)
+        viewModelScope.launch(Dispatchers.Default) {
+            val books = bookDao.getAllBooksOnce().filter { normalizeShelfName(it.seriesName).equals(source, ignoreCase = true) }
+            books.forEach { book ->
+                bookDao.updateOrganization(book.id, book.collection, "", 0)
+            }
+            AppMessages.post("Серия «$source» расформирована, книги остались в библиотеке")
+        }
+    }
+
     /** True for shelves the user may rename or delete. */
     fun isEditableShelf(name: String?): Boolean =
         name != null && !name.equals(LibraryPreferences.MAIN_SHELF, ignoreCase = true)

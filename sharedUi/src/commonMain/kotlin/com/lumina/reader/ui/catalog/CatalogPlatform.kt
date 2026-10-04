@@ -5,6 +5,7 @@ import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.preferences.CatalogPreferences
 import com.lumina.reader.platform.PlatformLock
 import kotlinx.coroutines.flow.StateFlow
+import com.lumina.reader.core.network.NetworkProxy
 
 /**
  * What the catalogue screens, the downloads sheet and the download island need
@@ -49,7 +50,13 @@ interface CatalogDownloads {
 class CatalogServices(
     val catalogPreferences: CatalogPreferences,
     val downloads: CatalogDownloads
-)
+) {
+    init {
+        // Everything that talks to a catalogue is built from these, so the stored proxy
+        // is followed from the first use on.
+        NetworkProxy.bind(catalogPreferences)
+    }
+}
 
 /**
  * The catalogue services of this process.

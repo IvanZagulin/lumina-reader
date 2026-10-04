@@ -22,6 +22,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okio.IOException
+import com.lumina.reader.core.network.NetworkProxy
 
 /** Search result of one catalogue: a feed, or a readable error. */
 data class CatalogSearchResult(
@@ -38,8 +39,10 @@ data class FoundPublication(
 
 /** Loads, searches and pages OPDS catalogues. */
 class OpdsRepository(
-    private val client: HttpClient = OpdsHttp.feedClient,
-    private val parser: OpdsFeedParser = OpdsFeedParser()
+    // A provider, not a client: the proxy setting can change while the repository lives.
+    private val clientProvider: () -> HttpClient = { OpdsHttp.feedClient },
+    private val parser: OpdsFeedParser = OpdsFeedParser(),
+    private val feedCache: OpdsFeedCache = OpdsFeedCache.shared
 ) {
     /** Guards both caches: searches of several catalogues run in parallel. */
     private val cacheLock = PlatformLock()
@@ -70,19 +73,36 @@ class OpdsRepository(
                 lastError = e
             }
         }
-        throw lastError ?: IOException("Не удалось открыть каталог")
+        // Nothing answered: the last copy, however old, is better than an error (a
+        // catalogue that is blocked or down is exactly when it is needed).
+        val error = lastError
+        val unauthorised = error is HttpStatusException && (error.code == 401 || error.code == 403)
+        if (!unauthorised) {
+            feedCache.read(url)?.let { stale ->
+                runCatching { parser.parseFeed(stale.body, stale.finalUrl) }.getOrNull()?.let { return@withContext it }
+            }
+        }
+        throw error ?: IOException("Не удалось открыть каталог")
     }
 
-    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed =
-        client.prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed {
+        // A copy from the last day (an hour for searches) is shown at once.
+        feedCache.read(url, OpdsFeedCache.maxAgeFor(url))?.let { hit ->
+            runCatching { parser.parseFeed(hit.body, hit.finalUrl) }.getOrNull()?.let { return it }
+        }
+        NetworkProxy.ready()
+        return clientProvider().prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
             val body = response.readBodyBytes(MAX_FEED_BYTES)
                 ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
-            parser.parseFeed(body, response.finalUrl)
+            val feed = parser.parseFeed(body, response.finalUrl)
+            feedCache.write(url, response.finalUrl, body)
+            feed
         }
+    }
 
     private suspend fun fetchOpenSearchTemplate(url: String, catalog: OpdsCatalogConfig?): String? =
-        client.prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+        clientProvider().prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
             val body = response.readBodyBytes(MAX_FEED_BYTES) ?: return@execute null
             parser.parseOpenSearchTemplate(body, response.finalUrl)
@@ -189,12 +209,16 @@ class OpdsRepository(
             async(Dispatchers.IO) {
                 try {
                     val feed = withTimeout(timeoutMillis) { searchCatalog(catalog, query, type) }
+                    CatalogHealth.markReachable(catalog.id)
                     CatalogSearchResult(catalog, feed, null)
                 } catch (e: TimeoutCancellationException) {
+                    CatalogHealth.markUnreachable(catalog.id)
                     CatalogSearchResult(catalog, null, "Каталог не ответил вовремя")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    // A refused login or a missing page is an answer; anything else is not.
+                    if (e !is HttpStatusException) CatalogHealth.markUnreachable(catalog.id)
                     CatalogSearchResult(catalog, null, describeOpdsError(e))
                 }
             }
@@ -212,7 +236,10 @@ class OpdsRepository(
         // found nothing to download, or could not be reached.
         val primary = catalogs.filter { it.id == BuiltInCatalogs.FLIBUSTA_ID }
         val others = catalogs.filter { it.id != BuiltInCatalogs.FLIBUSTA_ID }
-        if (primary.isEmpty() || others.isEmpty()) return findPublicationsIn(catalogs, query, SEARCH_TIMEOUT_MS)
+        // Down a moment ago (blocked without a VPN): do not wait for it again, ask all at once.
+        if (primary.isEmpty() || others.isEmpty() || primary.any { CatalogHealth.isLikelyDown(it.id) }) {
+            return findPublicationsIn(catalogs, query, SEARCH_TIMEOUT_MS)
+        }
         val first = try {
             findPublicationsIn(primary, query, PRIMARY_SEARCH_TIMEOUT_MS)
         } catch (e: CancellationException) {

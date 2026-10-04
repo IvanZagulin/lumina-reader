@@ -29,6 +29,7 @@ import okio.Path
 import okio.SYSTEM
 import okio.Sink
 import okio.use
+import com.lumina.reader.core.network.NetworkProxy
 
 /** A completely received file. */
 data class DownloadedFile(
@@ -49,7 +50,7 @@ data class DownloadedFile(
  * Reading the body is a suspending, cancellable Ktor call, so cancelling the
  * download ends it at once (OkHttp needed a watcher that cancelled the call).
  */
-class BookDownloader(private val client: HttpClient = OpdsHttp.downloadClient) {
+class BookDownloader(private val clientProvider: () -> HttpClient = { OpdsHttp.downloadClient }) {
 
     suspend fun download(
         request: DownloadRequest,
@@ -92,7 +93,8 @@ class BookDownloader(private val client: HttpClient = OpdsHttp.downloadClient) {
         val targetHost = OpdsUrls.host(url)
         // Credentials only go to the catalogue's own hosts and mirrors.
         val sendCredentials = targetHost != null && (targetHost == ownHost || targetHost in mirrorHosts)
-        return client.prepareGet(url) {
+        NetworkProxy.ready()
+        return clientProvider().prepareGet(url) {
             // set, not append: the same replace semantics as OkHttp's Request.Builder.header.
             headers[HttpHeaders.UserAgent] = OpdsHttp.USER_AGENT
             headers[HttpHeaders.Accept] = "*/*"

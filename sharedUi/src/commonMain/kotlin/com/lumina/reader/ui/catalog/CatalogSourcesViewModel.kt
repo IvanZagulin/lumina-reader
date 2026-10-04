@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import com.lumina.reader.core.network.ProxySettings
+import com.lumina.reader.core.opds.BuiltInCatalogs
+import com.lumina.reader.core.opds.CatalogHealth
 
 /** Result of "Проверить" for one catalogue or for the add/edit form. */
 sealed interface ConnectionCheck {
@@ -60,6 +63,19 @@ class CatalogSourcesViewModel(
     /** Every catalogue, built-ins first, including disabled ones. */
     val catalogs: StateFlow<List<OpdsCatalogConfig>> = preferences.catalogs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The proxy for catalogues and downloads (off until the user sets one). */
+    val proxy: StateFlow<ProxySettings> = preferences.proxy
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProxySettings())
+
+    fun saveProxy(settings: ProxySettings) {
+        viewModelScope.launch {
+            preferences.setProxy(settings)
+            // Whatever a blocked catalogue failed with a moment ago says nothing about the new route.
+            BuiltInCatalogs.all.forEach { CatalogHealth.markReachable(it.id) }
+            AppMessages.post(if (settings.usable) "Прокси сохранён" else "Прокси выключен")
+        }
+    }
 
     private val mutableChecks = MutableStateFlow<Map<String, ConnectionCheck>>(emptyMap())
 

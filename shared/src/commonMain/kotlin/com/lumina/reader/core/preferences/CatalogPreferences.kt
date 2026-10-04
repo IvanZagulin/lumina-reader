@@ -13,6 +13,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import com.lumina.reader.core.network.ProxySettings
+import com.lumina.reader.core.network.ProxyType
 
 /**
  * OPDS catalogues: the built-in defaults (which can only be switched off) plus
@@ -25,6 +29,39 @@ class CatalogPreferences(private val dataStore: DataStore<Preferences>) {
     private object Keys {
         val USER_CATALOGS = stringPreferencesKey("user_catalogs_json")
         val DISABLED_BUILT_INS = stringSetPreferencesKey("disabled_builtin_ids")
+        val PROXY_ENABLED = booleanPreferencesKey("proxy_enabled")
+        val PROXY_TYPE = stringPreferencesKey("proxy_type")
+        val PROXY_HOST = stringPreferencesKey("proxy_host")
+        val PROXY_PORT = intPreferencesKey("proxy_port")
+        val PROXY_USER = stringPreferencesKey("proxy_user")
+        val PROXY_PASSWORD = stringPreferencesKey("proxy_password")
+    }
+
+    /** The proxy for catalogues and downloads; off until the user sets one. */
+    val proxy: Flow<ProxySettings> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            ProxySettings(
+                enabled = preferences[Keys.PROXY_ENABLED] ?: false,
+                type = preferences[Keys.PROXY_TYPE]?.let { name -> ProxyType.entries.firstOrNull { it.name == name } }
+                    ?: ProxyType.HTTP,
+                host = preferences[Keys.PROXY_HOST].orEmpty(),
+                port = preferences[Keys.PROXY_PORT] ?: 0,
+                username = preferences[Keys.PROXY_USER].orEmpty(),
+                password = preferences[Keys.PROXY_PASSWORD].orEmpty()
+            )
+        }
+        .distinctUntilChanged()
+
+    suspend fun setProxy(settings: ProxySettings) {
+        dataStore.edit { preferences ->
+            preferences[Keys.PROXY_ENABLED] = settings.enabled
+            preferences[Keys.PROXY_TYPE] = settings.type.name
+            preferences[Keys.PROXY_HOST] = settings.host.trim()
+            preferences[Keys.PROXY_PORT] = settings.port
+            preferences[Keys.PROXY_USER] = settings.username
+            preferences[Keys.PROXY_PASSWORD] = settings.password
+        }
     }
 
     /** All catalogues, built-ins first; disabled ones are included with enabled = false. */
