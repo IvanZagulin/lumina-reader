@@ -17,6 +17,7 @@ import com.lumina.reader.core.model.ReaderSettings
 import com.lumina.reader.core.model.ReadingHighlight
 import com.lumina.reader.core.model.ReadingStats
 import com.lumina.reader.core.parser.BookParserFactory
+import com.lumina.reader.core.parser.parse
 import com.lumina.reader.core.preferences.ReaderPreferences
 import com.lumina.reader.core.repository.BookCacheRepository
 import com.lumina.reader.core.tts.TtsChapter
