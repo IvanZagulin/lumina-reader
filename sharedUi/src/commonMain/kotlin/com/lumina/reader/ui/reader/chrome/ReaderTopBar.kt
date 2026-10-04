@@ -33,15 +33,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumina.reader.ui.theme.LuminaDimens
+import androidx.compose.ui.text.style.TextAlign
 
 /**
- * The top capsule of the reader: back, book and chapter title, bookmark and
+ * The top capsule of the reader: back, the book title (centred), bookmark and
  * a menu (§4.2). 56dp tall, 12dp from the screen edges, under the status bar.
  */
 @Composable
 fun ReaderTopBar(
     title: String,
-    subtitle: String,
     isBookmarked: Boolean,
     bookmarkEnabled: Boolean,
     keepScreenOn: Boolean,
@@ -83,19 +83,11 @@ fun ReaderTopBar(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.content,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (subtitle.isNotEmpty()) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 12.sp,
-                            color = colors.muted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
                 IconButton(onClick = onToggleBookmark, enabled = bookmarkEnabled) {
                     Icon(

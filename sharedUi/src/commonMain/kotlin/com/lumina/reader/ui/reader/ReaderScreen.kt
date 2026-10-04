@@ -89,6 +89,8 @@ import com.lumina.reader.ui.theme.LuminaMotion
 import com.lumina.reader.ui.theme.rememberLuminaHaptics
 import com.lumina.reader.ui.theme.rememberReducedMotion
 import kotlinx.coroutines.delay
+import com.lumina.reader.ui.reader.navigation.currentTocIndex
+import com.lumina.reader.ui.reader.navigation.navigationTocItems
 
 @Composable
 fun ReaderScreen(
@@ -166,6 +168,13 @@ private fun ReaderScreenContent(
     val book by viewModel.book.collectAsState()
     val parsedBook by viewModel.parsedBook.collectAsState()
     val currentChapterIndex by viewModel.currentChapterIndex.collectAsState()
+    // The reader's place in the book's own table of contents; the chapter names and numbers
+    // the chrome shows all come from this entry (see ReaderChapterLabel).
+    val livePosition by viewModel.position.collectAsState()
+    val tocItems = remember(parsedBook) { parsedBook?.let(::navigationTocItems).orEmpty() }
+    val tocCurrent = remember(tocItems, livePosition.chapterIndex, livePosition.paragraphIndex) {
+        currentTocIndex(tocItems, livePosition.chapterIndex, livePosition.paragraphIndex)
+    }
     val navigationRequest by viewModel.navigationRequest.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
@@ -401,15 +410,6 @@ private fun ReaderScreenContent(
             ) {
                 ReaderTopBar(
                     title = book?.title.orEmpty(),
-                    subtitle = currentParsedBook?.chapters?.getOrNull(currentChapterIndex)
-                        ?.let { chapter ->
-                            if (isPdf) {
-                                "Страница ${currentChapterIndex + 1} из ${currentParsedBook.chapters.size}"
-                            } else {
-                                displayChapterTitle(chapter.title, currentChapterIndex)
-                            }
-                        }
-                        .orEmpty(),
                     isBookmarked = isPageBookmarked,
                     bookmarkEnabled = parsedBook != null,
                     keepScreenOn = settings.keepScreenOn,
@@ -527,14 +527,14 @@ private fun ReaderScreenContent(
                     ScrubberModel(
                         value = fraction,
                         chapterStarts = starts,
-                        chapterLabel = if (isPdf) "Стр. ${currentChapterIndex + 1}" else "Гл. ${currentChapterIndex + 1}",
+                        chapterLabel = if (isPdf) "Стр. ${currentChapterIndex + 1}" else chapterNumberLabel(tocItems, tocCurrent, currentChapterIndex),
                         percentLabel = "${progressPercent.toInt()}%",
-                        stateDescription = scrubberStateDescription(fraction, currentChapterIndex + 1),
+                        stateDescription = scrubberStateDescription(fraction, chapterNumberForSpeech(tocItems, tocCurrent, currentChapterIndex)),
                         labelFor = { f ->
                             val index = chapterAtFraction(starts, f)
                             val title = chapters.getOrNull(index)?.let { displayChapterTitle(it.title, index) }.orEmpty()
                             ScrubberLabel(
-                                title = if (isPdf) "Страница ${index + 1}" else "Глава ${index + 1} · $title",
+                                title = if (isPdf) "Страница ${index + 1}" else scrubberChapterTitle(tocItems, index, title),
                                 detail = formatPercentLabel(f * 100f)
                             )
                         },
