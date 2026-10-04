@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,9 +50,9 @@ import com.lumina.reader.ui.components.swipeReleaseGate
 import com.lumina.reader.ui.components.toCoverModel
 import com.lumina.reader.ui.components.toShelfBookUi
 import com.lumina.reader.ui.theme.Lumina
-import com.lumina.reader.ui.theme.LuminaHaptics
-import com.lumina.reader.ui.transition.LocalBookTransition
-import com.lumina.reader.ui.transition.bookTransitionSlot
+import com.lumina.reader.ui.theme.rememberLuminaHaptics
+import com.lumina.reader.ui.transition.LocalBookSlotHost
+import com.lumina.reader.ui.transition.bookSlot
 
 /**
  * A row of the «Список» view (spec §4.1 `BookListRow`, replaces the old
@@ -72,8 +71,8 @@ fun BookListRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val transition = LocalBookTransition.current
-    val view = LocalView.current
+    val transition = LocalBookSlotHost.current
+    val haptics = rememberLuminaHaptics()
     val cover = remember(book) { book.toCoverModel() }
     val description = remember(book) { shelfBookDescription(book.toShelfBookUi()) }
     val swipeGate = rememberSwipeReleaseGate()
@@ -108,11 +107,11 @@ fun BookListRow(
                     role = Role.Button,
                     onLongClickLabel = "Действия с книгой",
                     onLongClick = {
-                        LuminaHaptics.longPress(view)
+                        haptics.longPress()
                         onMore()
                     },
                     onClick = {
-                        LuminaHaptics.tick(view)
+                        haptics.tick()
                         onOpen()
                     }
                 )
@@ -125,7 +124,7 @@ fun BookListRow(
                 width = 48.dp,
                 modifier = Modifier
                     .size(48.dp, 72.dp)
-                    .bookTransitionSlot(transition, slotKey, book.id)
+                    .bookSlot(transition, slotKey, book.id)
                     .graphicsLayer { alpha = if (transition?.hiddenBookId == book.id) 0f else 1f }
             )
             Spacer(Modifier.width(14.dp))

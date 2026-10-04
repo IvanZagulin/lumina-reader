@@ -16,11 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.model.Book
+import com.lumina.reader.ui.components.screenWidthDp
 import com.lumina.reader.ui.components.BookcaseRow
 import com.lumina.reader.ui.components.ShelfBookSize
 import com.lumina.reader.ui.components.ShelfBookUi
@@ -46,7 +46,7 @@ fun ShelfDetailSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val preferred = rememberShelfBookSize()
-    val screenWidth = LocalConfiguration.current.screenWidthDp.toFloat()
+    val screenWidth = screenWidthDp().toFloat()
     val (columns, coverWidth) = remember(screenWidth, preferred) {
         bookcaseLayout(screenWidth, preferred.width.value)
     }
