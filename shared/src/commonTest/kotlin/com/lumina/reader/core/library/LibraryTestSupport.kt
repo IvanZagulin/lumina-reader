@@ -88,7 +88,11 @@ internal class FakeBookDao : BookDao {
     override suspend fun updateFavorite(id: Long, isFav: Boolean) = update(id) { it.copy(isFavorite = isFav) }
 
     override suspend fun updateCompleted(id: Long, isComp: Boolean, completedAt: Long) =
-        update(id) { it.copy(isCompleted = isComp, completedAt = if (isComp) completedAt else null) }
+        update(id) { it.copy(
+            isCompleted = isComp,
+            startedAt = if (isComp && it.startedAt == null) completedAt else it.startedAt,
+            completedAt = if (isComp) completedAt else null
+        ) }
 
     override suspend fun updateCollection(id: Long, collection: String) = update(id) { it.copy(collection = collection) }
 
@@ -105,7 +109,9 @@ internal class FakeBookDao : BookDao {
             currentParagraphIndex = paragraphIndex,
             currentCharOffset = charOffset,
             currentProgressPercent = progress,
-            lastReadTimestamp = timestamp
+            lastReadTimestamp = timestamp,
+            startedAt = it.startedAt ?: timestamp.takeIf { progress > 0f || chapterIndex > 0 || paragraphIndex > 0 },
+            completedAt = it.completedAt ?: timestamp.takeIf { _ -> progress >= 99f && it.currentProgressPercent < 99f }
         )
     }
 
@@ -127,21 +133,6 @@ internal class FakeBookDao : BookDao {
     override suspend fun countBooks(): Int = books.size
 
     override suspend fun countBooksWithPath(filePath: String): Int = books.count { it.filePath == filePath }
-
-    override suspend fun renameCollection(oldName: String, newName: String): Int {
-        var changed = 0
-        change { list ->
-            list.map {
-                if (it.collection.trim().equals(oldName, ignoreCase = true)) {
-                    changed++
-                    it.copy(collection = newName)
-                } else {
-                    it
-                }
-            }
-        }
-        return changed
-    }
 
     override suspend fun deleteBookmarksOfBook(bookId: Long) {
         deletedBookmarksOf += bookId

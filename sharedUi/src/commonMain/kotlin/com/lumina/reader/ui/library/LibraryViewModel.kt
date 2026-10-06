@@ -206,7 +206,7 @@ class LibraryViewModel(
 
     fun toggleCompleted(book: Book) {
         viewModelScope.launch(Dispatchers.Default) {
-            bookDao.updateCompleted(book.id, !book.isCompleted)
+            bookDao.updateCompleted(book.id, !book.isDone())
         }
     }
 

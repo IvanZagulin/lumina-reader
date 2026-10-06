@@ -15,7 +15,7 @@ import com.lumina.reader.platform.PlatformLock
  */
 object BookCacheRepository {
     /** Increase whenever parser output changes in a way the reader depends on. */
-    const val PARSER_CACHE_VERSION = 2
+    const val PARSER_CACHE_VERSION = 3
 
     /** Upper bound for the estimated size of all cached books (48 MB on Android, less on the iPhone). */
     val MAX_CACHE_BYTES: Int = PLATFORM_BOOK_CACHE_BYTES

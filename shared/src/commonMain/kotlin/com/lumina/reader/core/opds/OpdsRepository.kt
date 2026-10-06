@@ -104,7 +104,8 @@ class OpdsRepository(
     private suspend fun fetchOpenSearchTemplate(url: String, catalog: OpdsCatalogConfig?): String? =
         clientProvider(url).prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
-            val body = response.readBodyBytes(MAX_FEED_BYTES) ?: return@execute null
+            val body = response.readBodyBytes(MAX_FEED_BYTES)
+                ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
             parser.parseOpenSearchTemplate(body, response.finalUrl)
         }
 
@@ -125,9 +126,9 @@ class OpdsRepository(
         if (!link.isOpenSearchDescription && link.type?.contains("atom", ignoreCase = true) == true) {
             return@withContext null
         }
-        val template = runCatching { fetchOpenSearchTemplate(link.href, catalog) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrNull()
+        // Let failures reach the caller: neither cache may remember a failed
+        // request as a catalogue that permanently has no search support.
+        val template = fetchOpenSearchTemplate(link.href, catalog)
         cacheLock.withLock { linkTemplateCache[link.href] = template.orEmpty() }
         template
     }
@@ -142,7 +143,13 @@ class OpdsRepository(
         } catch (e: Exception) {
             return null // not cached: the catalogue may be reachable later
         }
-        val template = root.searchLink?.let { templateForLink(it, catalog) }
+        val template = try {
+            root.searchLink?.let { templateForLink(it, catalog) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null // allow legacy search now and retry OpenSearch next time
+        }
         cacheLock.withLock { templateCache[catalog.id] = template.orEmpty() }
         return template
     }

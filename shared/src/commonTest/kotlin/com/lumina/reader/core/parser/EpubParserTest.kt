@@ -210,7 +210,10 @@ internal object EpubFixtures {
     val longLine = "Длинная строка прозы, которую конвертер отделил тегом br вместо отдельного абзаца, " +
         "как это часто бывает."
 
-    fun hiddenNotesBook(): ByteArray {
+    fun hiddenNotesBook(notesFirst: Boolean = false, notesInSpine: Boolean = true): ByteArray {
+        val chapterRef = "<itemref idref=\"ch\"/>"
+        val notesRef = if (notesInSpine) "<itemref idref=\"notes\" linear=\"no\"/>" else ""
+        val spine = if (notesFirst) notesRef + chapterRef else chapterRef + notesRef
         val opf3 = """
             <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
               <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Книга</dc:title></metadata>
@@ -219,7 +222,7 @@ internal object EpubFixtures {
                 <item id="ch" href="ch.xhtml" media-type="application/xhtml+xml"/>
                 <item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>
               </manifest>
-              <spine><itemref idref="ch"/><itemref idref="notes" linear="no"/></spine>
+              <spine>$spine</spine>
             </package>
         """.trimIndent()
         val nav3 = """
@@ -449,6 +452,20 @@ class EpubParserTest {
 
         // An <aside> footnote nobody links to stays in the text.
         assertTrue(paragraphs.any { ParagraphMarkup.plainText(it) == "Видимая врезка." })
+    }
+
+    @Test
+    fun hiddenNotesAreIndependentOfSpineOrderAndMembership() {
+        val expected = parseBytes(EpubFixtures.hiddenNotesBook())
+        for (bytes in listOf(
+            EpubFixtures.hiddenNotesBook(notesFirst = true),
+            EpubFixtures.hiddenNotesBook(notesInSpine = false)
+        )) {
+            val book = parseBytes(bytes)
+            assertEquals(expected.footnotes, book.footnotes)
+            assertEquals(expected.chapters, book.chapters)
+            assertEquals(expected.tableOfContents, book.tableOfContents)
+        }
     }
 
     @Test

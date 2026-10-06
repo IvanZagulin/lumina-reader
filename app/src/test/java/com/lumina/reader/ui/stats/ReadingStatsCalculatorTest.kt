@@ -113,6 +113,21 @@ class ReadingStatsCalculatorTest {
     }
 
     @Test
+    fun `manual unread status agrees with library counts at one hundred percent`() {
+        val result = ReadingStatsCalculator.calculate(
+            stats = emptyList(),
+            books = listOf(
+                book(1, "Перечитать").copy(currentProgressPercent = 100f),
+                book(2, "Дочитана").copy(currentProgressPercent = 99f, completedAt = now)
+            ),
+            nowMillis = now,
+            timeZone = zone
+        )
+        assertEquals(1, result.readingBookCount)
+        assertEquals(1, result.completedBookCount)
+    }
+
+    @Test
     fun `uses completion timestamps for monthly and yearly book goals`() {
         val completedAt = millis("2026-08-10T12:00:00Z")
         val completedBook = book(1, "Готовая").copy(

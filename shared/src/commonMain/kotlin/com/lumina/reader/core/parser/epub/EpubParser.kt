@@ -119,12 +119,8 @@ class EpubParser internal constructor(
         spineItems.forEachIndexed { spineIndex, (path, linear) ->
             if (!seen.add(path)) return@forEachIndexed
             if (!linear && path !in tocPaths) {
-                // Not part of the reading order, but it may hold the footnotes
-                // the text links to (a common EPUB 3 layout): read it for them only.
-                val prefix = "$path#"
-                if (notes.referenced.keys.any { it.startsWith(prefix) }) {
-                    readDocument(archive, path, notes, canonicalPath) { null }
-                }
+                // Referenced notes are resolved after all reading documents,
+                // regardless of their position (or absence) in the spine.
                 return@forEachIndexed
             }
             val doc = readDocument(archive, path, notes, canonicalPath, ::loadImage) ?: return@forEachIndexed
@@ -132,7 +128,21 @@ class EpubParser internal constructor(
             docs.add(DocEntry(path, spineIndex, doc))
         }
 
-        // 5. Footnotes: keep referenced bodies, then drop references without a body.
+        // 5. Resolve note documents after collecting references. A note can
+        // itself link to another note, so keep going until no new file remains.
+        // Each archive entry is read at most once in this pass, including cycles.
+        val noteDocumentsRead = docs.mapTo(HashSet()) { it.path }
+        while (true) {
+            val pending = notes.referenced.keys.map { it.substringBefore('#') }
+                .distinct().filter { it !in noteDocumentsRead }
+            if (pending.isEmpty()) break
+            for (path in pending) {
+                noteDocumentsRead.add(path)
+                readDocument(archive, path, notes, canonicalPath) { null }
+            }
+        }
+
+        // Keep referenced bodies, then drop references without a body.
         val footnotes = LinkedHashMap<String, String>()
         for (key in notes.referenced.keys) {
             val body = notes.bodies[key] ?: continue

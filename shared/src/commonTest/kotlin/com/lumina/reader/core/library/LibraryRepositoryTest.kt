@@ -105,6 +105,22 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun renamingAndDeletingAShelfMovesAllUnicodeAndWhitespaceVariants() = repositoryTest {
+        val one = addBook("a.fb2", collection = "Научная фантастика")
+        val two = addBook("b.fb2", collection = "  НАУЧНАЯ   ФАНТАСТИКА ")
+        val other = addBook("c.fb2", collection = "Учеба")
+        repository.createShelf("Научная фантастика", emptyList())
+
+        assertTrue(repository.renameShelf("научная фантастика", "Архив"))
+        assertTrue(dao.books.filter { it.id in setOf(one.id, two.id) }.all { it.collection == "Архив" })
+        assertFalse(preferences.customShelves.first().any { it.equals("Научная фантастика", true) })
+        assertTrue(repository.deleteShelf("АРХИВ"))
+        assertTrue(dao.books.filter { it.id in setOf(one.id, two.id) }.all { it.collection == LibraryPreferences.MAIN_SHELF })
+        assertFalse(preferences.customShelves.first().any { it.equals("Архив", true) })
+        assertEquals("Учеба", dao.books.single { it.id == other.id }.collection)
+    }
+
+    @Test
     fun shelvesAreCreatedRenamedAndDeleted() = repositoryTest {
         val book = addBook("a.fb2", collection = "Учеба")
         assertEquals(LibraryPreferences.DEFAULT_SHELVES, preferences.customShelves.first())

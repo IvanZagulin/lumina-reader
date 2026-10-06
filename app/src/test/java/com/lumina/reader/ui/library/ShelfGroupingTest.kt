@@ -29,6 +29,7 @@ class ShelfGroupingTest {
         format = BookFormat.EPUB,
         currentProgressPercent = progress,
         isCompleted = completed,
+        completedAt = if (completed || progress >= 99f) lastRead else null,
         collection = collection,
         seriesName = series,
         seriesOrder = order,

@@ -48,6 +48,17 @@ class LibraryFilterTest {
     }
 
     @Test
+    fun manualUnreadStatusWinsOverPercentageInEveryFilter() {
+        val unread = books.first().copy(currentProgressPercent = 100f, isCompleted = false, completedAt = null)
+        val finished = books.last().copy(currentProgressPercent = 99f, completedAt = 123L)
+        val all = listOf(unread, finished)
+        for (status in listOf(ReadingStatus.UNREAD, ReadingStatus.READING)) {
+            assertEquals(listOf(unread.id), filterLibraryBooks(all, "", null, status, ShelfSelection()).map(Book::id))
+        }
+        assertEquals(listOf(finished.id), filterLibraryBooks(all, "", null, ReadingStatus.COMPLETED, ShelfSelection()).map(Book::id))
+    }
+
+    @Test
     fun searchAndFormatFiltersCombine() {
         val byAuthor = filterLibraryBooks(books, "  булгаков ", null, ReadingStatus.ALL, ShelfSelection())
         assertEquals(listOf(2L), byAuthor.map(Book::id))

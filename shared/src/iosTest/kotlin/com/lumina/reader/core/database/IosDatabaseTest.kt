@@ -14,6 +14,7 @@ import platform.Foundation.NSTemporaryDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -61,6 +62,22 @@ class IosDatabaseTest {
             val completed = books.getBookById(id)!!
             assertTrue(completed.isDone())
             assertEquals(2_000L, completed.completedAt)
+            assertEquals(50f, completed.currentProgressPercent)
+
+            books.updateCompleted(id, isComp = false, completedAt = 2_100L)
+            assertFalse(books.getBookById(id)!!.isDone())
+            assertEquals(40, books.getBookById(id)!!.currentCharOffset)
+            books.updateProgress(id, 2, 5, 40, 99f, 3_000L)
+            assertTrue(books.getBookById(id)!!.isDone())
+            books.updateCompleted(id, isComp = false, completedAt = 3_100L)
+            books.updateProgress(id, 2, 5, 40, 100f, 3_200L)
+            assertFalse(books.getBookById(id)!!.isDone())
+
+            // The same Unicode matching runs inside a Room transaction on iOS.
+            books.updateCollection(id, " НАУЧНАЯ   ФАНТАСТИКА ")
+            assertEquals(1, books.renameCollection("научная фантастика", "Архив"))
+            assertEquals("Архив", books.getBookById(id)!!.collection)
+            assertEquals(1, books.renameCollection("АРХИВ", "Основная"))
 
             val notes = database.bookmarkDao()
             notes.insertBookmark(Bookmark(bookId = id, chapterIndex = 2, paragraphIndex = 5, snippet = "x"))

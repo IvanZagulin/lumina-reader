@@ -250,8 +250,8 @@ private fun BookSheetMain(
                 onClick = onToggleFavorite
             ),
             SheetAction(
-                if (book.isCompleted) "Не прочитано" else "Прочитано",
-                if (book.isCompleted) Icons.Rounded.RemoveDone else Icons.Rounded.TaskAlt,
+                if (book.isDone()) "Не прочитано" else "Прочитано",
+                if (book.isDone()) Icons.Rounded.RemoveDone else Icons.Rounded.TaskAlt,
                 onClick = onToggleCompleted
             ),
             SheetAction("На полку…", Icons.AutoMirrored.Rounded.DriveFileMove, onClick = onMoveToShelf),

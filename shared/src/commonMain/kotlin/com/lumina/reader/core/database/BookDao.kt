@@ -31,6 +31,7 @@ interface BookDao {
     @Query("UPDATE books SET isFavorite = :isFav WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFav: Boolean)
 
+    /** Changes the completion status without moving the reader's saved position. */
     @Query("""
         UPDATE books
         SET isCompleted = :isComp,
@@ -38,8 +39,7 @@ interface BookDao {
                 WHEN :isComp AND startedAt IS NULL THEN :completedAt
                 ELSE startedAt
             END,
-            completedAt = CASE WHEN :isComp THEN :completedAt ELSE NULL END,
-            currentProgressPercent = CASE WHEN :isComp THEN 100.0 ELSE currentProgressPercent END
+            completedAt = CASE WHEN :isComp THEN :completedAt ELSE NULL END
         WHERE id = :id
     """)
     suspend fun updateCompleted(
@@ -51,6 +51,10 @@ interface BookDao {
     @Query("UPDATE books SET collection = :collection WHERE id = :id")
     suspend fun updateCollection(id: Long, collection: String)
 
+    /**
+     * Completion is recorded on crossing 99%, not on every save near the end:
+     * an explicit "unread" choice must survive reopening and saving that page.
+     */
     @Query("""
         UPDATE books
         SET currentChapterIndex = :chapterIndex,
@@ -65,7 +69,8 @@ interface BookDao {
                 ELSE startedAt
             END,
             completedAt = CASE
-                WHEN :progress >= 99.0 AND completedAt IS NULL THEN :timestamp
+                WHEN :progress >= 99.0 AND currentProgressPercent < 99.0
+                     AND completedAt IS NULL THEN :timestamp
                 ELSE completedAt
             END
         WHERE id = :bookId
@@ -118,9 +123,17 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books WHERE filePath = :filePath")
     suspend fun countBooksWithPath(filePath: String): Int
 
-    /** Moves every book of a shelf to another shelf (rename or delete of a shelf). */
-    @Query("UPDATE books SET collection = :newName WHERE TRIM(collection) = :oldName COLLATE NOCASE")
-    suspend fun renameCollection(oldName: String, newName: String): Int
+    /** SQLite NOCASE only folds ASCII; match shelves the same way as the UI. */
+    @Transaction
+    suspend fun renameCollection(oldName: String, newName: String): Int {
+        fun normalized(name: String) = name.trim().replace(Regex("\\s+"), " ")
+        val from = normalized(oldName)
+        val matches = getAllBooksOnce().filter {
+            normalized(it.collection).equals(from, ignoreCase = true)
+        }
+        for (book in matches) updateCollection(book.id, normalized(newName))
+        return matches.size
+    }
 
     /** Bookmarks of a deleted book; mirrors BookmarkDao.deleteBookmarksForBook. */
     @Query("DELETE FROM bookmarks WHERE bookId = :bookId")

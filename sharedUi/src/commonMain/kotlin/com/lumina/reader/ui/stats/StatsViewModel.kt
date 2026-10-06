@@ -504,11 +504,9 @@ object ReadingStatsCalculator {
             validStats.sumOf { it.sessionDurationSeconds } / validStats.size
         val longestSession = validStats.maxOfOrNull { it.sessionDurationSeconds } ?: 0L
 
-        val completedBookCount = books.count {
-            it.isCompleted || it.currentProgressPercent >= 99f
-        }
+        val completedBookCount = books.count(Book::isDone)
         val readingBookCount = books.count {
-            it.currentProgressPercent > 0f && !it.isCompleted && it.currentProgressPercent < 99f
+            it.currentProgressPercent > 0f && !it.isDone()
         }
         val unreadBookCount = (books.size - completedBookCount - readingBookCount).coerceAtLeast(0)
 

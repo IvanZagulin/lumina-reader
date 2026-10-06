@@ -78,11 +78,11 @@ fun filterLibraryBooks(
         ReadingStatus.UNREAD -> allBooks.sortedForUnread()
         ReadingStatus.ALL -> allBooks.sortedForLibrary()
         ReadingStatus.READING -> allBooks
-            .filter { it.currentProgressPercent > 0f && !it.isCompleted }
+            .filter { it.currentProgressPercent > 0f && !it.isDone() }
             .sortedForLibrary()
         ReadingStatus.FAVORITES -> allBooks.filter { it.isFavorite }.sortedForLibrary()
         ReadingStatus.COMPLETED -> allBooks
-            .filter { it.isCompleted || it.currentProgressPercent >= 99f }
+            .filter(Book::isDone)
             .sortedForLibrary()
         ReadingStatus.COLLECTIONS -> when {
             shelf.seriesName != null -> allBooks

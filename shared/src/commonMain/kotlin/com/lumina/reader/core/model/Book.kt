@@ -38,5 +38,7 @@ data class Book(
     val seriesName: String = "",
     val seriesOrder: Int = 0
 ) {
-    fun isDone(): Boolean = isCompleted || currentProgressPercent >= 99f
+    // Completion is recorded explicitly or when reading crosses 99%. Clearing
+    // it must keep the position without the percentage immediately undoing it.
+    fun isDone(): Boolean = isCompleted || completedAt != null
 }

@@ -59,7 +59,7 @@ class LibrarySeriesTest {
             book(title = "Новая Б", order = 0).copy(seriesName = ""),
             book(title = "Дочитана", order = 0).copy(seriesName = "", isCompleted = true),
             book(title = "Почти всё", order = 0)
-                .copy(seriesName = "", currentProgressPercent = 99.5f),
+                .copy(seriesName = "", currentProgressPercent = 99.5f, completedAt = 1_000L),
             book(title = "Давно начата", order = 0)
                 .copy(seriesName = "", currentProgressPercent = 40f, lastReadTimestamp = 1_000L),
             book(title = "Новая А", order = 0).copy(seriesName = ""),
