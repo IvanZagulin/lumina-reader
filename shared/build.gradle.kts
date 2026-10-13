@@ -105,6 +105,9 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            // Lets the OPDS repository be tested against answers instead of a
+            // network: which URL it asks first is the whole behaviour there.
+            implementation(libs.ktor.client.mock)
         }
         // JVM-only tests: parity of the common text code with java.nio /
         // java.util formatters (they run with testDebugUnitTest on Linux CI).
