@@ -30,6 +30,9 @@ data class OpdsAcquisition(
 
 data class OpdsSeries(val name: String, val index: Int? = null)
 
+/** An author of a book together with the feed listing everything the catalogue has by them. */
+data class OpdsAuthorFeed(val name: String, val url: String)
+
 sealed interface OpdsEntry {
     /** Stable identity inside a feed (the Atom id, or a link when the id is missing). */
     val key: String
@@ -53,6 +56,11 @@ sealed interface OpdsEntry {
         val thumbnailUrl: String? = null,
         val coverUrl: String? = null,
         val series: OpdsSeries? = null,
+        /**
+         * The authors of [authors] the catalogue offers a feed for, so tapping a
+         * name opens all their books. Empty for a catalogue that offers none.
+         */
+        val authorFeeds: List<OpdsAuthorFeed> = emptyList(),
         val acquisitions: List<OpdsAcquisition> = emptyList(),
         /** Links to other feeds: "all books of the author", "the series"... */
         val relatedLinks: List<OpdsLink> = emptyList(),
@@ -65,6 +73,10 @@ sealed interface OpdsEntry {
     ) : OpdsEntry {
         val authorLine: String
             get() = authors.joinToString(", ")
+
+        /** The feed with all books by [name], or null when the catalogue has none. */
+        fun authorFeedFor(name: String): String? =
+            authorFeeds.firstOrNull { it.name == name }?.url
 
         val preferredAcquisition: OpdsAcquisition?
             get() = OpdsFormats.preferred(acquisitions)

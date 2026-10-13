@@ -116,7 +116,7 @@ class OpdsFeedParser {
         val entryDepth = parser.depth
         var id = ""
         var title = ""
-        val authors = mutableListOf<String>()
+        val authors = mutableListOf<RawAuthorRef>()
         var summary = ""
         var content = ""
         val links = mutableListOf<OpdsLink>()
@@ -134,7 +134,7 @@ class OpdsFeedParser {
             when (localName(parser.name).lowercase()) {
                 "id" -> id = readText(parser)
                 "title" -> title = readText(parser)
-                "author" -> readAuthor(parser)?.let(authors::add)
+                "author" -> readAuthor(parser, baseUrl)?.let(authors::add)
                 "summary" -> summary = readText(parser)
                 "content" -> content = readText(parser)
                 "link" -> readLink(parser, baseUrl)?.let(links::add)
@@ -180,21 +180,27 @@ class OpdsFeedParser {
         )
     }
 
-    private fun readAuthor(parser: FeedCursor): String? {
+    /**
+     * `<author><name>…</name><uri>/a/217841</uri></author>`. The `uri` is kept
+     * as a fallback for the author's feed: most catalogues also publish it as a
+     * `related` link of the entry, but not all of them do (see [uriForAuthor]).
+     */
+    private fun readAuthor(parser: FeedCursor, baseUrl: String): RawAuthorRef? {
         val depth = parser.depth
         var name: String? = null
+        var uri: String? = null
         while (true) {
             val event = parser.next()
             if (event == END_DOCUMENT) break
             if (event == END_TAG && parser.depth == depth) break
             if (event != START_TAG) continue
-            if (localName(parser.name).equals("name", ignoreCase = true)) {
-                name = readText(parser)
-            } else {
-                skip(parser)
+            when (localName(parser.name).lowercase()) {
+                "name" -> name = readText(parser)
+                "uri" -> uri = readText(parser).takeIf { it.isNotBlank() }?.let { OpdsUrls.resolve(baseUrl, it) }
+                else -> skip(parser)
             }
         }
-        return name?.takeIf { it.isNotBlank() }
+        return name?.takeIf { it.isNotBlank() }?.let { RawAuthorRef(it, uri) }
     }
 
     private fun readLink(parser: FeedCursor, baseUrl: String): OpdsLink? {
@@ -257,7 +263,7 @@ class OpdsFeedParser {
     private class RawEntry(
         val id: String,
         val title: String,
-        val authors: List<String>,
+        val authors: List<RawAuthorRef>,
         val summary: String,
         val content: String,
         val links: List<OpdsLink>,
@@ -298,14 +304,16 @@ class OpdsFeedParser {
                 ?: seriesFromText(raw.content)
                 ?: seriesFromText(raw.summary)
                 ?: seriesFromLinks(related)
+            val names = raw.authors.map { it.name }.distinct()
             return OpdsEntry.Publication(
                 key = raw.id.ifBlank { acquisitionLinks.first().href },
                 title = title,
-                authors = raw.authors.distinct(),
+                authors = names,
                 summary = description,
                 thumbnailUrl = thumbnail ?: cover,
                 coverUrl = cover ?: thumbnail,
                 series = series,
+                authorFeeds = authorFeedsOf(raw.authors, related),
                 acquisitions = acquisitions,
                 relatedLinks = related.distinctBy { it.href },
                 categories = raw.categories.distinct(),
@@ -458,6 +466,9 @@ class OpdsFeedParser {
         private val NON_NAVIGATION_RELS = setOf("self", "search", "up", "start", "next", "previous", "prev")
         private val TAG_LIKE = Regex("<\\s*/?[a-zA-Z!]")
 
+        /** Flibusta's author page at the end of a URL: "https://host/a/217841". */
+        private val AUTHOR_PAGE_PATH = Regex("/a/([0-9]+)/?$")
+
         // The keywords are matched in any case with explicit character classes
         // (see anyCase) instead of RegexOption.IGNORE_CASE: the JVM folds
         // Cyrillic case only because Kotlin adds UNICODE_CASE there, which
@@ -494,6 +505,63 @@ class OpdsFeedParser {
             val name = match.groupValues[1].trim().trim('«', '»', '"').trim()
             if (name.isEmpty()) return null
             return OpdsSeries(name, match.groupValues[2].toIntOrNull())
+        }
+
+        /** One `<author>` of an entry as the feed spells it. */
+        class RawAuthorRef(val name: String, val uri: String?)
+
+        /**
+         * The feed of each author the catalogue can show all books of, so the
+         * sheet can make the name itself tappable (and not only offer the
+         * "Все книги автора …" row among the related feeds).
+         *
+         * Two sources, in this order:
+         * - a `related` feed link of the entry whose title names the author,
+         *   which is what Flibusta and most OPDS 1.x servers publish
+         *   (`<link rel="related" title="Все книги автора Гусина Дарья"
+         *   href="/opds/author/217841" type="application/atom+xml"/>`);
+         * - else the author's own `<uri>`, when it can be used as a feed
+         *   (see [uriForAuthor]).
+         */
+        fun authorFeedsOf(authors: List<RawAuthorRef>, related: List<OpdsLink>): List<OpdsAuthorFeed> {
+            // A series link can carry an author's name as part of a book title;
+            // it is recognised by its own wording and never taken for an author.
+            val candidates = related.filter { link ->
+                link.title != null && seriesFromLinks(listOf(link)) == null
+            }
+            return authors
+                .distinctBy { it.name }
+                .mapNotNull { author ->
+                    val named = candidates.firstOrNull { it.title!!.contains(author.name, ignoreCase = true) }
+                    val url = named?.let { feedHrefForAuthor(it.href) } ?: uriForAuthor(author.uri)
+                    url?.let { OpdsAuthorFeed(author.name, it) }
+                }
+        }
+
+        /**
+         * The href of a `related` link that names an author. The server declared
+         * it an Atom feed, so it is used as it is — except for Flibusta's own
+         * oddity: it titles the link "Все книги автора …" but points it at the
+         * author's web page, whose feed sits next to it (see [opdsAuthorFeed]).
+         */
+        fun feedHrefForAuthor(href: String): String = opdsAuthorFeed(href) ?: href
+
+        /**
+         * An author's `<uri>` as a feed, or null when it cannot be one. Unlike a
+         * `related` link, a `uri` is not declared to be a feed at all and is
+         * usually the author's web page: opening that would only fail with
+         * "the server returned a web page", so only a URL inside the catalogue's
+         * OPDS tree (or one [opdsAuthorFeed] can turn into one) is kept.
+         */
+        fun uriForAuthor(uri: String?): String? {
+            val value = uri?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return opdsAuthorFeed(value) ?: value.takeIf { "/opds" in it.lowercase() }
+        }
+
+        /** Flibusta's author page "https://host/a/217841" -> "https://host/opds/author/217841". */
+        fun opdsAuthorFeed(url: String): String? {
+            val match = AUTHOR_PAGE_PATH.find(url) ?: return null
+            return url.substring(0, match.range.first) + "/opds/author/" + match.groupValues[1]
         }
 
         fun seriesFromLinks(links: List<OpdsLink>): OpdsSeries? {

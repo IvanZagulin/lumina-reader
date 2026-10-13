@@ -248,4 +248,64 @@ class OpdsFeedParserTest {
             OpdsFeedParser.seriesFromLinks(listOf(OpdsLink(href = "https://x/s/1", title = "Все КНИГИ СЕРИИ «Хроники»")))
         )
     }
+
+    @Test
+    fun offersTheAuthorsFeedSoTheNameCanBeTapped() {
+        val book = parse(rootFeed).entries[1] as OpdsEntry.Publication
+        // Flibusta titles the link "Все книги автора …" but points it at the author's
+        // web page; the feed next to it is what has to be opened.
+        assertEquals(
+            listOf(OpdsAuthorFeed("Анджей Сапковский", "https://flibusta.is/opds/author/1")),
+            book.authorFeeds
+        )
+        assertEquals("https://flibusta.is/opds/author/1", book.authorFeedFor("Анджей Сапковский"))
+        // No link and no <uri>: the name stays plain text.
+        assertNull(book.authorFeedFor("Второй Автор"))
+        assertNull(book.authorFeedFor("Неизвестный"))
+    }
+
+    @Test
+    fun takesAnAuthorFeedLinkAsItIsAndFallsBackToTheAuthorUri() {
+        val xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <title>Книга</title>
+                <author><name>Прямая Ссылка</name><uri>/a/5</uri></author>
+                <author><name>Только Uri</name><uri>/opds/author/9</uri></author>
+                <author><name>Веб Страница</name><uri>/writers/smith.html</uri></author>
+                <link href="/opds/author/5" rel="related" type="application/atom+xml"
+                      title="Все книги автора Прямая Ссылка"/>
+                <link href="/opds/sequencebooks/3" rel="related" type="application/atom+xml"
+                      title="Все книги серии &quot;Только Uri&quot;"/>
+                <link href="/b/1.epub" rel="http://opds-spec.org/acquisition" type="application/epub+zip"/>
+              </entry>
+            </feed>
+        """.trimIndent()
+        val book = parse(xml, url = "https://books.example/opds/new").entries.single() as OpdsEntry.Publication
+        assertEquals(
+            listOf(
+                // An href already inside /opds is left alone.
+                OpdsAuthorFeed("Прямая Ссылка", "https://books.example/opds/author/5"),
+                // No link naming this author: the <uri> is an OPDS feed, so it serves.
+                OpdsAuthorFeed("Только Uri", "https://books.example/opds/author/9")
+            ),
+            book.authorFeeds
+        )
+        // A <uri> that is a web page is dropped: opening it would only fail.
+        assertNull(book.authorFeedFor("Веб Страница"))
+    }
+
+    @Test
+    fun rewritesOnlyFlibustasAuthorPageShape() {
+        assertEquals("https://flibusta.is/opds/author/217841", OpdsFeedParser.opdsAuthorFeed("https://flibusta.is/a/217841"))
+        assertEquals("https://flibusta.is/opds/author/217841", OpdsFeedParser.opdsAuthorFeed("https://flibusta.is/a/217841/"))
+        assertNull(OpdsFeedParser.opdsAuthorFeed("https://flibusta.is/a/sapkowski"))
+        assertNull(OpdsFeedParser.opdsAuthorFeed("https://books.example/opds/author/7"))
+        // A feed link is trusted as it is unless it is that shape.
+        assertEquals("https://books.example/catalog/author/7", OpdsFeedParser.feedHrefForAuthor("https://books.example/catalog/author/7"))
+        assertNull(OpdsFeedParser.uriForAuthor(null))
+        assertNull(OpdsFeedParser.uriForAuthor("  "))
+        assertNull(OpdsFeedParser.uriForAuthor("https://books.example/people/7"))
+    }
 }

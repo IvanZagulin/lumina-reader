@@ -36,11 +36,18 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.download.DownloadState
 import com.lumina.reader.core.download.formatByteSize
+import com.lumina.reader.core.opds.OpdsEntry
 import com.lumina.reader.core.opds.OpdsLink
 import com.lumina.reader.ui.theme.Lumina
 import com.lumina.reader.ui.theme.LuminaDimens
@@ -124,11 +131,10 @@ fun OpdsBookDetailsSheet(
                 )
                 if (publication.authors.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = publication.authorLine,
-                        style = MaterialTheme.typography.bodyLarge,
+                    AuthorLine(
+                        publication = publication,
                         color = colors.primary,
-                        textAlign = TextAlign.Center
+                        onOpenAuthor = onOpenLink
                     )
                 }
                 publication.series?.let { series ->
@@ -259,3 +265,46 @@ fun OpdsBookDetailsSheet(
         }
     }
 }
+
+/**
+ * The authors under the title. A name the catalogue offers a feed for is
+ * underlined and tappable: it opens every book of that author, the same page
+ * the «Все книги автора …» row further down opens. A name without a feed stays
+ * plain, so nothing looks tappable that is not.
+ */
+@Composable
+private fun AuthorLine(
+    publication: OpdsEntry.Publication,
+    color: Color,
+    onOpenAuthor: (OpdsLink) -> Unit
+) {
+    val text = buildAnnotatedString {
+        publication.authors.forEachIndexed { index, name ->
+            if (index > 0) append(", ")
+            val url = publication.authorFeedFor(name)
+            val start = length
+            append(name)
+            if (url == null) return@forEachIndexed
+            addLink(
+                LinkAnnotation.Clickable(
+                    tag = url,
+                    styles = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)),
+                    linkInteractionListener = LinkInteractionListener {
+                        onOpenAuthor(OpdsLink(href = url, rel = "related", type = ATOM_FEED_TYPE, title = name))
+                    }
+                ),
+                start,
+                length
+            )
+        }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = color,
+        textAlign = TextAlign.Center
+    )
+}
+
+/** What an OPDS feed link is: the type the author's feed is opened as. */
+private const val ATOM_FEED_TYPE = "application/atom+xml"
