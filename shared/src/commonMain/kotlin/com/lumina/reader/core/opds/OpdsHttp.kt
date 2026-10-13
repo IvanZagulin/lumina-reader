@@ -22,7 +22,11 @@ object OpdsHttp {
 
     const val ACCEPT_FEED = "application/atom+xml;profile=opds-catalog, application/atom+xml, application/xml;q=0.9, */*;q=0.8"
 
-    private val feedTimeouts = HttpTimeouts(connectMillis = 10_000, readMillis = 20_000, writeMillis = 20_000, callMillis = 30_000)
+    // Connecting is kept short on purpose: a domain that is blocked for the user
+    // (flibusta.is without a VPN) never answers, and until that attempt gives up
+    // the catalogue's working mirror is not even tried. Reading has the long
+    // timeouts, since that is where a slow catalogue is actually slow.
+    private val feedTimeouts = HttpTimeouts(connectMillis = 7_000, readMillis = 15_000, writeMillis = 20_000, callMillis = 30_000)
     private val downloadTimeouts = HttpTimeouts(connectMillis = 15_000, readMillis = 60_000, writeMillis = 60_000, callMillis = 0)
 
     private val lock = PlatformLock()

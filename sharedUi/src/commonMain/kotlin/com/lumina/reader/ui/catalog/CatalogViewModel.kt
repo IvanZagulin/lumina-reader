@@ -329,8 +329,8 @@ class CatalogViewModel(
         searchJob = viewModelScope.launch {
             // One catalogue's search; returns whether it found anything. Each section
             // fills in as soon as its catalogue answers.
-            suspend fun searchIn(catalog: OpdsCatalogConfig): Boolean {
-                val result = repository.searchAll(listOf(catalog), query, scope.searchType).first()
+            suspend fun searchIn(catalog: OpdsCatalogConfig, timeoutMillis: Long = OpdsRepository.SEARCH_TIMEOUT_MS): Boolean {
+                val result = repository.searchAll(listOf(catalog), query, scope.searchType, timeoutMillis).first()
                 val feed = result.feed
                 val section = CatalogSearchSection(
                     catalog = catalog,
@@ -361,7 +361,9 @@ class CatalogViewModel(
                 // No ranking to do, or Flibusta failed a moment ago (blocked without a VPN):
                 // ask every catalogue at once and let each section fill in on its own.
                 catalogs.forEach { catalog -> launch { searchIn(catalog) } }
-            } else if (searchIn(primary)) {
+            } else if (searchIn(primary, OpdsRepository.PRIMARY_SEARCH_TIMEOUT_MS)) {
+                // Asked first and alone, so it gets the shorter budget: the other
+                // catalogues must not wait out its whole timeout before they start.
                 mutableState.update { state ->
                     val search = state.globalSearch ?: return@update state
                     if (search.query != query) return@update state

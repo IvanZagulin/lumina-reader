@@ -7,6 +7,7 @@ import com.lumina.reader.core.library.ImportLimits
 import com.lumina.reader.core.network.finalUrl
 import com.lumina.reader.core.network.lastHeader
 import com.lumina.reader.core.network.readBodyChunk
+import com.lumina.reader.core.opds.HostHealth
 import com.lumina.reader.core.opds.OpdsHttp
 import com.lumina.reader.core.opds.OpdsUrls
 import io.ktor.client.HttpClient
@@ -60,7 +61,9 @@ class BookDownloader(private val clientProvider: (url: String) -> HttpClient = {
         onProgress: (bytesRead: Long, totalBytes: Long?) -> Unit
     ): DownloadedFile = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
-        for (candidate in OpdsUrls.candidates(request.url, request.mirrorBaseUrls)) {
+        // Mirrors whose host just failed to answer go last: a book must not wait
+        // out a blocked domain first every single time (see HostHealth).
+        for (candidate in HostHealth.order(OpdsUrls.candidates(request.url, request.mirrorBaseUrls))) {
             try {
                 return@withContext try {
                     downloadOnce(candidate, request, target, maxBytes, onProgress)
@@ -83,6 +86,7 @@ class BookDownloader(private val clientProvider: (url: String) -> HttpClient = {
                 // I/O error, which must end the download instead of trying the
                 // next mirror.
                 ensureActive()
+                HostHealth.markUnreachable(candidate)
                 lastError = e
             }
         }
@@ -110,6 +114,8 @@ class BookDownloader(private val clientProvider: (url: String) -> HttpClient = {
                 request.headers.forEach { (name, value) -> headers[name] = value }
             }
         }.execute { response ->
+            // The host answered; even a refusal proves it is reachable.
+            HostHealth.markReachable(url)
             if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
             val total = response.lastHeader(HttpHeaders.ContentLength)?.toLongOrNull()?.takeIf { it > 0 }
             if (total != null && total > maxBytes) throw ImportException(ImportLimits.TOO_LARGE_MESSAGE)

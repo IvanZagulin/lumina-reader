@@ -221,7 +221,7 @@ class AiChatViewModel(
             throw e
         } catch (e: Exception) {
             reportExecutionResult(
-                "Не удалось обратиться к каталогу для «$query»: ${describeOpdsError(e)}. Ничего не было добавлено."
+                "Поиск «$query» не удался: ${describeOpdsError(e)}. Ничего не было добавлено."
             )
             return null
         }

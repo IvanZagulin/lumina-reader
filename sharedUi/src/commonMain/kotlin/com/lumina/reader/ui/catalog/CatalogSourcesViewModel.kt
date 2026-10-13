@@ -22,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import com.lumina.reader.core.network.ProxySettings
 import com.lumina.reader.core.opds.BuiltInCatalogs
 import com.lumina.reader.core.opds.CatalogHealth
+import com.lumina.reader.core.opds.HostHealth
 
 /** Result of "Проверить" for one catalogue or for the add/edit form. */
 sealed interface ConnectionCheck {
@@ -71,8 +72,10 @@ class CatalogSourcesViewModel(
     fun saveProxy(settings: ProxySettings) {
         viewModelScope.launch {
             preferences.setProxy(settings)
-            // Whatever a blocked catalogue failed with a moment ago says nothing about the new route.
+            // Whatever a blocked catalogue (or one of its mirrors) failed with a
+            // moment ago says nothing about the new route.
             BuiltInCatalogs.all.forEach { CatalogHealth.markReachable(it.id) }
+            HostHealth.reset()
             AppMessages.post(if (settings.usable) "Прокси сохранён" else "Прокси выключен")
         }
     }
@@ -173,12 +176,22 @@ class CatalogSourcesViewModel(
         )
     }
 
+    /**
+     * Asks the catalogue itself, never the stored copy of its feed: a check that
+     * answers "доступен" out of yesterday's cache tells the user nothing. The host
+     * that answered is named, because for a catalogue with mirrors that is the
+     * whole answer — "доступен (flibusta.site)" says the main domain is not.
+     */
     private suspend fun runCheck(catalog: OpdsCatalogConfig): ConnectionCheck = try {
-        val feed = withTimeout(CHECK_TIMEOUT_MS) { repository.fetchFeed(catalog.url, catalog) }
+        val feed = withTimeout(CHECK_TIMEOUT_MS) {
+            repository.fetchFeed(catalog.url, catalog, useCache = false)
+        }
         val folders = feed.navigation.size
         val books = feed.publications.size
         val title = feed.title.ifBlank { catalog.name }
-        ConnectionCheck.Success("Каталог «$title» доступен: разделов $folders, книг $books")
+        val host = OpdsUrls.host(feed.url)
+        val where = if (host != null && OpdsUrls.host(catalog.url) != host) " ($host)" else ""
+        ConnectionCheck.Success("Каталог «$title» доступен$where: разделов $folders, книг $books")
     } catch (e: CancellationException) {
         if (e is TimeoutCancellationException) {
             ConnectionCheck.Failure("Каталог не ответил вовремя")

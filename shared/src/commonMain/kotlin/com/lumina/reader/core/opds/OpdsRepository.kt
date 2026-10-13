@@ -57,9 +57,26 @@ class OpdsRepository(
      * Loads and parses a feed. Mirrors of [catalog] are tried in turn when the
      * main domain fails; authentication errors are reported immediately.
      */
-    suspend fun fetchFeed(url: String, catalog: OpdsCatalogConfig?): OpdsFeed = withContext(Dispatchers.IO) {
+    suspend fun fetchFeed(
+        url: String,
+        catalog: OpdsCatalogConfig?,
+        /** False for a connection check: it has to reach the server, not the stored copy. */
+        useCache: Boolean = true
+    ): OpdsFeed = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
-        for (candidate in OpdsUrls.candidates(url, catalog?.mirrorBaseUrls.orEmpty())) {
+        // A host that just failed to answer goes last: waiting out its connect
+        // timeout again, on every feed and every search, is what made the
+        // catalogues slow and the searches time out (see HostHealth).
+        val candidates = HostHealth.order(OpdsUrls.candidates(url, catalog?.mirrorBaseUrls.orEmpty()))
+        // The same feed on any mirror is the same feed, so a fresh copy of any of
+        // them answers at once. It is looked up across all of them, not only the
+        // URL asked for: after a restart nothing yet remembers which mirror works,
+        // and the copy lies under the one that answered last time.
+        if (useCache) {
+            val maxAge = OpdsFeedCache.maxAgeFor(url)
+            candidates.firstNotNullOfOrNull { cached(it, maxAge) }?.let { return@withContext it }
+        }
+        for (candidate in candidates) {
             try {
                 return@withContext fetchOnce(candidate, catalog)
             } catch (e: CancellationException) {
@@ -77,27 +94,48 @@ class OpdsRepository(
         // catalogue that is blocked or down is exactly when it is needed).
         val error = lastError
         val unauthorised = error is HttpStatusException && (error.code == 401 || error.code == 403)
-        if (!unauthorised) {
-            feedCache.read(url)?.let { stale ->
-                runCatching { parser.parseFeed(stale.body, stale.finalUrl) }.getOrNull()?.let { return@withContext it }
-            }
+        if (useCache && !unauthorised) {
+            candidates.firstNotNullOfOrNull { cached(it, Long.MAX_VALUE) }?.let { return@withContext it }
         }
         throw error ?: IOException("Не удалось открыть каталог")
     }
 
-    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed {
-        // A copy from the last day (an hour for searches) is shown at once.
-        feedCache.read(url, OpdsFeedCache.maxAgeFor(url))?.let { hit ->
-            runCatching { parser.parseFeed(hit.body, hit.finalUrl) }.getOrNull()?.let { return it }
+    /** The stored copy of [url], if there is one no older than [maxAgeMillis] that still parses. */
+    private fun cached(url: String, maxAgeMillis: Long): OpdsFeed? =
+        feedCache.read(url, maxAgeMillis)?.let { hit ->
+            runCatching { parser.parseFeed(hit.body, hit.finalUrl) }.getOrNull()
         }
+
+    private suspend fun fetchOnce(url: String, catalog: OpdsCatalogConfig?): OpdsFeed {
         NetworkProxy.ready()
-        return clientProvider(url).prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
-            if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
-            val body = response.readBodyBytes(MAX_FEED_BYTES)
-                ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
-            val feed = parser.parseFeed(body, response.finalUrl)
-            feedCache.write(url, response.finalUrl, body)
-            feed
+        try {
+            return withTimeout(ATTEMPT_TIMEOUT_MS) {
+                clientProvider(url).prepareGet(url) { feedHeaders(url, catalog) }.execute { response ->
+                    // The host answered; even a 404 proves it is reachable.
+                    HostHealth.markReachable(url)
+                    if (!response.status.isSuccess()) throw HttpStatusException(response.status.value)
+                    val body = response.readBodyBytes(MAX_FEED_BYTES)
+                        ?: throw OpdsFormatException(FEED_TOO_LARGE_MESSAGE)
+                    val feed = parser.parseFeed(body, response.finalUrl)
+                    feedCache.write(url, response.finalUrl, body)
+                    feed
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            // This attempt ran out of time, not the caller: the next mirror must
+            // still be tried, so it leaves as a failure and not as a cancellation
+            // (which fetchFeed and searchCatalog pass straight through).
+            HostHealth.markUnreachable(url)
+            throw IOException(ATTEMPT_TIMED_OUT_MESSAGE)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpStatusException) {
+            throw e // an answer, however unwelcome
+        } catch (e: OpdsFormatException) {
+            throw e // an answer too: the host served something that is not a feed
+        } catch (e: Exception) {
+            HostHealth.markUnreachable(url)
+            throw e
         }
     }
 
@@ -194,11 +232,20 @@ class OpdsRepository(
             return null
         }
 
-        if (catalog.builtIn) tryUrls(legacy)?.let { return it }
-        // The template is only looked up when needed: it costs a request to the root feed.
+        // Only the catalogue with a scoped search of its own (Flibusta) is asked its
+        // way first: "searchType=books" is the one way to search books and nothing
+        // else, and the template it advertises cannot do it. Every other catalogue
+        // is asked the way it says it wants to be asked, because the guessed shapes
+        // are wrong for it — iknigi and ekniga declare "?query={searchTerms}" and
+        // answer the guessed "?searchTerm=" with an error notice, so each of their
+        // searches used to throw away four requests before the right one.
+        val ownUrlsFirst = catalog.supportsScopedSearch
+        if (ownUrlsFirst) tryUrls(legacy)?.let { return it }
+        // The template costs a request to the root feed, which the feed cache almost
+        // always already holds.
         val template = searchTemplate(catalog)
         if (template != null) tryUrls(listOf(OpenSearch.expand(template, trimmed)))?.let { return it }
-        if (!catalog.builtIn) tryUrls(legacy)?.let { return it }
+        if (!ownUrlsFirst) tryUrls(legacy)?.let { return it }
 
         emptyFeed?.let { return it }
         if (tried.isEmpty()) throw OpdsFormatException("Каталог не поддерживает поиск")
@@ -245,29 +292,54 @@ class OpdsRepository(
         val others = catalogs.filter { it.id != BuiltInCatalogs.FLIBUSTA_ID }
         // Down a moment ago (blocked without a VPN): do not wait for it again, ask all at once.
         if (primary.isEmpty() || others.isEmpty() || primary.any { CatalogHealth.isLikelyDown(it.id) }) {
-            return findPublicationsIn(catalogs, query, SEARCH_TIMEOUT_MS)
+            return findPublicationsIn(catalogs, query, SEARCH_TIMEOUT_MS).foundOrThrow()
         }
-        val first = try {
-            findPublicationsIn(primary, query, PRIMARY_SEARCH_TIMEOUT_MS)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emptyList()
+        val first = findPublicationsIn(primary, query, PRIMARY_SEARCH_TIMEOUT_MS)
+        if (first.found.any { it.publication.acquisitions.isNotEmpty() }) return first.found
+        // The preferred catalogue found nothing to download: ask the rest, and keep
+        // what it did find, so one catalogue that cannot be reached never discards
+        // the results of another.
+        val rest = findPublicationsIn(others, query, SEARCH_TIMEOUT_MS)
+        return FindOutcome(
+            found = first.found + rest.found,
+            failures = first.failures + rest.failures,
+            allFailed = first.allFailed && rest.allFailed
+        ).foundOrThrow()
+    }
+
+    /** What the catalogues answered for one query: what was found, and who stayed silent. */
+    private class FindOutcome(
+        val found: List<FoundPublication>,
+        /** "Flibusta — Каталог не ответил вовремя", per catalogue that failed. */
+        val failures: List<String>,
+        /** True when not one of the catalogues asked answered at all. */
+        val allFailed: Boolean
+    ) {
+        /**
+         * The publications, unless nothing was found because nothing answered —
+         * only then is this a connection failure and not an empty result, and the
+         * message names every catalogue and its own reason.
+         */
+        fun foundOrThrow(): List<FoundPublication> {
+            if (found.isNotEmpty() || !allFailed || failures.isEmpty()) return found
+            throw IOException("ни один каталог не ответил (" + failures.joinToString("; ") + ")")
         }
-        if (first.any { it.publication.acquisitions.isNotEmpty() }) return first
-        return first + findPublicationsIn(others, query, SEARCH_TIMEOUT_MS)
     }
 
     private suspend fun findPublicationsIn(
         catalogs: List<OpdsCatalogConfig>,
         query: String,
         timeoutMillis: Long
-    ): List<FoundPublication> {
+    ): FindOutcome {
         val results = searchAll(catalogs, query, OpdsSearchType.BOOKS, timeoutMillis)
+        val failures = results.mapNotNull { result -> result.error?.let { "${result.catalog.name} — $it" } }
+        val allFailed = results.isNotEmpty() && results.all { it.feed == null }
         val direct = results.flatMap { result ->
             result.feed?.publications.orEmpty().map { FoundPublication(result.catalog, it) }
         }
-        if (direct.any { it.publication.acquisitions.isNotEmpty() }) return direct
+        if (direct.any { it.publication.acquisitions.isNotEmpty() }) {
+            return FindOutcome(direct, failures, allFailed = false)
+        }
 
         val folders = results.flatMap { result ->
             result.feed?.navigation.orEmpty().map { result.catalog to it }
@@ -286,15 +358,15 @@ class OpdsRepository(
             }.awaitAll().flatten()
         }
         val combined = (direct + expanded).distinctBy { it.catalog.id + "|" + it.publication.key }
-        if (combined.isEmpty() && results.isNotEmpty() && results.all { it.feed == null }) {
-            val failed = results.joinToString { it.catalog.name }
-            throw IOException("Не удалось подключиться к OPDS-каталогам: $failed")
-        }
-        return combined
+        return FindOutcome(combined, failures, allFailed)
     }
 
     private fun legacySearchUrls(catalog: OpdsCatalogConfig, query: String, type: OpdsSearchType): List<String> {
-        val base = catalog.siteBaseUrl?.trimEnd('/') ?: return emptyList()
+        // The catalogue's preferred base, unless its host just failed to answer:
+        // a search must not start on the domain that is blocked for this user when
+        // a mirror of the same site is known to work. fetchFeed still tries the
+        // other bases afterwards.
+        val base = HostHealth.order(catalog.searchBaseUrls).firstOrNull()?.trimEnd('/') ?: return emptyList()
         val encoded = OpdsUrls.encodeQuery(query)
         val urls = mutableListOf<String>()
         if (catalog.supportsScopedSearch) {
@@ -311,10 +383,25 @@ class OpdsRepository(
     }
 
     companion object {
-        const val SEARCH_TIMEOUT_MS = 20_000L
+        /**
+         * One catalogue's whole search. It has to cover a first attempt that is
+         * waited out (a blocked mirror) plus the attempt that answers, or a search
+         * fails on a catalogue that browsing reaches perfectly well — browsing has
+         * no deadline at all. [HostHealth] makes the dead attempt happen once
+         * rather than before every request.
+         */
+        const val SEARCH_TIMEOUT_MS = 40_000L
 
         /** The first, preferred catalogue gets less time: a blocked one must not hold up the rest. */
-        const val PRIMARY_SEARCH_TIMEOUT_MS = 12_000L
+        const val PRIMARY_SEARCH_TIMEOUT_MS = 30_000L
+
+        /**
+         * One request for a feed. The client's own call timeout is the hard limit;
+         * this one is here to be caught, so a host that stops answering mid-feed is
+         * remembered as down and the next mirror is tried at once.
+         */
+        private const val ATTEMPT_TIMEOUT_MS = 28_000L
+        private const val ATTEMPT_TIMED_OUT_MESSAGE = "Сервер слишком долго не отвечает"
         private const val MAX_NAVIGATION_FEEDS = 8
 
         /**

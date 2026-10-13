@@ -45,9 +45,18 @@ data class OpdsCatalogConfig(
         return mirrorBaseUrls.any { OpdsUrls.host(it) == host }
     }
 
+    /**
+     * Every base the legacy search URLs can be built on ("https://flibusta.is",
+     * "https://flibusta.site"), the catalogue's preferred one first. A search is
+     * built on one of them rather than on a URL the catalogue handed out, so the
+     * choice decides which host a search waits for: see [HostHealth].
+     */
+    val searchBaseUrls: List<String>
+        get() = mirrorBaseUrls.ifEmpty { listOfNotNull(OpdsUrls.origin(url)) }
+
     /** Base of the legacy search URLs ("https://flibusta.is"). */
     val siteBaseUrl: String?
-        get() = mirrorBaseUrls.firstOrNull() ?: OpdsUrls.origin(url)
+        get() = searchBaseUrls.firstOrNull()
 }
 
 /** The catalogues the app always knew; the owner relies on them. */
