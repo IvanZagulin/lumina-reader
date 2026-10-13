@@ -138,7 +138,7 @@ class AiChatViewModel(
             appendLine(defaultSystemMessage)
             if (libraryContext.isNotBlank()) {
                 appendLine("\nТекущая библиотека пользователя:")
-                appendLine(libraryContext.take(MAX_LIBRARY_CONTEXT_CHARS))
+                appendLine(trimLibraryContext(libraryContext))
             }
             if (statsContext.isNotBlank()) {
                 appendLine("\nСтатистика чтения пользователя:")
@@ -344,20 +344,53 @@ fun pickBestPublication(query: String, found: List<FoundPublication>): FoundPubl
         ?: downloadable.firstOrNull()
 }
 
+/**
+ * The library as the assistant sees it: one line per book, every title present.
+ *
+ * It goes into the system prompt and therefore travels with every single
+ * message, so each line carries only what is not the default. Before, every
+ * book spelled out its shelf, its series and its progress even when it sat on
+ * the standard shelf, belonged to no series and had never been opened - three
+ * quarters of the text said nothing. The titles themselves all stay: the prompt
+ * tells the model this list is the only proof a book is already downloaded, so
+ * leaving one out would make it deny a book the user has.
+ */
 fun buildLibraryContext(books: List<Book>): String =
     books.joinToString("\n") { book ->
-        val series = if (book.seriesName.isNotBlank()) {
-            book.seriesName + (book.seriesOrder.takeIf { it > 0 }?.let { " #$it" } ?: "")
-        } else {
-            "—"
+        val notes = buildList {
+            if (book.seriesName.isNotBlank()) {
+                add("серия " + book.seriesName + (book.seriesOrder.takeIf { it > 0 }?.let { " #$it" } ?: ""))
+            }
+            when {
+                book.isDone() -> add("прочитана")
+                book.currentProgressPercent > 0f -> add("прочитано ${book.currentProgressPercent.roundToInt()}%")
+            }
+            if (book.collection.isNotBlank() && book.collection != DEFAULT_SHELF) add("полка " + book.collection)
         }
-        val progress = when {
-            book.isDone() -> "прочитана"
-            book.currentProgressPercent > 0f -> "прочитано ${book.currentProgressPercent.roundToInt()}%"
-            else -> "не начата"
-        }
-        "- ${book.title} (${book.author}) [Полка: ${book.collection}, Серия: $series, $progress]"
+        val tail = if (notes.isEmpty()) "" else notes.joinToString(", ", prefix = " [", postfix = "]")
+        "- ${book.title} (${book.author})$tail"
     }
+
+/**
+ * [context] cut to [maxChars] at a line boundary, with a line saying how many
+ * books were left out. The list used to be cut with take(), which ended it in
+ * the middle of a title - the model then had half a book name and no idea that
+ * anything was missing.
+ */
+fun trimLibraryContext(context: String, maxChars: Int = MAX_LIBRARY_CONTEXT_CHARS): String {
+    if (context.length <= maxChars) return context
+    val lines = context.lineSequence().toList()
+    val kept = mutableListOf<String>()
+    var used = 0
+    for (line in lines) {
+        if (used + line.length + 1 > maxChars) break
+        kept += line
+        used += line.length + 1
+    }
+    val omitted = lines.size - kept.size
+    if (omitted <= 0) return kept.joinToString("\n")
+    return (kept + "- …и ещё $omitted книг, не поместившихся в список").joinToString("\n")
+}
 
 /**
  * The four numbers the assistant gets, computed like the statistics screen does.
@@ -385,7 +418,10 @@ fun buildStatsContext(stats: List<ReadingStats>, timeZone: TimeZone = TimeZone.c
 }
 
 private const val WORDS_PER_PAGE = 250L
-private const val MAX_LIBRARY_CONTEXT_CHARS = 12_000
+const val MAX_LIBRARY_CONTEXT_CHARS = 12_000
+
+/** The shelf a book sits on until it is moved; not worth a word in the prompt. */
+private const val DEFAULT_SHELF = "Основная"
 private const val MAX_CONVERSATION_MESSAGES = 12
 private val DOWNLOAD_COMMAND = "\\[DOWNLOAD\\s*:\\s*([^\\]\\r\\n]+)\\]".toRegex()
 private val ORGANIZE_COMMAND = "\\[ORGANIZE\\s*:\\s*([^:\\]]+)\\s*:\\s*([^\\]\\r\\n]+)\\]".toRegex()

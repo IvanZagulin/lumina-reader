@@ -1,9 +1,12 @@
 package com.lumina.reader.ui.chat
 
+import com.lumina.reader.core.model.Book
+import com.lumina.reader.core.model.BookFormat
 import com.lumina.reader.core.model.ReadingStats
 import com.lumina.reader.core.network.AiMessage
 import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Camel-case names: the test moves to sharedUi commonTest, which also runs on Kotlin/Native. */
@@ -48,5 +51,50 @@ class AiChatViewModelTest {
             "Прочитано слов: 500\nПрочитано страниц: 2\nСредний темп: 250 сл/мин\nДней активного чтения: 1",
             buildStatsContext(stats, TimeZone.of("UTC-03:00"))
         )
+    }
+
+    @Test
+    fun aBookSaysOnlyWhatIsNotTheDefault() {
+        val plain = Book(id = 1, title = "Дюна", author = "Фрэнк Герберт", filePath = "a", format = BookFormat.EPUB)
+        val rich = plain.copy(
+            id = 2,
+            title = "Ведьмак",
+            author = "Сапковский",
+            seriesName = "Ведьмак",
+            seriesOrder = 2,
+            collection = "Фантастика",
+            currentProgressPercent = 40f
+        )
+
+        val context = buildLibraryContext(listOf(plain, rich))
+
+        // Every book on the standard shelf, in no series and never opened used to
+        // spell all three of those out; the title and author carry the meaning.
+        assertEquals(
+            "- Дюна (Фрэнк Герберт)\n" +
+                "- Ведьмак (Сапковский) [серия Ведьмак #2, прочитано 40%, полка Фантастика]",
+            context
+        )
+    }
+
+    @Test
+    fun aListTooLongToSendIsCutBetweenBooksAndSaysSo() {
+        val context = (1..50).joinToString("\n") { "- Книга $it (Автор)" }
+
+        val trimmed = trimLibraryContext(context, maxChars = 60)
+
+        // No half-written title, and the model is told the list is incomplete
+        // instead of being left to think those books are not in the library.
+        trimmed.lineSequence().forEach { line ->
+            assertTrue("a line was cut in half: $line", line.startsWith("- "))
+        }
+        assertTrue(trimmed.trimEnd().endsWith("книг, не поместившихся в список"))
+        assertTrue(trimmed.length <= 120)
+    }
+
+    @Test
+    fun aListThatFitsIsLeftAlone() {
+        val context = "- Дюна (Фрэнк Герберт)\n- Ведьмак (Сапковский)"
+        assertEquals(context, trimLibraryContext(context, maxChars = 1_000))
     }
 }

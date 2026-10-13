@@ -80,8 +80,11 @@ class AiLibraryActionsTest {
             Book(id = 2, title = "Готово", author = "Автор", filePath = "b", isCompleted = true)
         )
         val library = buildLibraryContext(books)
-        assertTrue(library.contains("- Дюна (Герберт) [Полка: Основная, Серия: Дюна #1, не начата]"))
-        assertTrue(library.contains("Готово (Автор)") && library.contains("прочитана"))
+        // Only what is not the default: the standard shelf and "не начата" are
+        // what every untouched book would say, and the prompt travels with every
+        // message, so they are left out.
+        assertTrue(library.contains("- Дюна (Герберт) [серия Дюна #1]"))
+        assertTrue(library.contains("- Готово (Автор) [прочитана]"))
 
         val day = 86_400_000L
         val stats = listOf(
