@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.lumina.reader.core.library.AppMessages
@@ -691,42 +694,69 @@ private fun PageFrame(
     // Dynamic Island (59 pt of safe area) the book title in it sat right behind the
     // cutout, so the zone is never shorter than the top inset plus the title's own room.
     val headerHeight = maxOf(PageHeaderHeight, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 34.dp)
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = settings.horizontalPaddingDp.dp)
-    ) {
-        Box(
+    // The column is centred and capped, so a landscape phone or a tablet reads
+    // like a page and not like a strip (see textColumnWidth). The body's measured
+    // size is what pagination is built on, so it follows the cap by itself.
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
             modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = textColumnWidth(settings.fontSizeSp))
                 .fillMaxWidth()
-                .height(headerHeight)
-                .padding(bottom = 10.dp),
-            contentAlignment = Alignment.BottomCenter
+                .padding(horizontal = settings.horizontalPaddingDp.dp)
         ) {
-            ReaderPageHeader(
-                title = header,
-                color = settings.theme.secondaryTextComposeColor
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(headerHeight)
+                    .padding(bottom = 10.dp),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                ReaderPageHeader(
+                    title = header,
+                    color = settings.theme.secondaryTextComposeColor
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .onSizeChanged(onBodySize)
+                    .clipToBounds(),
+                content = body
             )
-        }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .onSizeChanged(onBodySize)
-                .clipToBounds(),
-            content = body
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(PageFooterHeight)
-                .padding(top = 6.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            footer()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PageFooterHeight)
+                    .padding(top = 6.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                footer()
+            }
         }
     }
 }
+
+/**
+ * How wide the column of text may become, whatever the window is.
+ *
+ * A line is comfortable at around 60-75 characters and tiring well before 100.
+ * On a phone the margins alone keep it there, but in landscape and on a tablet
+ * the page used the whole width, which is where the text became a strip of
+ * 100+ characters the eye loses its place in. The limit is measured in the
+ * reader's own font size, because that is what decides how many characters fit:
+ * roughly half of the size per character, so 34 of them is about 68 characters.
+ * It never applies on a phone - a window narrower than the limit wins.
+ */
+internal fun textColumnWidth(fontSizeSp: Int): Dp =
+    (fontSizeSp * CHARACTERS_PER_LINE_EM).dp.coerceAtLeast(MinTextColumnWidth)
+
+/** 34 em is about 68 characters of a serif face at a normal width. */
+private const val CHARACTERS_PER_LINE_EM = 34
+
+/** Never narrower than this: a phone's page must keep every pixel it has. */
+private val MinTextColumnWidth = 480.dp
 
 @Composable
 private fun PageBody(
