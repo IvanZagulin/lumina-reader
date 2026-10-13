@@ -7,7 +7,17 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** OPDS formats and catalogue credentials (stage 7 code; split from OpdsUrlsTest, which moved to :shared). */
+/**
+ * OPDS formats and catalogue credentials.
+ *
+ * The platform-independent half: what counts as a book link and which format a
+ * MIME type or a file name means.
+ *
+ * Which format is preferred is not here, because it is not the same everywhere -
+ * Android reads FB2 best, the iPhone EPUB - and asserting one order in a common
+ * test only made it fail on the other platform. That half lives beside each
+ * platform (OpdsFormatsPreferenceTest).
+ */
 class OpdsFormatsTest {
 
     @Test
@@ -26,32 +36,6 @@ class OpdsFormatsTest {
         assertFalse(OpdsFormats.isAcquisitionLink("http://opds-spec.org/acquisition/buy", "application/epub+zip"))
         assertFalse(OpdsFormats.isAcquisitionLink("related", "application/atom+xml"))
         assertFalse(OpdsFormats.isAcquisitionLink(null, "application/atom+xml;profile=opds-catalog"))
-    }
-
-    @Test
-    fun madeToOrderEpubGoesAfterTheStoredFb2() {
-        val flibusta = listOf(
-            OpdsAcquisition("https://flibusta.is/b/1/epub", BookFormat.EPUB),
-            OpdsAcquisition("https://flibusta.is/b/1/fb2", BookFormat.FB2_ZIP)
-        )
-        assertEquals(listOf(BookFormat.FB2_ZIP, BookFormat.EPUB), OpdsFormats.ranked(flibusta).map { it.format })
-        val file = listOf(
-            OpdsAcquisition("https://x.org/books/1.epub", BookFormat.EPUB),
-            OpdsAcquisition("https://x.org/books/1.fb2.zip", BookFormat.FB2_ZIP)
-        )
-        assertEquals("https://x.org/books/1.fb2.zip", OpdsFormats.ranked(file).first().url)
-    }
-
-    @Test
-    fun prefersFb2ThenEpub() {
-        val acquisitions = listOf(
-            OpdsAcquisition("p", BookFormat.PDF),
-            OpdsAcquisition("e", BookFormat.EPUB),
-            OpdsAcquisition("f", BookFormat.FB2_ZIP)
-        )
-        assertEquals("f", OpdsFormats.preferred(acquisitions)?.url)
-        assertEquals("e", OpdsFormats.preferred(acquisitions.take(2))?.url)
-        assertNull(OpdsFormats.preferred(emptyList()))
     }
 
     @Test
