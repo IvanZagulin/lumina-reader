@@ -255,6 +255,19 @@ class CatalogViewModel(
         }
     }
 
+    /** Puts [section] back into the running search for [query], if it is still the one shown. */
+    private fun updateSection(query: String, section: CatalogSearchSection) {
+        mutableState.update { state ->
+            val search = state.globalSearch ?: return@update state
+            if (search.query != query) return@update state
+            state.copy(
+                globalSearch = search.copy(
+                    sections = search.sections.map { if (it.catalog.id == section.catalog.id) section else it }
+                )
+            )
+        }
+    }
+
     private fun findPage(pageId: Long): CatalogPage? = mutableState.value.pages.firstOrNull { it.id == pageId }
 
     private fun updatePage(pageId: Long, transform: (CatalogPage) -> CatalogPage) {
@@ -330,6 +343,21 @@ class CatalogViewModel(
             // One catalogue's search; returns whether it found anything. Each section
             // fills in as soon as its catalogue answers.
             suspend fun searchIn(catalog: OpdsCatalogConfig, timeoutMillis: Long = OpdsRepository.SEARCH_TIMEOUT_MS): Boolean {
+                // «Авторы» and «Серии» are Flibusta's searchType=, which no other
+                // catalogue understands: asking them anyway returned books, which the
+                // screen then showed under the chip the user had picked. Saying so is
+                // the only honest answer - the results would not be what was asked for.
+                if (!catalog.supportsScopedSearch && scope != CatalogSearchScope.BOOKS) {
+                    updateSection(
+                        query,
+                        CatalogSearchSection(
+                            catalog = catalog,
+                            isLoading = false,
+                            error = "Этот каталог умеет искать только книги"
+                        )
+                    )
+                    return false
+                }
                 val result = repository.searchAll(listOf(catalog), query, scope.searchType, timeoutMillis).first()
                 val feed = result.feed
                 val section = CatalogSearchSection(
@@ -341,15 +369,7 @@ class CatalogViewModel(
                     error = result.error
                         ?: if (feed != null && feed.entries.isEmpty()) "Ничего не найдено" else null
                 )
-                mutableState.update { state ->
-                    val search = state.globalSearch ?: return@update state
-                    if (search.query != query) return@update state
-                    state.copy(
-                        globalSearch = search.copy(
-                            sections = search.sections.map { if (it.catalog.id == catalog.id) section else it }
-                        )
-                    )
-                }
+                updateSection(query, section)
                 return section.entries.isNotEmpty()
             }
 
