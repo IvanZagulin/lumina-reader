@@ -71,6 +71,32 @@ jobs:
             -PsigningKeyPassword=android \
             --no-daemon 2>&1 | tee /tmp/lumina-release-build.log
 
+      # The iPhone release checks the same thing (ios-release.yml). Without it a
+      # build whose secret went missing ships silently without the proxy, and
+      # Flibusta stops working for everyone with no sign of why.
+      - name: Check the built-in proxy is in the APK
+        shell: bash
+        env:
+          LUMINA_FLIBUSTA_PROXY: ${{ secrets.LUMINA_FLIBUSTA_PROXY }}
+        run: |
+          set -euo pipefail
+          SPEC="$(printf '%s' "${LUMINA_FLIBUSTA_PROXY:-}" | tr -d '[:space:]')"
+          if [ -z "$SPEC" ]; then
+            echo "No proxy secret: the app is built without a built-in proxy."
+            exit 0
+          fi
+          ADDRESS="${SPEC##*@}"
+          HOST="${ADDRESS%:*}"
+          test -n "$HOST"
+          # The spec is a Kotlin const, so it lands in the DEX string pool as it
+          # is; release builds are not minified, and R8 would keep it either way.
+          if unzip -p app/build/outputs/apk/release/app-release.apk 'classes*.dex' | grep -aqF "$HOST"; then
+            echo "The built-in proxy is in the APK."
+          else
+            echo "The built-in proxy is missing from the APK." >&2
+            exit 1
+          fi
+
       - name: Verify update signing certificate
         id: certificate
         env:
