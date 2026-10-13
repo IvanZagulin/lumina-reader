@@ -78,6 +78,7 @@ class OpdsFeedCache(
     companion object {
         const val BROWSE_MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
         const val SEARCH_MAX_AGE_MILLIS = 60L * 60 * 1000
+        private val SEARCH_PARAMETERS = listOf("q", "query", "searchterm", "searchterms")
         private const val MAX_ENTRY_BYTES = 4 * 1024 * 1024
         private const val MAX_ENTRIES = 300
         private const val PRUNE_SLACK = 40
@@ -85,11 +86,26 @@ class OpdsFeedCache(
         /** One cache for the process. */
         val shared: OpdsFeedCache by lazy { OpdsFeedCache() }
 
-        /** Search answers change more often than the shelves of a catalogue. */
+        /**
+         * Search answers change more often than the shelves of a catalogue.
+         *
+         * The query parameters are matched as parameters, not as text anywhere in
+         * the URL: "q" used to match the "seq" of "/opds/sequencebooks?seq=5", so
+         * an ordinary page of a series was re-fetched every hour instead of being
+         * kept for a day.
+         */
         fun maxAgeFor(url: String): Long {
             val lower = url.lowercase()
-            val isSearch = "search" in lower || "searchterm=" in lower || "q=" in lower
+            val isSearch = "search" in lower.substringBefore('?') ||
+                SEARCH_PARAMETERS.any { parameter -> hasParameter(lower, parameter) }
             return if (isSearch) SEARCH_MAX_AGE_MILLIS else BROWSE_MAX_AGE_MILLIS
+        }
+
+        /** True when [url] carries `name=` as a query parameter of its own. */
+        private fun hasParameter(url: String, name: String): Boolean {
+            val query = url.substringAfter('?', "").substringBefore('#')
+            if (query.isEmpty()) return false
+            return query.split('&').any { it.substringBefore('=') == name }
         }
 
         /** FNV-1a, 64 bit: a file name for a URL, the same on every platform. */

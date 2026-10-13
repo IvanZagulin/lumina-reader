@@ -76,17 +76,36 @@ object NetworkProxy {
 }
 
 /**
- * The proxy built into the app for the catalogues that are blocked in Russia (Flibusta),
- * read from the spec put in at build time ("login:password@host:port", HTTP). Used only
- * for those catalogues' addresses and only when the user has not set a proxy of their
- * own; with no spec - a build made without the secret - there is none.
+ * The proxy built into the app for the catalogues that are blocked in Russia
+ * ([proxiedDomains]), read from the spec put in at build time
+ * ("login:password@host:port", HTTP). Used only for those catalogues' addresses
+ * and only when the user has not set a proxy of their own; with no spec - a
+ * build made without the secret - there is none.
  */
 internal object EmbeddedProxy {
+    /**
+     * The domains the built-in proxy is paid for. Add a domain here to route a
+     * newly blocked catalogue through it; nothing else needs changing.
+     *
+     * They are matched as domains, not as text in the host: "flibusta" anywhere
+     * in the host used to be enough, so a user catalogue at
+     * "flibusta-mirror.example.com" - a host this proxy was never meant for -
+     * would quietly run through it.
+     */
+    val proxiedDomains: List<String> = listOf("flibusta.is", "flibusta.site")
+
     val settings: ProxySettings? by lazy { parse(EMBEDDED_PROXY_SPEC) }
 
+    /** True for [url] on one of [proxiedDomains] or a subdomain of one ("static.flibusta.is"). */
     fun appliesTo(url: String): Boolean {
-        val host = url.substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore(':').lowercase()
-        return "flibusta" in host
+        val host = url.substringAfter("://", "")
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore(':')
+            .lowercase()
+            .trimEnd('.')
+        if (host.isEmpty()) return false
+        return proxiedDomains.any { domain -> host == domain || host.endsWith(".$domain") }
     }
 
     internal fun parse(spec: String): ProxySettings? {

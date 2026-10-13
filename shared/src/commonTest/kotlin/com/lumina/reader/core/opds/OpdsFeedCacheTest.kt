@@ -51,8 +51,27 @@ class OpdsFeedCacheTest {
 
     @Test
     fun searchesAreKeptForLessTimeThanCatalogues() {
-        assertEquals(OpdsFeedCache.SEARCH_MAX_AGE_MILLIS, OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/search?searchTerm=x"))
-        assertEquals(OpdsFeedCache.BROWSE_MAX_AGE_MILLIS, OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/new"))
+        val search = OpdsFeedCache.SEARCH_MAX_AGE_MILLIS
+        val browse = OpdsFeedCache.BROWSE_MAX_AGE_MILLIS
+        assertEquals(search, OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/search?searchTerm=x"))
+        assertEquals(search, OpdsFeedCache.maxAgeFor("https://iknigi.net/opds/search?query=x"))
+        // A catalogue whose search is a parameter of an ordinary feed.
+        assertEquals(search, OpdsFeedCache.maxAgeFor("https://example.org/opds?q=x"))
+        assertEquals(browse, OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/new"))
+    }
+
+    @Test
+    fun aPageOfASeriesIsNotMistakenForASearch() {
+        // "q=" used to be matched anywhere in the URL, so "seq=5" made an ordinary
+        // page expire after an hour instead of a day.
+        assertEquals(
+            OpdsFeedCache.BROWSE_MAX_AGE_MILLIS,
+            OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/sequencebooks?seq=5")
+        )
+        assertEquals(
+            OpdsFeedCache.BROWSE_MAX_AGE_MILLIS,
+            OpdsFeedCache.maxAgeFor("https://flibusta.is/opds/author/217841?unique=1")
+        )
     }
 
     @Test
