@@ -31,6 +31,15 @@ val LocalAppSnackbar = staticCompositionLocalOf { SnackbarHostState() }
  * Drives the dock collapse (spec §3.3): scrolling content down shrinks the
  * capsule to 52 dp and fades the labels, scrolling up restores it. [collapse]
  * (0..1) is read only in layout and draw lambdas.
+ *
+ * It follows the content, not the finger. The dock used to be driven from
+ * `onPreScroll`, which reports the whole gesture before the list has had it: at
+ * the very end of a list the finger keeps moving while the content does not, and
+ * the stretch springing back reports the opposite direction a frame later, so the
+ * dock collapsed and expanded over and over - the jumping the user sees when a
+ * list is scrolled to its end. What a list actually scrolled is `consumed` in
+ * [NestedScrollConnection.onPostScroll], and that is zero once there is nowhere
+ * left to go.
  */
 @Stable
 class DockScrollState(private val scope: CoroutineScope) {
@@ -39,11 +48,8 @@ class DockScrollState(private val scope: CoroutineScope) {
     private var job: Job? = null
 
     val connection: NestedScrollConnection = object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            when {
-                available.y < -THRESHOLD -> animateTo(1f)
-                available.y > THRESHOLD -> animateTo(0f)
-            }
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            dockTargetFor(consumed.y)?.let(::animateTo)
             return Offset.Zero
         }
     }
@@ -62,8 +68,20 @@ class DockScrollState(private val scope: CoroutineScope) {
         }
     }
 
-    private companion object {
+    internal companion object {
+        /** Below this a scroll is jitter, not a direction. */
         const val THRESHOLD = 1f
+
+        /**
+         * Where the dock should go for a scroll that moved the content by
+         * [consumedY] pixels, or null to leave it where it is. Nothing consumed
+         * means the list had nowhere to go, which must not move the dock.
+         */
+        fun dockTargetFor(consumedY: Float): Float? = when {
+            consumedY < -THRESHOLD -> 1f
+            consumedY > THRESHOLD -> 0f
+            else -> null
+        }
     }
 }
 

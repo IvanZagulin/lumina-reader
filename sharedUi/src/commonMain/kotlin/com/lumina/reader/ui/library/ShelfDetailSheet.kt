@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import com.lumina.reader.ui.components.absorbListOverscroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -66,7 +67,7 @@ fun ShelfDetailSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.background
     ) {
-        Column(modifier = Modifier.fillMaxHeight(0.92f)) {
+        Column(modifier = Modifier.absorbListOverscroll().fillMaxHeight(0.92f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineMedium,

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import com.lumina.reader.ui.components.absorbListOverscroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.GridView
@@ -87,6 +88,7 @@ fun LibraryViewSheet(
     ) {
         Column(
             modifier = Modifier
+                .absorbListOverscroll()
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)

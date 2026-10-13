@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import com.lumina.reader.ui.components.absorbListOverscroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -73,6 +74,7 @@ fun ShelfManagerSheet(
     ) {
         Column(
             modifier = Modifier
+                .absorbListOverscroll()
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .imePadding()

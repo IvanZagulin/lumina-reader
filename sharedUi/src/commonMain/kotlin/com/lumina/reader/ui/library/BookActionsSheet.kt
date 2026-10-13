@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.lumina.reader.ui.components.absorbListOverscroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
@@ -112,6 +113,7 @@ fun BookActionsSheet(
     ) {
         Column(
             modifier = Modifier
+                .absorbListOverscroll()
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .imePadding()

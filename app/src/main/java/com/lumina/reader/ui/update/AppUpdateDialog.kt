@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import com.lumina.reader.ui.components.absorbListOverscroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -370,6 +371,7 @@ private fun Changelog(notes: String) {
     }
     Column(
         modifier = Modifier
+            .absorbListOverscroll()
             .fillMaxWidth()
             .heightIn(max = 220.dp)
             .verticalScroll(rememberScrollState()),
