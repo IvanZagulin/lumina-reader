@@ -6,6 +6,7 @@ import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.opds.CatalogSettingsCodec
 import com.lumina.reader.core.opds.OpdsCatalogConfig
 import com.lumina.reader.core.opds.OpdsRepository
+import com.lumina.reader.core.opds.OpdsSearchType
 import com.lumina.reader.core.opds.OpdsUrls
 import com.lumina.reader.core.opds.describeOpdsError
 import kotlinx.coroutines.CancellationException
@@ -191,7 +192,11 @@ class CatalogSourcesViewModel(
         val title = feed.title.ifBlank { catalog.name }
         val host = OpdsUrls.host(feed.url)
         val where = if (host != null && OpdsUrls.host(catalog.url) != host) " ($host)" else ""
-        ConnectionCheck.Success("Каталог «$title» доступен$where: разделов $folders, книг $books")
+        val opened = "Каталог «$title» доступен$where: разделов $folders, книг $books"
+        when (val search = probeSearch(catalog)) {
+            null -> ConnectionCheck.Success("$opened · поиск работает")
+            else -> ConnectionCheck.Failure("$opened, но поиск не работает: $search")
+        }
     } catch (e: CancellationException) {
         if (e is TimeoutCancellationException) {
             ConnectionCheck.Failure("Каталог не ответил вовремя")
@@ -202,7 +207,35 @@ class CatalogSourcesViewModel(
         ConnectionCheck.Failure(describeOpdsError(e))
     }
 
+    /**
+     * Runs one real search, and returns why it failed or null when it worked.
+     *
+     * Opening a catalogue and searching it are different things on the server, and
+     * they fail apart: ekniga.org serves its shelves perfectly while its search
+     * answers with a database error page. A check that only opened the root feed
+     * said "доступен" either way, which is the opposite of helpful when the search
+     * is what the user is about to use. An empty result counts as working — what is
+     * being checked is that the catalogue answers a search with a feed at all.
+     */
+    private suspend fun probeSearch(catalog: OpdsCatalogConfig): String? = try {
+        withTimeout(CHECK_TIMEOUT_MS) {
+            repository.searchCatalog(catalog, PROBE_QUERY, OpdsSearchType.BOOKS)
+        }
+        null
+    } catch (e: TimeoutCancellationException) {
+        "каталог не ответил вовремя"
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        describeOpdsError(e).replaceFirstChar { it.lowercase() }
+    }
+
     private companion object {
         const val CHECK_TIMEOUT_MS = 25_000L
+
+        /** An ordinary word, so the first URL shape that works answers with results
+         * and the others are not tried; catalogues that ask for at least two
+         * characters are happy with it too. */
+        const val PROBE_QUERY = "война"
     }
 }
