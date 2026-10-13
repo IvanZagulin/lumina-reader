@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.lumina.reader.core.model.ReaderFontIds
 import com.lumina.reader.sharedui.resources.Res
+import com.lumina.reader.sharedui.resources.droidsans_bold
+import com.lumina.reader.sharedui.resources.droidsans_regular
 import com.lumina.reader.sharedui.resources.golostext_variable
 import com.lumina.reader.sharedui.resources.literata_italic_variable
 import com.lumina.reader.sharedui.resources.literata_variable
@@ -43,16 +45,22 @@ data class ReaderFont(
  * same typeface.
  */
 @Immutable
-class ReaderFontCatalog(literata: FontFamily, ptSerif: FontFamily, golos: FontFamily) {
+class ReaderFontCatalog(
+    literata: FontFamily,
+    ptSerif: FontFamily,
+    golos: FontFamily,
+    droidSans: FontFamily
+) {
     val Literata = ReaderFont(ReaderFontIds.LITERATA, "Литерата", literata)
     val PtSerif = ReaderFont(ReaderFontIds.PT_SERIF, "PT Serif", ptSerif)
     val Golos = ReaderFont(ReaderFontIds.GOLOS, "Голос", golos)
+    val DroidSans = ReaderFont(ReaderFontIds.DROID_SANS, "Droid Sans", droidSans)
     val SystemSerif = ReaderFont(ReaderFontIds.SYSTEM_SERIF, "Системный", FontFamily.Serif)
     val SystemSans = ReaderFont(ReaderFontIds.SYSTEM_SANS, "Без засечек", FontFamily.SansSerif)
     val Mono = ReaderFont(ReaderFontIds.MONO, "Моно", FontFamily.Monospace)
 
     /** In the order of the settings sheet. */
-    val all: List<ReaderFont> = listOf(Literata, PtSerif, Golos, SystemSerif, SystemSans, Mono)
+    val all: List<ReaderFont> = listOf(Literata, PtSerif, Golos, DroidSans, SystemSerif, SystemSans, Mono)
 
     /** The font for a stored id; legacy names ("Serif", "SansSerif", ...) are migrated. */
     fun byId(id: String?): ReaderFont {
@@ -90,11 +98,19 @@ fun rememberReaderFonts(): ReaderFontCatalog {
     )
     // Golos Text has no italic; the platform slants the upright face.
     val golosFonts = uprightWeights.map { variableWeight(Res.font.golostext_variable, it) }
-    return remember(literataFonts, ptSerifFonts, golosFonts) {
+    // Droid Sans ships as two static faces (Apache 2.0, the AOSP originals), so
+    // it needs no FontVariation settings; it has no italic either, and Compose
+    // picks the nearer of the two faces for the weights in between.
+    val droidSansFonts = listOf(
+        ResourceFont(Res.font.droidsans_regular, FontWeight.Normal),
+        ResourceFont(Res.font.droidsans_bold, FontWeight.Bold)
+    )
+    return remember(literataFonts, ptSerifFonts, golosFonts, droidSansFonts) {
         ReaderFontCatalog(
             literata = FontFamily(literataFonts),
             ptSerif = FontFamily(ptSerifFonts),
-            golos = FontFamily(golosFonts)
+            golos = FontFamily(golosFonts),
+            droidSans = FontFamily(droidSansFonts)
         )
     }
 }

@@ -303,12 +303,13 @@ object ReaderFontIds {
     const val LITERATA = "literata"
     const val PT_SERIF = "ptserif"
     const val GOLOS = "golos"
+    const val DROID_SANS = "droidsans"
     const val SYSTEM_SERIF = "system_serif"
     const val SYSTEM_SANS = "system_sans"
     const val MONO = "mono"
     const val DEFAULT = LITERATA
 
-    val all: List<String> = listOf(LITERATA, PT_SERIF, GOLOS, SYSTEM_SERIF, SYSTEM_SANS, MONO)
+    val all: List<String> = listOf(LITERATA, PT_SERIF, GOLOS, DROID_SANS, SYSTEM_SERIF, SYSTEM_SANS, MONO)
 
     /**
      * The id for a stored value: the names used before the font catalogue

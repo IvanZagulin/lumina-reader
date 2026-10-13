@@ -34,7 +34,8 @@ class ParagraphRendererTest {
     private val fonts = ReaderFontCatalog(
         literata = androidx.compose.ui.text.font.FontFamily.Serif,
         ptSerif = androidx.compose.ui.text.font.FontFamily.Cursive,
-        golos = androidx.compose.ui.text.font.FontFamily.SansSerif
+        golos = androidx.compose.ui.text.font.FontFamily.SansSerif,
+        droidSans = androidx.compose.ui.text.font.FontFamily.Default
     )
 
     private val typography = ReaderTypography(
@@ -272,6 +273,6 @@ class ParagraphRendererTest {
         // The same id always gives the same family, so pages and pagination agree.
         assertTrue(family("ptserif") === family("ptserif"))
         assertEquals(fonts.PtSerif.family, ReaderSettings(fontFamily = "ptserif").toTypography(null, fonts).fontFamily)
-        assertEquals(6, fonts.all.map { it.id }.distinct().size)
+        assertEquals(7, fonts.all.map { it.id }.distinct().size)
     }
 }
