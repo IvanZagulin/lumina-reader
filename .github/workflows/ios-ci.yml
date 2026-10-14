@@ -299,8 +299,26 @@ jobs:
           for route in home; do
             for appearance in light dark; do
               run_with_timeout 60 xcrun simctl ui "$SIM_UDID" appearance "$appearance"
-              run_with_timeout 120 xcrun simctl launch --terminate-running-process "$SIM_UDID" com.lumina.reader -startRoute "$route" > launch.txt
-              LAUNCH="$(cat launch.txt)"
+              # simctl launch sometimes never returns on these runners while the
+              # app itself is fine: the same commit has failed here and passed on
+              # a re-run with nothing changed. A launch that hangs is retried, as
+              # the install above already is. A real failure is not hidden by
+              # this: the pid has to be a number and the app has to still be
+              # alive twelve seconds later, both checked below.
+              LAUNCH=""
+              for attempt in 1 2 3; do
+                if run_with_timeout 120 xcrun simctl launch --terminate-running-process "$SIM_UDID" com.lumina.reader -startRoute "$route" > launch.txt; then
+                  LAUNCH="$(cat launch.txt)"
+                  break
+                fi
+                echo "launch attempt $attempt never returned; terminating and retrying"
+                run_with_timeout 60 xcrun simctl terminate "$SIM_UDID" com.lumina.reader || true
+                sleep 10
+              done
+              if [ -z "$LAUNCH" ]; then
+                echo "::error::simctl launch never returned for route $route ($appearance)"
+                exit 1
+              fi
               echo "$LAUNCH"
               PID="${LAUNCH##*: }"
               case "$PID" in
