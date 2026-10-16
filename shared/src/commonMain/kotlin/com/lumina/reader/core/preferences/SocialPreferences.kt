@@ -29,10 +29,23 @@ data class SocialSettings(
     val sharingEnabled: Boolean = false,
     /** Keys of books ([com.lumina.reader.core.social.SharedShelf.bookKey]) kept private. */
     val hiddenBookKeys: Set<String> = emptySet(),
+    /**
+     * The circle's admin secret, held only by whoever runs the server, and only
+     * so invites can be minted from the app instead of over SSH. It is kept in
+     * this app-private settings file as plain text, like the bearer token above:
+     * it is not encrypted, so a device someone else can unlock can mint
+     * invites. Changing it is a matter of editing the server's `.env` and
+     * restarting, which makes every copy of the old one useless.
+     */
+    val adminToken: String = "",
 ) {
     /** True once this device has joined a circle and can talk to it. */
     val joined: Boolean
         get() = serverUrl.isNotBlank() && token.isNotBlank()
+
+    /** True when this device holds the secret that mints invitations. */
+    val canInvite: Boolean
+        get() = serverUrl.isNotBlank() && adminToken.isNotBlank()
 }
 
 /**
@@ -48,6 +61,7 @@ class SocialPreferences(private val dataStore: DataStore<Preferences>) {
         val DISPLAY_NAME = stringPreferencesKey("display_name")
         val SHARING_ENABLED = booleanPreferencesKey("sharing_enabled")
         val HIDDEN_BOOKS = stringSetPreferencesKey("hidden_book_keys")
+        val ADMIN_TOKEN = stringPreferencesKey("admin_token")
     }
 
     val settings: Flow<SocialSettings> = dataStore.data
@@ -60,6 +74,7 @@ class SocialPreferences(private val dataStore: DataStore<Preferences>) {
                 displayName = preferences[Keys.DISPLAY_NAME].orEmpty(),
                 sharingEnabled = preferences[Keys.SHARING_ENABLED] ?: false,
                 hiddenBookKeys = preferences[Keys.HIDDEN_BOOKS].orEmpty(),
+                adminToken = preferences[Keys.ADMIN_TOKEN].orEmpty(),
             )
         }
         .distinctUntilChanged()
@@ -91,6 +106,18 @@ class SocialPreferences(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setSharingEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.SHARING_ENABLED] = enabled }
+    }
+
+    /**
+     * Remembers (or, with a blank [token], forgets) the secret that mints
+     * invitations. It survives [leave] on purpose: leaving a circle says
+     * nothing about whether you still run its server.
+     */
+    suspend fun setAdminToken(token: String) {
+        val trimmed = token.trim()
+        dataStore.edit { preferences ->
+            if (trimmed.isEmpty()) preferences.remove(Keys.ADMIN_TOKEN) else preferences[Keys.ADMIN_TOKEN] = trimmed
+        }
     }
 
     suspend fun setBookHidden(bookKey: String, hidden: Boolean) {

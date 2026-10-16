@@ -81,6 +81,10 @@ data class IncomingTransfersResponse(val transfers: List<TransferInfo> = emptyLi
 @Serializable
 data class CreateTransferResponse(val id: String)
 
+/** A one-time invitation code, as the server mints it for the circle's owner. */
+@Serializable
+data class CreateInviteResponse(val code: String)
+
 /** The statuses the server accepts. */
 object ReadingStatus {
     const val NOT_STARTED = "NOT_STARTED"

@@ -44,6 +44,15 @@ data class CircleUiState(
     /** The member the open send sheet is addressed to; null when it is closed. */
     val sendingTo: Member? = null,
     val sending: Boolean = false,
+    /**
+     * The address being typed, shared by the join form and the invite card.
+     * The first member of a circle has to mint their own code before they can
+     * redeem anything, so both need a server to talk to before one is stored.
+     */
+    val serverUrlDraft: String = DEFAULT_CIRCLE_SERVER,
+    /** The code just minted, shown until it is sent or dismissed. */
+    val lastInviteCode: String? = null,
+    val minting: Boolean = false,
 )
 
 /**
@@ -91,6 +100,47 @@ class CircleViewModel(
                 _state.update { it.copy(settings = settings) }
             }
         }
+    }
+
+    fun setServerUrlDraft(value: String) {
+        _state.update { it.copy(serverUrlDraft = value) }
+    }
+
+    // ---- Inviting ------------------------------------------------------------------
+
+    /** Remembers the circle's admin secret, or forgets it when [token] is blank. */
+    fun saveAdminToken(token: String) {
+        viewModelScope.launch { preferences.setAdminToken(token) }
+    }
+
+    /**
+     * Mints a one-time code to hand to a friend. Uses the stored address once
+     * this device has joined, and the one being typed before that, since the
+     * circle's first member mints their own code.
+     */
+    fun createInvite() {
+        if (_state.value.minting) return
+        viewModelScope.launch {
+            val settings = preferences.settings.first()
+            val serverUrl = settings.serverUrl.ifBlank { _state.value.serverUrlDraft }
+            if (settings.adminToken.isBlank()) {
+                _state.update { it.copy(error = "Сначала вставьте админ-токен круга") }
+                return@launch
+            }
+            _state.update { it.copy(minting = true, error = null, lastInviteCode = null) }
+            try {
+                val invite = client.createInvite(serverUrl, settings.adminToken)
+                _state.update { it.copy(minting = false, lastInviteCode = invite.code) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(minting = false, error = e.displayMessage()) }
+            }
+        }
+    }
+
+    fun dismissInvite() {
+        _state.update { it.copy(lastInviteCode = null) }
     }
 
     /** Exchanges an invite for membership; sharing stays off until asked for. */

@@ -131,4 +131,28 @@ class SocialClientTest {
         assertEquals("Некорректный адрес сервера", failure.message)
         assertTrue(requests.isEmpty(), "nothing should have been sent")
     }
+
+    @Test
+    fun mintingAnInviteSendsTheAdminTokenAndNotTheBearer() = runTest {
+        val client = clientOf { HttpStatusCode.OK to """{"code":"abc123xyz"}""" }
+
+        val invite = client.createInvite("https://social.example", "admin-secret")
+
+        assertEquals("abc123xyz", invite.code)
+        val request = requests.single()
+        assertEquals("https://social.example/api/invites", request.url.toString())
+        // The admin secret is its own header; a member's bearer cannot mint invites.
+        assertEquals("admin-secret", request.headers["X-Admin-Token"])
+        assertEquals(null, request.headers[HttpHeaders.Authorization])
+    }
+
+    @Test
+    fun aWrongAdminTokenIsReportedAsTheServerPutsIt() = runTest {
+        val client = clientOf { HttpStatusCode.Forbidden to """{"error":"Нужен админ-токен"}""" }
+
+        val failure = assertFailsWith<SocialException> {
+            client.createInvite("https://social.example", "wrong")
+        }
+        assertEquals("Нужен админ-токен", failure.message)
+    }
 }

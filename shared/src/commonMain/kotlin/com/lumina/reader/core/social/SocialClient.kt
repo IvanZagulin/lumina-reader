@@ -55,6 +55,18 @@ class SocialClient(
             client.post(url) { jsonBody(RedeemRequest(code.trim(), displayName.trim())) }
         }.decode()
 
+    /**
+     * Mints a one-time invitation, which only the circle's admin secret can do.
+     *
+     * [adminToken] is the server's own `ADMIN_TOKEN`, so this is the one call
+     * that does not use the bearer a member holds: whoever runs the circle
+     * decides who may enter it.
+     */
+    suspend fun createInvite(serverUrl: String, adminToken: String): CreateInviteResponse =
+        call(serverUrl, "/api/invites") { url ->
+            client.post(url) { headers["X-Admin-Token"] = adminToken }
+        }.decode()
+
     suspend fun me(serverUrl: String, token: String): MeResponse =
         call(serverUrl, "/api/me") { url ->
             client.get(url) { bearer(token) }

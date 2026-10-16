@@ -58,6 +58,7 @@ import com.lumina.reader.core.social.ReadingStatus
 import com.lumina.reader.core.social.SharedBook
 import com.lumina.reader.ui.catalog.CatalogTopBar
 import com.lumina.reader.ui.components.absorbListOverscroll
+import com.lumina.reader.ui.reader.rememberTextSharer
 import com.lumina.reader.ui.theme.LuminaShape
 import com.lumina.reader.ui.theme.LuminaDimens
 
@@ -76,6 +77,8 @@ fun CircleScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+    // The same share sheet a quote uses; an invite code is just text.
+    val shareText = rememberTextSharer()
 
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -133,8 +136,24 @@ fun CircleScreen(
             if (!state.settings.joined) {
                 item(key = "join", contentType = "join") {
                     JoinCard(
+                        serverUrl = state.serverUrlDraft,
+                        onServerUrlChange = viewModel::setServerUrlDraft,
                         busy = state.busy,
-                        onJoin = { url, code, name -> viewModel.join(url, code, name) }
+                        onJoin = { code, name -> viewModel.join(state.serverUrlDraft, code, name) }
+                    )
+                }
+                // Shown here too: the first member of a circle has nobody to get
+                // a code from and has to mint their own before joining.
+                item(key = "invite", contentType = "invite") {
+                    InviteCard(
+                        serverUrl = state.serverUrlDraft,
+                        adminToken = state.settings.adminToken,
+                        code = state.lastInviteCode,
+                        minting = state.minting,
+                        onSaveToken = viewModel::saveAdminToken,
+                        onMint = viewModel::createInvite,
+                        onShare = shareText,
+                        onDismissCode = viewModel::dismissInvite
                     )
                 }
                 return@LazyColumn
@@ -147,6 +166,19 @@ fun CircleScreen(
                     busy = state.busy,
                     onSharingChange = viewModel::setSharingEnabled,
                     onLeave = viewModel::leave
+                )
+            }
+
+            item(key = "invite", contentType = "invite") {
+                InviteCard(
+                    serverUrl = state.settings.serverUrl,
+                    adminToken = state.settings.adminToken,
+                    code = state.lastInviteCode,
+                    minting = state.minting,
+                    onSaveToken = viewModel::saveAdminToken,
+                    onMint = viewModel::createInvite,
+                    onShare = shareText,
+                    onDismissCode = viewModel::dismissInvite
                 )
             }
 
@@ -179,10 +211,11 @@ fun CircleScreen(
 
 @Composable
 private fun JoinCard(
+    serverUrl: String,
+    onServerUrlChange: (String) -> Unit,
     busy: Boolean,
-    onJoin: (serverUrl: String, code: String, displayName: String) -> Unit
+    onJoin: (code: String, displayName: String) -> Unit
 ) {
-    var serverUrl by remember { mutableStateOf(DEFAULT_CIRCLE_SERVER) }
     var code by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     val canJoin = !busy && code.isNotBlank() && name.isNotBlank() && serverUrl.isNotBlank()
@@ -224,7 +257,7 @@ private fun JoinCard(
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = serverUrl,
-                onValueChange = { serverUrl = it.trim() },
+                onValueChange = { onServerUrlChange(it.trim()) },
                 label = { Text("Адрес сервера") },
                 singleLine = true,
                 enabled = !busy,
@@ -232,7 +265,7 @@ private fun JoinCard(
             )
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onJoin(serverUrl, code, name) },
+                onClick = { onJoin(code, name) },
                 enabled = canJoin,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -245,6 +278,110 @@ private fun JoinCard(
         }
     }
 }
+
+/**
+ * Minting invitations, for whoever runs the circle.
+ *
+ * The admin secret lives on the server; pasting it here is what lets a code be
+ * made from the app instead of over SSH. It is kept in the app's own settings
+ * as plain text, so the card says so rather than letting the reader assume
+ * otherwise.
+ */
+@Composable
+private fun InviteCard(
+    serverUrl: String,
+    adminToken: String,
+    code: String?,
+    minting: Boolean,
+    onSaveToken: (String) -> Unit,
+    onMint: () -> Unit,
+    onShare: (String) -> Unit,
+    onDismissCode: () -> Unit
+) {
+    var editing by remember(adminToken) { mutableStateOf(adminToken.isBlank()) }
+    var draft by remember(adminToken) { mutableStateOf(adminToken) }
+
+    Surface(
+        shape = LuminaShape.Card,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Пригласить друга", style = MaterialTheme.typography.titleMedium)
+
+            if (editing) {
+                Text(
+                    text = "Нужен админ-токен круга — он лежит на сервере в файле .env. " +
+                        "Приложение сохранит его у себя, чтобы приглашения выпускались отсюда. " +
+                        "Хранится как обычный текст в данных приложения.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    label = { Text("Админ-токен") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(
+                        onClick = {
+                            onSaveToken(draft)
+                            editing = draft.isBlank()
+                        },
+                        enabled = draft.isNotBlank()
+                    ) { Text("Сохранить") }
+                }
+                return@Column
+            }
+
+            Text(
+                text = "Код одноразовый: друг введёт его один раз и останется в круге.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+            )
+
+            if (code == null) {
+                Button(onClick = onMint, enabled = !minting, modifier = Modifier.fillMaxWidth()) {
+                    if (minting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Выпустить приглашение")
+                }
+            } else {
+                Surface(
+                    shape = LuminaShape.Tile,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = code,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = onDismissCode) { Text("Скрыть") }
+                    TextButton(
+                        onClick = { onShare(inviteMessage(code, serverUrl)) }
+                    ) { Text("Отправить другу") }
+                }
+            }
+
+            TextButton(onClick = { editing = true }) { Text("Сменить админ-токен") }
+        }
+    }
+}
+
+/** What a friend actually needs: the code, and where to use it. */
+internal fun inviteMessage(code: String, serverUrl: String): String =
+    "Заходи в мой читательский круг в Lumina.\nКод приглашения: $code\nАдрес сервера: $serverUrl"
 
 @Composable
 private fun SharingCard(
