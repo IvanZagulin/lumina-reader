@@ -22,6 +22,9 @@ private val Context.catalogSettingsStore: DataStore<Preferences> by preferencesD
 private val Context.reminderSettingsStore: DataStore<Preferences> by preferencesDataStore(
     name = PreferenceFiles.REMINDERS
 )
+private val Context.socialSettingsStore: DataStore<Preferences> by preferencesDataStore(
+    name = PreferenceFiles.SOCIAL
+)
 
 /** Reader settings of this app ([PreferenceFiles.READER]). */
 fun ReaderPreferences(context: Context): ReaderPreferences =
@@ -38,6 +41,10 @@ fun CatalogPreferences(context: Context): CatalogPreferences =
 /** Reading reminder settings of this app ([PreferenceFiles.REMINDERS]). */
 fun ReminderPreferences(context: Context): ReminderPreferences =
     ReminderPreferences(context.reminderSettingsStore)
+
+/** Reading-circle settings of this app ([PreferenceFiles.SOCIAL]). */
+fun SocialPreferences(context: Context): SocialPreferences =
+    SocialPreferences(context.socialSettingsStore)
 
 /** The process-wide UI preferences, in the SharedPreferences file [PreferenceFiles.UI]. */
 fun AppUiPreferences.Companion.get(context: Context): AppUiPreferences =

@@ -48,10 +48,13 @@ class PreferenceFilesTest {
 
     @Test
     fun settingsOfTheShippedAppSurviveTheMove() = runBlocking {
+        // The four the shipped app created keep their names and their order;
+        // files added later (social_settings) go after them.
         assertEquals(
             listOf("reader_settings", "library_settings", "opds_catalogs", "reminder_settings"),
-            PreferenceFiles.dataStores
+            PreferenceFiles.dataStores.take(4)
         )
+        assertEquals(listOf("social_settings"), PreferenceFiles.dataStores.drop(4))
         assertEquals("lumina_ui", PreferenceFiles.UI)
 
         // Files as the shipped app left them (key names copied from it).

@@ -53,3 +53,7 @@ migration_*
 test_book.fb2
 *.tar
 device-backup*/
+
+# Room exports the schema on every build; the project keeps its migration
+# fixtures in the tests instead of tracking these.
+shared/schemas/

@@ -22,8 +22,14 @@ object PreferenceFiles {
     /** Library view and app-shell choices ([AppUiPreferences], read synchronously). */
     const val UI: String = "lumina_ui"
 
-    /** Every DataStore file, in no particular order. */
-    val dataStores: List<String> = listOf(READER, LIBRARY, CATALOGS, REMINDERS)
+    /** The reading circle: server, token and what is shared ([SocialPreferences]). */
+    const val SOCIAL: String = "social_settings"
+
+    /**
+     * Every DataStore file. The first four are the ones the shipped app
+     * created: their names are part of installed data and must never change.
+     */
+    val dataStores: List<String> = listOf(READER, LIBRARY, CATALOGS, REMINDERS, SOCIAL)
 
     /** DataStore's file name for [name] (what Android's preferencesDataStoreFile uses). */
     fun dataStoreFileName(name: String): String = "$name.preferences_pb"
