@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lumina
+      POSTGRES_USER: lumina
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-lumina}
+    volumes:
+      - lumina-db:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumina"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/lumina
+      DATABASE_USER: lumina
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-lumina}
+      # No default: the server refuses to start without it, on purpose.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      PORT: 8080
+    # Bound to localhost: put a TLS reverse proxy (Caddy/nginx) in front before
+    # exposing it, so bearer tokens never travel in clear. See README.
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lumina-db:
