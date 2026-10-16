@@ -31,7 +31,7 @@ import com.lumina.reader.core.model.ReadingStats
         ReadingHighlight::class,
         ReadingStats::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)

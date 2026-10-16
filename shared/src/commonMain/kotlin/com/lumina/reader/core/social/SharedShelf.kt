@@ -48,7 +48,8 @@ object SharedShelf {
         bookKey = bookKey(title, author),
         title = title.trim(),
         author = author.trim(),
-        rating = null,
+        // 0 means the reader has not rated it; the circle says that with null.
+        rating = rating.takeIf { it > 0 },
         progress = currentProgressPercent.roundToInt().coerceIn(0, 100),
         status = statusOf(this),
         updatedAt = lastReadTimestamp,

@@ -123,6 +123,18 @@ object AppDatabaseMigrations {
         )
     }
 
+    /**
+     * Version 9 gives a book the reader's own mark out of five, 0 meaning
+     * unrated. The column must match the entity exactly - INTEGER, NOT NULL and
+     * the `@ColumnInfo(defaultValue = "0")` default - or Room rejects the
+     * migrated database at startup.
+     */
+    private fun migrateBookRating(database: SupportSQLiteDatabase) {
+        if ("rating" !in tableColumns(database)) {
+            database.execSQL("ALTER TABLE `books` ADD COLUMN `rating` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
     val MIGRATION_1_5 = object : Migration(1, 5) {
         override fun migrate(database: SupportSQLiteDatabase) = migrateLibraryOrganization(database)
     }
@@ -144,6 +156,9 @@ object AppDatabaseMigrations {
     val MIGRATION_7_8 = object : Migration(7, 8) {
         override fun migrate(database: SupportSQLiteDatabase) = migrateReaderAnchors(database)
     }
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(database: SupportSQLiteDatabase) = migrateBookRating(database)
+    }
 
     /** Every migration, in the order Room should know them. */
     val ALL: Array<Migration> = arrayOf(
@@ -153,6 +168,7 @@ object AppDatabaseMigrations {
         MIGRATION_4_5,
         MIGRATION_5_6,
         MIGRATION_6_7,
-        MIGRATION_7_8
+        MIGRATION_7_8,
+        MIGRATION_8_9
     )
 }

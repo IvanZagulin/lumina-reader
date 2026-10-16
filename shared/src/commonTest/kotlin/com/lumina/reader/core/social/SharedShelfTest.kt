@@ -22,6 +22,7 @@ class SharedShelfTest {
         done: Boolean = false,
         startedAt: Long? = null,
         lastRead: Long = 1_000,
+        rating: Int = 0,
     ) = Book(
         id = id,
         title = title,
@@ -31,6 +32,7 @@ class SharedShelfTest {
         isCompleted = done,
         startedAt = startedAt,
         lastReadTimestamp = lastRead,
+        rating = rating,
     )
 
     @Test
@@ -83,6 +85,18 @@ class SharedShelfTest {
             listOf(ReadingStatus.DONE, ReadingStatus.READING, ReadingStatus.READING, ReadingStatus.NOT_STARTED),
             shelf.map { it.status },
         )
+    }
+
+    @Test
+    fun anUnratedBookSaysNothingRatherThanZero() {
+        val shelf = SharedShelf.build(
+            listOf(book(1, "Без оценки"), book(2, "С оценкой", rating = 4)),
+            sharingEnabled = true,
+        )
+
+        // Zero out of five would read as a verdict; "not rated" is not one.
+        assertEquals(null, shelf.first { it.title == "Без оценки" }.rating)
+        assertEquals(4, shelf.first { it.title == "С оценкой" }.rating)
     }
 
     @Test

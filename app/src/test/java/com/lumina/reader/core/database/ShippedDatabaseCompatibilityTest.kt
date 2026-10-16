@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -45,17 +46,21 @@ class ShippedDatabaseCompatibilityTest {
     }
 
     @Test
-    fun shippedVersion8DatabaseOpensWithoutMigration() {
+    fun shippedVersion8DatabaseMigratesAndKeepsItsRows() {
         // The app's own file, opened by the builder getDatabase(context) uses
-        // with its default name.
+        // with its default name. Since schema 9 it is migrated on open (the
+        // book rating is added); every row has to come through untouched.
         createShippedDatabase(withRoomMasterTable = true, name = AppDatabase.DATABASE_NAME)
         runBlocking {
             val database = AppDatabase.databaseBuilder(context).allowMainThreadQueries().build()
             try {
                 assertEquals(AppDatabase.DATABASE_NAME, database.openHelper.databaseName)
                 assertShippedRows(database)
-                // The identity row is left alone: the hash matched.
-                assertEquals(SHIPPED_IDENTITY_HASH, storedIdentityHash(database))
+                assertEquals(9, database.openHelper.readableDatabase.version)
+                // Books that existed before the column start unrated.
+                assertEquals(0, database.bookDao().getBookById(1)!!.rating)
+                // Room re-stamps the file with the identity of the new schema.
+                assertNotEquals(SHIPPED_IDENTITY_HASH, storedIdentityHash(database))
             } finally {
                 database.close()
             }
@@ -63,16 +68,17 @@ class ShippedDatabaseCompatibilityTest {
     }
 
     @Test
-    fun shippedSchemaPassesRoomsValidationAndHasTheSameIdentityHash() {
+    fun shippedSchemaPassesRoomsValidationAfterMigrating() {
         // Without room_master_table Room compares every table, column (type,
-        // NOT NULL, default, primary key) and index of the file with the
-        // entities, then records its own identity hash.
+        // NOT NULL, default, primary key) and index of the migrated file with
+        // the entities, then records its own identity hash. A mismatch in the
+        // column the migration adds would fail right here.
         createShippedDatabase(withRoomMasterTable = false)
         runBlocking {
             val database = open()
             try {
                 assertShippedRows(database)
-                assertEquals(SHIPPED_IDENTITY_HASH, storedIdentityHash(database))
+                assertNotNull(storedIdentityHash(database))
             } finally {
                 database.close()
             }
@@ -80,15 +86,15 @@ class ShippedDatabaseCompatibilityTest {
     }
 
     @Test
-    fun freshInstallCreatesTheShippedSchema() {
+    fun freshInstallCreatesTheShippedSchemaPlusTheRating() {
         context.deleteDatabase(databaseName)
         runBlocking {
             val database = open()
             try {
                 // Forces the file to be created.
                 assertEquals(0, database.bookDao().countBooks())
-                assertEquals(SHIPPED_IDENTITY_HASH, storedIdentityHash(database))
-                assertEquals(8, database.openHelper.readableDatabase.version)
+                assertNotNull(storedIdentityHash(database))
+                assertEquals(9, database.openHelper.readableDatabase.version)
 
                 val created = mutableSetOf<String>()
                 database.openHelper.readableDatabase.query(
@@ -98,8 +104,11 @@ class ShippedDatabaseCompatibilityTest {
                 ).use { cursor ->
                     while (cursor.moveToNext()) created += cursor.getString(0)
                 }
-                // SQLite stores CREATE statements without "IF NOT EXISTS".
-                val expected = SHIPPED_SCHEMA.map { it.replace(" IF NOT EXISTS ", " ") }.toSet()
+                // SQLite stores CREATE statements without "IF NOT EXISTS". The
+                // expectation is still the shipped schema, with the one column
+                // schema 9 adds - so any other drift from the released build
+                // fails here.
+                val expected = CURRENT_SCHEMA.map { it.replace(" IF NOT EXISTS ", " ") }.toSet()
                 assertEquals(expected, created)
             } finally {
                 database.close()
@@ -108,9 +117,12 @@ class ShippedDatabaseCompatibilityTest {
     }
 
     @Test
-    fun migrationsAreTheShippedOnesInTheShippedOrder() {
+    fun theShippedMigrationsAreStillThereInOrder() {
+        // The first seven are the ones the released build knew; their order and
+        // endpoints must not move, or an installed app upgrades along a path it
+        // was never tested on.
         assertEquals(
-            listOf(1 to 5, 2 to 5, 3 to 5, 4 to 5, 5 to 6, 6 to 7, 7 to 8),
+            listOf(1 to 5, 2 to 5, 3 to 5, 4 to 5, 5 to 6, 6 to 7, 7 to 8, 8 to 9),
             AppDatabase.ALL_MIGRATIONS.map { it.startVersion to it.endVersion }
         )
     }
@@ -118,15 +130,15 @@ class ShippedDatabaseCompatibilityTest {
     @Test
     fun aDatabaseFromANewerVersionIsRefusedNotWiped() {
         // No destructive fallback is configured: a file Room cannot migrate
-        // (here a downgrade from 9) makes the open fail and keeps the data.
-        createShippedDatabase(withRoomMasterTable = true, version = 9)
+        // (here a downgrade from 10) makes the open fail and keeps the data.
+        createShippedDatabase(withRoomMasterTable = true, version = 10)
         runBlocking {
             val database = open()
             try {
                 database.bookDao().countBooks()
-                fail("Room opened a database of version 9 without a migration")
+                fail("Room opened a database of version 10 without a migration")
             } catch (expected: Exception) {
-                // "A migration from 9 to 8 was required but not found."
+                // "A migration from 10 to 9 was required but not found."
             } finally {
                 database.close()
             }
@@ -134,7 +146,7 @@ class ShippedDatabaseCompatibilityTest {
         // Opened read-write: Room may have switched the file to WAL already.
         val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(databaseName), null)
         try {
-            assertEquals(9, raw.version)
+            assertEquals(10, raw.version)
             raw.rawQuery("SELECT title FROM books WHERE id = 1", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("Книга", cursor.getString(0))
@@ -245,6 +257,18 @@ class ShippedDatabaseCompatibilityTest {
                 "`wordsReadCount` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL)",
             "CREATE INDEX IF NOT EXISTS `index_reading_stats_bookId` ON `reading_stats` (`bookId`)"
         )
+
+        /**
+         * What a fresh install creates now: the shipped statements with the
+         * rating column schema 9 appends to `books`.
+         */
+        val CURRENT_SCHEMA: List<String> = SHIPPED_SCHEMA.map { statement ->
+            if (statement.startsWith("CREATE TABLE IF NOT EXISTS `books`")) {
+                statement.removeSuffix(")") + ", `rating` INTEGER NOT NULL DEFAULT 0)"
+            } else {
+                statement
+            }
+        }
 
         val SAMPLE_ROWS = listOf(
             "INSERT INTO books (id, title, author, filePath, coverPath, format, currentChapterIndex, " +

@@ -6,7 +6,7 @@ import com.lumina.reader.platform.AppClock
 
 /**
  * A library entry (table `books`). The columns, their order, types and
- * defaults are part of the on-device schema (version 8): Room checks them
+ * defaults are part of the on-device schema (version 9): Room checks them
  * against the database it opens, so any change needs a migration.
  */
 @Entity(tableName = "books")
@@ -36,7 +36,13 @@ data class Book(
     val collection: String = "Основная",
     val tags: String = "",
     val seriesName: String = "",
-    val seriesOrder: Int = 0
+    val seriesOrder: Int = 0,
+    /**
+     * The reader's own mark out of five; 0 means they have not rated it. Added
+     * in schema version 9, so it carries the default the migration writes.
+     */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val rating: Int = 0
 ) {
     // Completion is recorded explicitly or when reading crosses 99%. Clearing
     // it must keep the position without the percentage immediately undoing it.
