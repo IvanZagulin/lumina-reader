@@ -1,0 +1,88 @@
+{
+  "name": "Lumina Reader",
+  "identifier": "com.lumina.reader.source",
+  "subtitle": "Читалка EPUB, FB2, PDF и TXT для iPhone",
+  "description": "Неподписанные сборки Lumina Reader для iPhone, собранные GitHub Actions из ветки main. AltStore подписывает приложение вашим Apple ID при установке и обновлении.",
+  "iconURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+  "website": "https://github.com/IvanZagulin/lumina-reader",
+  "sourceURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/automation/altstore-source/source.json",
+  "tintColor": "#A64A23",
+  "featuredApps": [
+    "com.lumina.reader"
+  ],
+  "apps": [
+    {
+      "name": "Lumina Reader",
+      "bundleIdentifier": "com.lumina.reader",
+      "developerName": "IvanZagulin",
+      "subtitle": "Читалка электронных книг",
+      "localizedDescription": "Lumina Reader — читалка электронных книг EPUB, FB2, PDF и TXT. Это предварительные сборки для iPhone: перенос приложения с Android идёт по этапам, и пока сборка показывает только экран-заглушку.",
+      "iconURL": "https://raw.githubusercontent.com/IvanZagulin/lumina-reader/main/iosApp/LuminaReader/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "tintColor": "#A64A23",
+      "category": "lifestyle",
+      "screenshots": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      },
+      "versions": [
+        {
+          "version": "1.0.24",
+          "buildVersion": "24",
+          "date": "2026-10-16T14:45:46Z",
+          "localizedDescription": "Сборка 1.0.24 из коммита 6759817.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.24/LuminaReader-1.0.24.ipa",
+          "size": 20301712,
+          "sha256": "d843859ae64ea60150ac8fbcf264b0f7ec4c0e942b95d3e62354cf580e43543b",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.23",
+          "buildVersion": "23",
+          "date": "2026-10-13T21:15:07Z",
+          "localizedDescription": "Сборка 1.0.23 из коммита 2224fa7.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.23/LuminaReader-1.0.23.ipa",
+          "size": 20168194,
+          "sha256": "5cbd3937f61bf4db6bf174a83960c003986522dcf57b6569c7d9ddb24c961b95",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.22",
+          "buildVersion": "22",
+          "date": "2026-10-13T20:42:02Z",
+          "localizedDescription": "Сборка 1.0.22 из коммита 8f93599.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.22/LuminaReader-1.0.22.ipa",
+          "size": 20165744,
+          "sha256": "88152eda552c61bde1371f3a061fe1e9cecc13f1eeddb5a607fe6eebbc7d3001",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.21",
+          "buildVersion": "21",
+          "date": "2026-10-13T11:12:31Z",
+          "localizedDescription": "Сборка 1.0.21 из коммита ff4586f.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.21/LuminaReader-1.0.21.ipa",
+          "size": 20160962,
+          "sha256": "e57926d20c576ddb5140bdbbe9292d9cb465554314ec10074961608e24798ba0",
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.0.19",
+          "buildVersion": "19",
+          "date": "2026-10-04T21:03:02Z",
+          "localizedDescription": "Сборка 1.0.19 из коммита 9d99e68.",
+          "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.19/LuminaReader-1.0.19.ipa",
+          "size": 20054044,
+          "sha256": "111ccd64d7694270e5feae454aa12dfd6bb02acce78bb0dfc496bde00f34dee0",
+          "minOSVersion": "15.0"
+        }
+      ],
+      "version": "1.0.24",
+      "versionDate": "2026-10-16T14:45:46Z",
+      "versionDescription": "Сборка 1.0.24 из коммита 6759817.",
+      "downloadURL": "https://github.com/IvanZagulin/lumina-reader/releases/download/ios-v1.0.24/LuminaReader-1.0.24.ipa",
+      "size": 20301712
+    }
+  ],
+  "news": []
+}
