@@ -62,6 +62,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.lumina.reader.core.library.AppMessages
+import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.library.BookImporter
 import com.lumina.reader.core.model.effectiveTheme
 import com.lumina.reader.core.network.AiClient
@@ -87,6 +88,9 @@ import com.lumina.reader.ui.shell.LocalDockScroll
 import com.lumina.reader.ui.shell.LuminaDock
 import com.lumina.reader.ui.shell.LuminaSnackbarHost
 import com.lumina.reader.ui.shell.rememberDockScrollState
+import com.lumina.reader.ui.social.CircleScreen
+import com.lumina.reader.ui.social.CircleViewModel
+import com.lumina.reader.ui.social.collectIncomingBooks
 import com.lumina.reader.ui.stats.StatsScreenWithAchievements
 import com.lumina.reader.ui.stats.StatsViewModel
 import com.lumina.reader.ui.theme.LuminaDimens
@@ -198,6 +202,13 @@ fun LuminaNavGraph(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             AppMessages.openBookRequests.collect { bookId -> navController.openBook(bookId) }
         }
+    }
+
+    // Books friends sent arrive here: there is no push, so opening the app is
+    // the moment one can land on the shelf. Runs once per shell, in the app's
+    // scope, so leaving the library does not cancel a half-finished download.
+    LaunchedEffect(Unit) {
+        AppServices.library.imports.launchInBackground { runCatching { collectIncomingBooks() } }
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -362,6 +373,14 @@ fun LuminaNavGraph(
                         )
                     }
 
+                    composable(Screen.Circle.route) {
+                        val circleViewModel: CircleViewModel = viewModel()
+                        CircleScreen(
+                            viewModel = circleViewModel,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
                     composable(Screen.AiChat.route) {
                         // The chat runs its commands (search, download, series) itself in the
                         // app scope, so leaving the chat does not cancel them.
@@ -441,7 +460,11 @@ fun LuminaNavGraph(
             AppSettingsSheet(
                 onDismiss = { showSettings = false },
                 onCheckForUpdates = onCheckForUpdates,
-                isCheckingForUpdates = isCheckingForUpdates
+                isCheckingForUpdates = isCheckingForUpdates,
+                onOpenCircle = {
+                    showSettings = false
+                    runCatching { navController.navigate(Screen.Circle.route) }
+                }
             )
         }
     }

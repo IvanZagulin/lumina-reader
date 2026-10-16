@@ -27,6 +27,9 @@ import com.lumina.reader.ui.catalog.CatalogServicesHolder
 import com.lumina.reader.ui.chat.AndroidChatDownloads
 import com.lumina.reader.ui.shell.ReadingReminderControl
 import com.lumina.reader.ui.shell.ShellServices
+import com.lumina.reader.core.preferences.SocialPreferences
+import com.lumina.reader.ui.social.SocialServices
+import com.lumina.reader.ui.social.SocialServicesHolder
 import com.lumina.reader.ui.stats.SharedPreferencesStatsGoalStore
 import com.lumina.reader.ui.stats.StatsServices
 import com.lumina.reader.ui.stats.StatsServicesHolder
@@ -88,6 +91,13 @@ class LuminaApp : Application() {
         StatsServicesHolder.install {
             val db = AppDatabase.getDatabase(this)
             StatsServices(db.bookDao(), db.readingStatsDao(), SharedPreferencesStatsGoalStore(this))
+        }
+        SocialServicesHolder.install {
+            SocialServices(
+                preferences = SocialPreferences(this),
+                bookDao = AppDatabase.getDatabase(this).bookDao(),
+                importPipeline = BookImporter.get(this).pipeline
+            )
         }
         DailyReadingReminder.install { ReadingReminder.environment(this) }
         // The settings sheet plans the reading reminder through this.

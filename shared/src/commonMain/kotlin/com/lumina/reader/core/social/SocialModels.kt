@@ -52,6 +52,35 @@ data class CircleResponse(val members: List<Member>)
 @Serializable
 data class ErrorResponse(val error: String? = null)
 
+/**
+ * A book someone sent, waiting on the server to be collected.
+ *
+ * This is the one place a book file crosses the circle, and the server is only
+ * a relay: it holds the bytes until this device claims them, and deletes them
+ * then. [sizeBytes] is what the download will cost.
+ */
+@Serializable
+data class TransferInfo(
+    val id: String,
+    val fromUserId: String,
+    val fromDisplayName: String,
+    val title: String,
+    val author: String,
+    /** Set when it was sent as part of a series, so the shelf can regroup it. */
+    val seriesName: String? = null,
+    val seriesOrder: Int = 0,
+    /** The stored file's extension - "epub", "fb2", "fb2.zip", "pdf" or "txt". */
+    val format: String,
+    val sizeBytes: Long,
+    val createdAt: Long,
+)
+
+@Serializable
+data class IncomingTransfersResponse(val transfers: List<TransferInfo> = emptyList())
+
+@Serializable
+data class CreateTransferResponse(val id: String)
+
 /** The statuses the server accepts. */
 object ReadingStatus {
     const val NOT_STARTED = "NOT_STARTED"

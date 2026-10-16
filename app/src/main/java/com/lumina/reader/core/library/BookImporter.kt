@@ -52,7 +52,13 @@ class BookImporter private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val database = AppDatabase.getDatabase(appContext)
     private val bookDao = database.bookDao()
-    private val pipeline = ImportPipeline(
+    /**
+     * The one import pipeline of this process. Public because the reading circle
+     * adds received books through it as well: a second instance would import in
+     * parallel with this one, and parsing two large books at once is exactly
+     * what its lock exists to prevent.
+     */
+    val pipeline = ImportPipeline(
         bookDao = bookDao,
         libraryPreferences = LibraryPreferences(appContext),
         files = AndroidLibraryFiles(appContext)

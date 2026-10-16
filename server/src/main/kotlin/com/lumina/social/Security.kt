@@ -18,6 +18,12 @@ object Secrets {
     /** An invite code: short enough to pass to a friend, random enough not to be guessed. */
     fun newInviteCode(): String = randomUrlSafe(9)
 
+    /**
+     * The id of a book in transit. It is also the file's name on disk, so it is
+     * random rather than sequential: knowing one id must not suggest another.
+     */
+    fun newTransferId(): String = randomUrlSafe(16)
+
     fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }

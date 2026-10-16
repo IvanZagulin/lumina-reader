@@ -18,6 +18,9 @@ sealed class Screen(val route: String) {
     }
     object AiChat : Screen("ai_chat")
 
+    /** The reading circle; reached from the settings sheet, not the dock. */
+    object Circle : Screen("circle")
+
     companion object {
         /** Destinations of the dock; switching between them uses fade-through (spec §3.2). */
         val TopLevelRoutes: Set<String> = setOf("library", "catalog", "ai_chat", "stats")

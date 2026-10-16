@@ -23,6 +23,14 @@ services:
       # No default: the server refuses to start without it, on purpose.
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
       PORT: 8080
+      # A book being sent waits here until the other person's app collects it.
+      # The caps are guards, not preferences: this is a shared disk.
+      TRANSFER_DIR: /data/transfers
+      MAX_TRANSFER_BYTES: ${MAX_TRANSFER_BYTES:-52428800}
+      MAX_TRANSFER_STORE_BYTES: ${MAX_TRANSFER_STORE_BYTES:-314572800}
+      TRANSFER_TTL_DAYS: ${TRANSFER_TTL_DAYS:-14}
+    volumes:
+      - lumina-transfers:/data/transfers
     # Bound to localhost: put a TLS reverse proxy (Caddy/nginx) in front before
     # exposing it, so bearer tokens never travel in clear. See README.
     ports:
@@ -34,3 +42,4 @@ services:
 
 volumes:
   lumina-db:
+  lumina-transfers:

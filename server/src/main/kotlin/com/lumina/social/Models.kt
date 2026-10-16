@@ -59,5 +59,38 @@ data class CircleResponse(val members: List<Member>)
 @Serializable
 data class ErrorResponse(val error: String)
 
+/**
+ * One book someone sent, waiting to be collected.
+ *
+ * This is the only place a book file crosses the circle, and it is a relay: the
+ * file lives on the server until the recipient's app claims it, and is deleted
+ * then. [sizeBytes] lets the app show what it is about to download; the bytes
+ * themselves come from `/api/transfers/{id}/file`.
+ */
+@Serializable
+data class TransferInfo(
+    val id: String,
+    val fromUserId: String,
+    val fromDisplayName: String,
+    val title: String,
+    val author: String,
+    /** Set when the book was sent as part of a series, so the shelf can regroup it. */
+    val seriesName: String? = null,
+    val seriesOrder: Int = 0,
+    /** One of [ALLOWED_TRANSFER_FORMATS]; the recipient stores the file under it. */
+    val format: String,
+    val sizeBytes: Long,
+    val createdAt: Long,
+)
+
+@Serializable
+data class IncomingTransfersResponse(val transfers: List<TransferInfo>)
+
+@Serializable
+data class CreateTransferResponse(val id: String)
+
+/** The formats the reader opens, so the only ones worth relaying. */
+val ALLOWED_TRANSFER_FORMATS = setOf("epub", "fb2", "fb2.zip", "pdf", "txt")
+
 /** Statuses the server accepts; anything else is a bad request. */
 val ALLOWED_STATUSES = setOf("READING", "DONE", "NOT_STARTED")

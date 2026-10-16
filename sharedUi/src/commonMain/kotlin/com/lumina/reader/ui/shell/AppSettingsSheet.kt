@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.AlertDialog
@@ -69,6 +70,8 @@ fun formatReminderTime(hour: Int, minute: Int): String =
  *   shell passes null and the row is not shown.
  * @param reminders the daily reading reminder; null hides its section
  *   (previews). By default the platform's own, from [ShellServices].
+ * @param onOpenCircle opens the reading circle; null hides the row, for a
+ *   platform or a preview that has no circle screen wired up.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,7 +79,8 @@ fun AppSettingsSheet(
     onDismiss: () -> Unit,
     onCheckForUpdates: (() -> Unit)?,
     isCheckingForUpdates: Boolean,
-    reminders: ReminderControl? = ShellServices.reminders
+    reminders: ReminderControl? = ShellServices.reminders,
+    onOpenCircle: (() -> Unit)? = null
 ) {
     val preferences = remember { AppServices.library.uiPreferences }
     val openAnimation by preferences.openAnimation.collectAsState()
@@ -171,6 +175,30 @@ fun AppSettingsSheet(
                         style = MaterialTheme.typography.titleMedium,
                         color = if (current.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            if (onOpenCircle != null) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+
+                SectionLabel("Читательский круг")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .clickable(role = Role.Button, onClick = onOpenCircle),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Кто что читает", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Общий круг по приглашению; делиться полкой — по вашему выбору",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 

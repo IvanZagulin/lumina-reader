@@ -18,6 +18,7 @@ object IosPreferenceStores {
     val library: DataStore<Preferences> by lazy { create(PreferenceFiles.LIBRARY) }
     val catalogs: DataStore<Preferences> by lazy { create(PreferenceFiles.CATALOGS) }
     val reminders: DataStore<Preferences> by lazy { create(PreferenceFiles.REMINDERS) }
+    val social: DataStore<Preferences> by lazy { create(PreferenceFiles.SOCIAL) }
 
     /** A DataStore for [name] in [directory] (the app's datastore folder by default). */
     fun create(name: String, directory: String? = null): DataStore<Preferences> =
@@ -40,6 +41,9 @@ fun CatalogPreferences(): CatalogPreferences = CatalogPreferences(IosPreferenceS
 
 /** Reading reminder settings of this app ([PreferenceFiles.REMINDERS]). */
 fun ReminderPreferences(): ReminderPreferences = ReminderPreferences(IosPreferenceStores.reminders)
+
+/** Reading-circle settings of this app ([PreferenceFiles.SOCIAL]). */
+fun SocialPreferences(): SocialPreferences = SocialPreferences(IosPreferenceStores.social)
 
 /** The process-wide UI preferences, in the app's standard NSUserDefaults. */
 fun AppUiPreferences.Companion.get(): AppUiPreferences = IosUiPreferencesInstance.value
