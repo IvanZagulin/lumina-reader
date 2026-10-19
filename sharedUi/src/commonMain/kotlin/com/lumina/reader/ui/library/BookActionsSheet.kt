@@ -91,6 +91,7 @@ fun BookActionsSheet(
     onSaveOrganization: (BookOrganization) -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit,
+    onRate: (Int) -> Unit,
     initialPage: BookSheetPage = BookSheetPage.MAIN
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -133,7 +134,8 @@ fun BookActionsSheet(
                         onMoveToShelf = { page = BookSheetPage.MOVE_TO_SHELF },
                         onSeries = { page = BookSheetPage.SERIES },
                         onShare = onShare,
-                        onDelete = { page = BookSheetPage.CONFIRM_DELETE }
+                        onDelete = { page = BookSheetPage.CONFIRM_DELETE },
+                        onRate = onRate
                     )
                     BookSheetPage.MOVE_TO_SHELF -> MoveToShelfSection(
                         book = book,
@@ -169,7 +171,8 @@ private fun BookSheetMain(
     onMoveToShelf: () -> Unit,
     onSeries: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onRate: (Int) -> Unit
 ) {
     val shelfBook = remember(book) { book.toShelfBookUi() }
     Column {
@@ -228,6 +231,17 @@ private fun BookSheetMain(
                     )
                 }
             }
+        }
+        // The mark the circle shows. Right under the book rather than behind a
+        // menu item: an opinion is one tap, not a sub-page.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Моя оценка",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            StarRating(rating = book.rating, onRate = onRate, starSize = 24.dp)
         }
         if (book.description.isNotBlank()) {
             var expanded by rememberSaveable(book.id) { mutableStateOf(false) }

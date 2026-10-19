@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -64,6 +65,7 @@ import androidx.navigation.navArgument
 import com.lumina.reader.core.library.AppMessages
 import com.lumina.reader.core.library.AppServices
 import com.lumina.reader.core.library.BookImporter
+import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.model.effectiveTheme
 import com.lumina.reader.core.network.AiClient
 import com.lumina.reader.core.network.AiMessage
@@ -79,6 +81,7 @@ import com.lumina.reader.ui.downloads.DownloadIsland
 import com.lumina.reader.ui.downloads.DownloadsSheet
 import com.lumina.reader.ui.library.LibraryScreen
 import com.lumina.reader.ui.library.LibraryViewModel
+import com.lumina.reader.ui.library.RateBookDialog
 import com.lumina.reader.ui.reader.ReaderScreen
 import com.lumina.reader.ui.reader.ReaderViewModel
 import com.lumina.reader.ui.shell.AppSettingsSheet
@@ -102,6 +105,7 @@ import com.lumina.reader.ui.transition.LocalBookSlotHost
 import com.lumina.reader.ui.transition.LocalBookTransition
 import com.lumina.reader.ui.transition.ReaderTransitionHost
 import com.lumina.reader.ui.transition.rememberBookTransitionState
+import kotlinx.coroutines.launch
 
 /** MIME types offered by «Добавить книгу из файла» (unchanged from the old library FAB). */
 private val BookMimeTypes = arrayOf(
@@ -186,6 +190,11 @@ fun LuminaNavGraph(
 
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showDownloads by rememberSaveable { mutableStateOf(false) }
+    // A book just finished and never rated: asked about once, on the way out of
+    // the reader, which is when the opinion is sharpest. Held here rather than
+    // in the reader so closing it does not take the question down with it.
+    var bookToRate by remember { mutableStateOf<Book?>(null) }
+    val shellScope = rememberCoroutineScope()
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importer.importFromUri(uri)
@@ -204,11 +213,16 @@ fun LuminaNavGraph(
         }
     }
 
-    // Books friends sent arrive here: there is no push, so opening the app is
-    // the moment one can land on the shelf. Runs once per shell, in the app's
-    // scope, so leaving the library does not cancel a half-finished download.
-    LaunchedEffect(Unit) {
-        AppServices.library.imports.launchInBackground { runCatching { collectIncomingBooks() } }
+    // Books friends sent arrive here: there is no push, so the app coming to
+    // the foreground is the moment one can land on the shelf. Every return to
+    // the foreground asks for a pass, not just the first one, or a book sent
+    // while the app sat in the background would wait until it was restarted.
+    // The work goes to the app's scope so leaving the library does not cancel a
+    // half-finished download.
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            AppServices.library.imports.launchInBackground { runCatching { collectIncomingBooks() } }
+        }
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -305,6 +319,12 @@ fun LuminaNavGraph(
                             onExit = {
                                 if (entry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                                     navController.popBackStack()
+                                }
+                                // Read back rather than trusted from the screen:
+                                // the book may have been finished mid-session.
+                                shellScope.launch {
+                                    val book = AppServices.library.bookDao.getBookById(bookId)
+                                    if (book != null && book.isDone() && book.rating == 0) bookToRate = book
                                 }
                             }
                         ) { requestClose ->
@@ -454,6 +474,17 @@ fun LuminaNavGraph(
                     showDownloads = false
                     navController.openBook(bookId)
                 }
+            )
+        }
+        bookToRate?.let { book ->
+            RateBookDialog(
+                title = book.title,
+                initialRating = book.rating,
+                onRate = { mark ->
+                    bookToRate = null
+                    shellScope.launch { AppServices.library.bookDao.updateRating(book.id, mark) }
+                },
+                onDismiss = { bookToRate = null }
             )
         }
         if (showSettings) {

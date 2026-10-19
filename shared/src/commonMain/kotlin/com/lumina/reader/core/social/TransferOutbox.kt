@@ -2,6 +2,7 @@ package com.lumina.reader.core.social
 
 import com.lumina.reader.core.library.BookFileNames
 import com.lumina.reader.core.model.Book
+import com.lumina.reader.core.preferences.LibraryPreferences.Companion.MAIN_SHELF
 import com.lumina.reader.core.preferences.SocialPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +72,9 @@ class TransferOutbox(
             bytes = bytes,
             seriesName = book.seriesName.takeIf { it.isNotBlank() },
             seriesOrder = book.seriesOrder,
+            // A shelf the reader named themselves; the main one is everyone's
+            // default and says nothing worth carrying.
+            shelf = book.collection.takeIf { it.isNotBlank() && !it.equals(MAIN_SHELF, ignoreCase = true) },
         )
     }
 

@@ -87,6 +87,8 @@ internal class FakeBookDao : BookDao {
 
     override suspend fun updateFavorite(id: Long, isFav: Boolean) = update(id) { it.copy(isFavorite = isFav) }
 
+    override suspend fun updateRating(id: Long, rating: Int) = update(id) { it.copy(rating = rating) }
+
     override suspend fun updateCompleted(id: Long, isComp: Boolean, completedAt: Long) =
         update(id) { it.copy(
             isCompleted = isComp,

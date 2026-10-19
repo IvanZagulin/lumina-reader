@@ -84,11 +84,36 @@ class Database(private val dataSource: DataSource) {
                     series_order INT NOT NULL,
                     format VARCHAR NOT NULL,
                     size_bytes BIGINT NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    shelf VARCHAR
+                )
+                """.trimIndent(),
+            )
+            // The shelf arrived after the table did, so a server that is already
+            // running needs the column added rather than the table created.
+            statement.executeUpdate("ALTER TABLE transfers ADD COLUMN IF NOT EXISTS shelf VARCHAR")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_transfers_to ON transfers(to_user)")
+            // "Send me this one": a note for the owner's app, which fulfils it
+            // by uploading the book the next time it runs. It holds no file, so
+            // it costs a row and nothing more.
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS book_requests (
+                    id VARCHAR PRIMARY KEY,
+                    from_user VARCHAR NOT NULL,
+                    to_user VARCHAR NOT NULL,
+                    book_key VARCHAR NOT NULL,
+                    title VARCHAR NOT NULL,
+                    author VARCHAR NOT NULL,
                     created_at BIGINT NOT NULL
                 )
                 """.trimIndent(),
             )
-            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_transfers_to ON transfers(to_user)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_requests_to ON book_requests(to_user)")
+            // Asking twice for the same book is the same ask, not two.
+            statement.executeUpdate(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_once ON book_requests(from_user, to_user, book_key)",
+            )
         }
     }
 
@@ -293,12 +318,13 @@ class Database(private val dataSource: DataSource) {
         format: String,
         sizeBytes: Long,
         now: Long,
+        shelf: String? = null,
     ): Unit = io {
         tx { connection ->
             connection.prepareStatement(
                 """
-                INSERT INTO transfers(id, from_user, to_user, title, author, series_name, series_order, format, size_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO transfers(id, from_user, to_user, title, author, series_name, series_order, format, size_bytes, created_at, shelf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
             ).use {
                 it.setString(1, id)
@@ -311,6 +337,7 @@ class Database(private val dataSource: DataSource) {
                 it.setString(8, format)
                 it.setLong(9, sizeBytes)
                 it.setLong(10, now)
+                if (shelf == null) it.setNull(11, java.sql.Types.VARCHAR) else it.setString(11, shelf)
                 it.executeUpdate()
             }
         }
@@ -322,7 +349,7 @@ class Database(private val dataSource: DataSource) {
             connection.prepareStatement(
                 """
                 SELECT t.id, t.from_user, u.display_name, t.title, t.author, t.series_name,
-                       t.series_order, t.format, t.size_bytes, t.created_at
+                       t.series_order, t.format, t.size_bytes, t.created_at, t.shelf
                 FROM transfers t LEFT JOIN users u ON u.id = t.from_user
                 WHERE t.to_user = ?
                 ORDER BY t.created_at
@@ -344,7 +371,7 @@ class Database(private val dataSource: DataSource) {
             connection.prepareStatement(
                 """
                 SELECT t.id, t.from_user, u.display_name, t.title, t.author, t.series_name,
-                       t.series_order, t.format, t.size_bytes, t.created_at
+                       t.series_order, t.format, t.size_bytes, t.created_at, t.shelf
                 FROM transfers t LEFT JOIN users u ON u.id = t.from_user
                 WHERE t.id = ? AND t.to_user = ?
                 """.trimIndent(),
@@ -404,6 +431,107 @@ class Database(private val dataSource: DataSource) {
         }
     }
 
+    // ---- Requests -------------------------------------------------------------------
+
+    /** How many asks are already waiting for [ownerId] to answer; the cap is checked against this. */
+    suspend fun pendingRequestCount(ownerId: String): Int = io {
+        tx { connection ->
+            connection.prepareStatement("SELECT COUNT(*) FROM book_requests WHERE to_user = ?").use { statement ->
+                statement.setString(1, ownerId)
+                statement.executeQuery().use { rows -> if (rows.next()) rows.getInt(1) else 0 }
+            }
+        }
+    }
+
+    /**
+     * Records an ask, or leaves the existing one alone: the unique index makes
+     * a repeated tap the same request rather than a second one. Returns the id
+     * of the row that now stands.
+     */
+    suspend fun createRequest(
+        id: String,
+        fromUser: String,
+        toUser: String,
+        bookKey: String,
+        title: String,
+        author: String,
+        now: Long,
+    ): String = io {
+        tx { connection ->
+            connection.prepareStatement(
+                """
+                SELECT id FROM book_requests WHERE from_user = ? AND to_user = ? AND book_key = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, fromUser)
+                statement.setString(2, toUser)
+                statement.setString(3, bookKey)
+                statement.executeQuery().use { rows -> if (rows.next()) return@tx rows.getString(1) }
+            }
+            connection.prepareStatement(
+                """
+                INSERT INTO book_requests(id, from_user, to_user, book_key, title, author, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+            ).use {
+                it.setString(1, id)
+                it.setString(2, fromUser)
+                it.setString(3, toUser)
+                it.setString(4, bookKey)
+                it.setString(5, title)
+                it.setString(6, author)
+                it.setLong(7, now)
+                it.executeUpdate()
+            }
+            id
+        }
+    }
+
+    /** What [ownerId] has been asked for, oldest first. */
+    suspend fun pendingRequests(ownerId: String): List<BookRequest> = io {
+        tx { connection ->
+            connection.prepareStatement(
+                """
+                SELECT r.id, r.from_user, u.display_name, r.book_key, r.title, r.author, r.created_at
+                FROM book_requests r LEFT JOIN users u ON u.id = r.from_user
+                WHERE r.to_user = ?
+                ORDER BY r.created_at
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, ownerId)
+                statement.executeQuery().use { rows ->
+                    val found = mutableListOf<BookRequest>()
+                    while (rows.next()) {
+                        found += BookRequest(
+                            id = rows.getString("id"),
+                            fromUserId = rows.getString("from_user"),
+                            fromDisplayName = rows.getString("display_name") ?: "Бывший участник",
+                            bookKey = rows.getString("book_key"),
+                            title = rows.getString("title"),
+                            author = rows.getString("author"),
+                            createdAt = rows.getLong("created_at"),
+                        )
+                    }
+                    found
+                }
+            }
+        }
+    }
+
+    /** Removes the ask when either side is done with it; false when it was not theirs. */
+    suspend fun deleteRequest(id: String, actingUserId: String): Boolean = io {
+        tx { connection ->
+            connection.prepareStatement(
+                "DELETE FROM book_requests WHERE id = ? AND (to_user = ? OR from_user = ?)",
+            ).use {
+                it.setString(1, id)
+                it.setString(2, actingUserId)
+                it.setString(3, actingUserId)
+                it.executeUpdate() > 0
+            }
+        }
+    }
+
     private fun java.sql.ResultSet.toTransferInfo(): TransferInfo = TransferInfo(
         id = getString("id"),
         fromUserId = getString("from_user"),
@@ -416,6 +544,7 @@ class Database(private val dataSource: DataSource) {
         format = getString("format"),
         sizeBytes = getLong("size_bytes"),
         createdAt = getLong("created_at"),
+        shelf = getString("shelf"),
     )
 
     private fun <T> tx(block: (Connection) -> T): T =

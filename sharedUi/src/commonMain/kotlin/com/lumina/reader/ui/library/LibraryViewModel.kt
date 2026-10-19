@@ -210,6 +210,13 @@ class LibraryViewModel(
         }
     }
 
+    /** The reader's own mark out of five; 0 clears it. Shared with the circle. */
+    fun rateBook(book: Book, rating: Int) {
+        viewModelScope.launch(Dispatchers.Default) {
+            bookDao.updateRating(book.id, rating.coerceIn(0, MAX_BOOK_RATING))
+        }
+    }
+
     fun updateBookOrganization(
         book: Book,
         collection: String,

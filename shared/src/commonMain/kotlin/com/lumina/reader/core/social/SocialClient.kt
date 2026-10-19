@@ -106,6 +106,7 @@ class SocialClient(
         bytes: ByteArray,
         seriesName: String? = null,
         seriesOrder: Int = 0,
+        shelf: String? = null,
     ): CreateTransferResponse {
         val query = buildString {
             append("?to=").append(recipientId.encodeURLParameter())
@@ -115,6 +116,9 @@ class SocialClient(
             if (!seriesName.isNullOrBlank()) {
                 append("&series=").append(seriesName.trim().encodeURLParameter())
                 append("&seriesOrder=").append(seriesOrder.coerceAtLeast(0))
+            }
+            if (!shelf.isNullOrBlank()) {
+                append("&shelf=").append(shelf.trim().encodeURLParameter())
             }
         }
         return call(serverUrl, "/api/transfers$query") { url ->

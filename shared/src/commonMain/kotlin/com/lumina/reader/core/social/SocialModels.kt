@@ -69,6 +69,12 @@ data class TransferInfo(
     /** Set when it was sent as part of a series, so the shelf can regroup it. */
     val seriesName: String? = null,
     val seriesOrder: Int = 0,
+    /**
+     * The sender's own shelf for this book. A series rebuilds its shelf from
+     * its name alone; a shelf the user named by hand has nothing else to go on,
+     * so it travels with the book.
+     */
+    val shelf: String? = null,
     /** The stored file's extension - "epub", "fb2", "fb2.zip", "pdf" or "txt". */
     val format: String,
     val sizeBytes: Long,

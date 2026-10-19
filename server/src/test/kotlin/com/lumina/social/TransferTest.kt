@@ -204,6 +204,26 @@ class TransferTest {
     }
 
     @Test
+    fun aShelfTheReaderNamedTravelsWithTheBook() = testApplication {
+        val db = freshDatabase()
+        val limits = tempLimits()
+        application { socialModule(db, admin, limits, TransferStore(limits)) }
+        val client = jsonClient()
+
+        val ivan = register(client, "Иван")
+        val petya = register(client, "Петя")
+
+        // A shelf is not in the file and a series cannot stand in for it, so
+        // without this the book arrives unplaced - which is what used to happen.
+        send(client, ivan, petya, "книга".toByteArray(), title = "Ареал", shelf = "Ареал")
+        send(client, ivan, petya, "другая".toByteArray(), title = "Без полки")
+
+        val waiting = incoming(client, petya).transfers
+        assertEquals("Ареал", waiting.first { it.title == "Ареал" }.shelf)
+        assertEquals(null, waiting.first { it.title == "Без полки" }.shelf, "nothing sent, nothing invented")
+    }
+
+    @Test
     fun theSenderCanTakeItBackWhileItIsUncollected() = testApplication {
         val db = freshDatabase()
         val limits = tempLimits()
@@ -299,6 +319,7 @@ class TransferTest {
         format: String = "epub",
         series: String? = null,
         seriesOrder: Int = 0,
+        shelf: String? = null,
     ): HttpResponse = client.post("/api/transfers") {
         bearer(from)
         url {
@@ -310,6 +331,7 @@ class TransferTest {
                 parameters.append("series", series)
                 parameters.append("seriesOrder", seriesOrder.toString())
             }
+            if (shelf != null) parameters.append("shelf", shelf)
         }
         setBody(bytes)
     }

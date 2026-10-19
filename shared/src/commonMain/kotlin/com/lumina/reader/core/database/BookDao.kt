@@ -31,6 +31,14 @@ interface BookDao {
     @Query("UPDATE books SET isFavorite = :isFav WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFav: Boolean)
 
+    /**
+     * The reader's own mark out of five; 0 means unrated, which is what tapping
+     * the current mark again gives back. The reading circle shows this mark to
+     * everyone the shelf is shared with.
+     */
+    @Query("UPDATE books SET rating = :rating WHERE id = :id")
+    suspend fun updateRating(id: Long, rating: Int)
+
     /** Changes the completion status without moving the reader's saved position. */
     @Query("""
         UPDATE books

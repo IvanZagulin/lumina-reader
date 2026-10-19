@@ -348,6 +348,7 @@ fun LibraryScreen(
                     seriesOrder = organization.seriesOrder
                 )
             },
+            onRate = { rating -> viewModel.rateBook(actionsBook, rating) },
             onDelete = { viewModel.deleteBook(actionsBook) },
             onShare = { sharer.share(actionsBook) }
         )

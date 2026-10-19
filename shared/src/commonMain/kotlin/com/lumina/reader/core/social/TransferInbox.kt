@@ -102,7 +102,7 @@ class TransferInbox(
         )
         when (result) {
             is ImportResult.Imported -> {
-                applySeries(result.book, transfer)
+                applyOrganization(result.book, transfer)
                 claim(serverUrl, token, transfer.id)
             }
             // Already in this library: there is no reason for the server to keep
@@ -115,17 +115,20 @@ class TransferInbox(
     }
 
     /**
-     * Puts the book back in its series, which the sender knew and the file
-     * itself may not say. The collection is kept as the import left it.
+     * Puts the book where the sender had it: the series it belongs to, and the
+     * shelf they had named. Neither is necessarily in the file - a shelf never
+     * is - so both travel with the transfer, and whatever the sender did not
+     * send is left as the import decided.
      */
-    private suspend fun applySeries(book: Book, transfer: TransferInfo) {
-        val series = transfer.seriesName?.trim().orEmpty()
-        if (series.isEmpty()) return
+    private suspend fun applyOrganization(book: Book, transfer: TransferInfo) {
+        val series = transfer.seriesName?.trim().orEmpty().ifEmpty { book.seriesName }
+        val shelf = transfer.shelf?.trim().orEmpty().ifEmpty { book.collection }
+        if (series == book.seriesName && shelf == book.collection) return
         bookDao.updateOrganization(
             id = book.id,
-            collection = book.collection,
+            collection = shelf,
             seriesName = series,
-            seriesOrder = transfer.seriesOrder,
+            seriesOrder = if (series == book.seriesName) book.seriesOrder else transfer.seriesOrder,
         )
     }
 

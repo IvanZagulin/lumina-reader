@@ -77,6 +77,12 @@ data class TransferInfo(
     /** Set when the book was sent as part of a series, so the shelf can regroup it. */
     val seriesName: String? = null,
     val seriesOrder: Int = 0,
+    /**
+     * The sender's own shelf for this book, so the recipient's library can put
+     * it on the same one. A series makes its shelf by itself; a shelf the user
+     * named has nothing else to recreate it from.
+     */
+    val shelf: String? = null,
     /** One of [ALLOWED_TRANSFER_FORMATS]; the recipient stores the file under it. */
     val format: String,
     val sizeBytes: Long,
@@ -91,6 +97,36 @@ data class CreateTransferResponse(val id: String)
 
 /** The formats the reader opens, so the only ones worth relaying. */
 val ALLOWED_TRANSFER_FORMATS = setOf("epub", "fb2", "fb2.zip", "pdf", "txt")
+
+/**
+ * Someone asking for a book off another member's shelf.
+ *
+ * The server cannot serve it: it never had the file. This is a note for the
+ * owner's app, which matches [bookKey] against its own library and uploads the
+ * book as an ordinary transfer the next time it runs. No approval is asked for
+ * - within a circle, a shared shelf is taken to mean the books on it may be
+ * had for the asking.
+ */
+@Serializable
+data class BookRequest(
+    val id: String,
+    val fromUserId: String,
+    val fromDisplayName: String,
+    /** The app's own book key: normalized title and author, joined by "|". */
+    val bookKey: String,
+    val title: String,
+    val author: String,
+    val createdAt: Long,
+)
+
+@Serializable
+data class PendingRequestsResponse(val requests: List<BookRequest> = emptyList())
+
+@Serializable
+data class CreateRequestResponse(val id: String)
+
+/** Asks waiting for one member to answer; past this, asking is refused. */
+const val MAX_PENDING_REQUESTS = 200
 
 /** Statuses the server accepts; anything else is a bad request. */
 val ALLOWED_STATUSES = setOf("READING", "DONE", "NOT_STARTED")

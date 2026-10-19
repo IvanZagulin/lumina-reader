@@ -151,6 +151,7 @@ fun Application.socialModule(
             if (format !in ALLOWED_TRANSFER_FORMATS) throw BadRequestException("Такой формат переслать нельзя: $format")
             val seriesName = query["series"]?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TEXT }
             val seriesOrder = query["seriesOrder"]?.trim()?.toIntOrNull()?.coerceIn(0, 10_000) ?: 0
+            val shelf = query["shelf"]?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TEXT }
 
             val id = Secrets.newTransferId()
             val stored = database.pendingTransferBytes()
@@ -169,6 +170,7 @@ fun Application.socialModule(
                     format = format,
                     sizeBytes = size,
                     now = System.currentTimeMillis(),
+                    shelf = shelf,
                 )
             } catch (e: Exception) {
                 // No row means nothing would ever collect or sweep those bytes.
@@ -208,6 +210,57 @@ fun Application.socialModule(
                 ?: return@post call.respond(HttpStatusCode.NotFound, ErrorResponse("Эта передача больше недоступна"))
             transfers.delete(transfer.id)
             database.deleteTransfer(transfer.id)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // ---- Asking for a book off someone's shelf -----------------------------
+        // The server holds no files, so an ask is only a note: the owner's app
+        // reads it, finds the book and uploads it as an ordinary transfer.
+        post("/api/requests") {
+            val asker = call.authenticate(database) ?: return@post
+            val query = call.request.queryParameters
+            val owner = query["to"]?.trim().orEmpty()
+            if (owner.isEmpty()) throw BadRequestException("Не указан владелец книги")
+            if (owner == asker.id) throw BadRequestException("Эта книга и так ваша")
+            if (!database.userExists(owner)) throw BadRequestException("Такого участника нет в круге")
+
+            val bookKey = query["bookKey"]?.trim().orEmpty()
+            if (bookKey.isEmpty() || bookKey.length > MAX_KEY) throw BadRequestException("Некорректный ключ книги")
+            val title = query["title"]?.trim().orEmpty().take(MAX_TEXT)
+            val author = query["author"]?.trim().orEmpty().take(MAX_TEXT)
+
+            // One member cannot bury another under asks.
+            if (database.pendingRequestCount(owner) >= MAX_PENDING_REQUESTS) {
+                return@post call.respond(
+                    HttpStatusCode.TooManyRequests,
+                    ErrorResponse("У этого участника слишком много неотвеченных запросов"),
+                )
+            }
+            val id = database.createRequest(
+                id = Secrets.newTransferId(),
+                fromUser = asker.id,
+                toUser = owner,
+                bookKey = bookKey,
+                title = title,
+                author = author,
+                now = System.currentTimeMillis(),
+            )
+            call.respond(CreateRequestResponse(id))
+        }
+
+        /** What I have been asked for; my app answers these by sending the books. */
+        get("/api/requests/pending") {
+            val user = call.authenticate(database) ?: return@get
+            call.respond(PendingRequestsResponse(database.pendingRequests(user.id)))
+        }
+
+        // Done with, or thought better of: either side may drop their own ask.
+        delete("/api/requests/{id}") {
+            val user = call.authenticate(database) ?: return@delete
+            val id = call.parameters["id"].orEmpty()
+            if (!database.deleteRequest(id, user.id)) {
+                return@delete call.respond(HttpStatusCode.NotFound, ErrorResponse("Такого запроса нет"))
+            }
             call.respond(HttpStatusCode.NoContent)
         }
 
