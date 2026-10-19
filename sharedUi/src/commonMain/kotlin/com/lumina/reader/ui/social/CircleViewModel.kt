@@ -45,6 +45,8 @@ data class CircleUiState(
     /** The member the open send sheet is addressed to; null when it is closed. */
     val sendingTo: Member? = null,
     val sending: Boolean = false,
+    /** How far the current send has got; null when nothing is being sent. */
+    val sendProgress: SendProgress? = null,
     /**
      * The address being typed, shared by the join form and the invite card.
      * The first member of a circle has to mint their own code before they can
@@ -61,6 +63,9 @@ data class CircleUiState(
      */
     val requestedKeys: Set<String> = emptySet(),
 )
+
+/** «2 из 5» while books are uploading, so a long send does not look stuck. */
+data class SendProgress(val done: Int, val total: Int)
 
 /**
  * The reading circle as a screen: join with an invite, decide whether to share,
@@ -281,7 +286,7 @@ class CircleViewModel(
     }
 
     fun cancelSending() {
-        _state.update { it.copy(sendingTo = null, myBooks = emptyList(), sending = false) }
+        _state.update { it.copy(sendingTo = null, myBooks = emptyList(), sending = false, sendProgress = null) }
     }
 
     /**
@@ -294,11 +299,14 @@ class CircleViewModel(
         if (bookIds.isEmpty() || _state.value.sending) return
         val books = _state.value.myBooks.filter { it.id in bookIds }
         viewModelScope.launch {
-            _state.update { it.copy(sending = true, error = null) }
-            val result = outbox.send(member.userId, books)
+            _state.update { it.copy(sending = true, error = null, sendProgress = SendProgress(0, books.size)) }
+            val result = outbox.send(member.userId, books) { done, total ->
+                _state.update { it.copy(sendProgress = SendProgress(done, total)) }
+            }
             _state.update { current ->
                 current.copy(
                     sending = false,
+                    sendProgress = null,
                     sendingTo = if (result.failed == 0) null else current.sendingTo,
                     myBooks = if (result.failed == 0) emptyList() else current.myBooks,
                     notice = if (result.sent > 0) {

@@ -36,8 +36,15 @@ class TransferOutbox(
     /**
      * Sends every book of [books] to [recipientId], carrying on past one that
      * fails. The returned [Sent] is what the caller tells the user.
+     *
+     * [onProgress] reports after each book, because a handful of them is
+     * minutes of uploading and one unmoving spinner looks like a hung app.
      */
-    suspend fun send(recipientId: String, books: List<Book>): Sent {
+    suspend fun send(
+        recipientId: String,
+        books: List<Book>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Sent {
         val settings = preferences.settings.first()
         if (!settings.joined) return Sent(error = "Сначала нужно войти в круг")
         if (books.isEmpty()) return Sent()
@@ -46,7 +53,8 @@ class TransferOutbox(
         var failed = 0
         var firstError: String? = null
 
-        for (book in books) {
+        onProgress(0, books.size)
+        for ((index, book) in books.withIndex()) {
             try {
                 sendOne(settings.serverUrl, settings.token, recipientId, book)
                 sent++
@@ -56,6 +64,7 @@ class TransferOutbox(
                 failed++
                 if (firstError == null) firstError = e.sentence(book)
             }
+            onProgress(index + 1, books.size)
         }
         return Sent(sent, failed, firstError)
     }

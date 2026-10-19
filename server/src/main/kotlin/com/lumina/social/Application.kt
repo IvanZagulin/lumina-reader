@@ -340,5 +340,8 @@ private fun SharedBook.sanitized(): SharedBook {
         author = author.trim(),
         progress = progress.coerceIn(0, 100),
         rating = rating,
+        // Bounded like the title: a shelf must not become a place to store text.
+        seriesName = seriesName?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TEXT },
+        seriesOrder = seriesOrder.coerceIn(0, 10_000),
     )
 }

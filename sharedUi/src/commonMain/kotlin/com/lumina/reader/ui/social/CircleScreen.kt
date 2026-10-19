@@ -56,6 +56,7 @@ import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.social.Member
 import com.lumina.reader.core.social.ReadingStatus
 import com.lumina.reader.core.social.SharedBook
+import com.lumina.reader.core.social.TransferOutbox
 import com.lumina.reader.ui.catalog.CatalogTopBar
 import com.lumina.reader.ui.components.absorbListOverscroll
 import com.lumina.reader.ui.reader.rememberTextSharer
@@ -205,6 +206,7 @@ fun CircleScreen(
             member = member,
             books = state.myBooks,
             sending = state.sending,
+            progress = state.sendProgress,
             onSend = viewModel::sendChosenBooks,
             onDismiss = viewModel::cancelSending
         )
@@ -485,12 +487,23 @@ private fun MemberCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
-                member.books.forEach { book ->
-                    SharedBookRow(
-                        book = book,
-                        requested = book.bookKey in requestedKeys,
-                        onRequest = { onRequest(book) }
-                    )
+                val groups = remember(member) { groupSharedShelf(member.books) }
+                groups.forEach { group ->
+                    group.series?.let { name ->
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                    group.books.forEach { book ->
+                        SharedBookRow(
+                            book = book,
+                            requested = book.bookKey in requestedKeys,
+                            onRequest = { onRequest(book) }
+                        )
+                    }
                 }
             }
             // Sending works whether or not they share a shelf back.
@@ -504,9 +517,14 @@ private fun MemberCard(
 }
 
 /**
- * Choosing what to send. A series is not a special case: its volumes are books
- * with the same series name, so picking several of them and sending is all the
- * other side needs to rebuild the shelf.
+ * Choosing what to send.
+ *
+ * A series is shown as a group with its own "select all", because sending one
+ * is the common case and ticking volumes one by one out of an alphabetical list
+ * is the wrong amount of work. Each row carries the three things worth knowing
+ * before ticking it: the mark the reader gave the book, its size, and whether
+ * the other side already has it - an upload of a book they have is wasted, and
+ * one over the server's cap fails after minutes of waiting.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -514,11 +532,15 @@ private fun SendBooksSheet(
     member: Member,
     books: List<Book>,
     sending: Boolean,
+    progress: SendProgress?,
     onSend: (Set<Long>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var chosen by remember { mutableStateOf(emptySet<Long>()) }
+    var query by remember { mutableStateOf("") }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val theirKeys = remember(member) { member.books.map { it.bookKey }.toSet() }
+    val groups = remember(books, theirKeys, query) { groupForSending(books, theirKeys, query) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -529,57 +551,59 @@ private fun SendBooksSheet(
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Отправить ${member.displayName}", style = MaterialTheme.typography.headlineSmall)
             Text(
-                text = "Книга уйдёт через сервер и появится у друга в полке, когда он откроет приложение. " +
-                    "С сервера она удалится сразу после получения.",
+                text = "Книги уйдут через сервер и появятся у друга в полке, когда он откроет приложение. " +
+                    "С сервера они удалятся сразу после получения.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
             )
+            if (books.isNotEmpty()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Поиск по названию, автору, серии") },
+                    singleLine = true,
+                    enabled = !sending,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+            }
         }
 
-        if (books.isEmpty()) {
+        if (books.isEmpty() || groups.isEmpty()) {
             Text(
-                text = "В библиотеке пока нет книг.",
+                text = if (books.isEmpty()) "В библиотеке пока нет книг." else "Ничего не нашлось.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp)
             )
-            return@ModalBottomSheet
-        }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f, fill = false).absorbListOverscroll(),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            items(books, key = { it.id }, contentType = { "book" }) { book ->
-                val checked = book.id in chosen
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 56.dp)
-                        .toggleable(
-                            value = checked,
-                            enabled = !sending,
-                            role = Role.Checkbox,
-                            onValueChange = { on ->
-                                chosen = if (on) chosen + book.id else chosen - book.id
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false).absorbListOverscroll(),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                groups.forEach { group ->
+                    val groupIds = group.selectableIds
+                    item(key = "head:${group.series ?: "loose"}", contentType = "head") {
+                        SendGroupHeader(
+                            title = group.series ?: "Отдельные книги",
+                            isSeries = group.series != null,
+                            count = group.books.size,
+                            allChosen = groupIds.isNotEmpty() && chosen.containsAll(groupIds),
+                            enabled = !sending && groupIds.isNotEmpty(),
+                            onToggleAll = {
+                                chosen = if (chosen.containsAll(groupIds)) chosen - groupIds else chosen + groupIds
                             }
                         )
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(checked = checked, onCheckedChange = null, enabled = !sending)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(book.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                        Text(
-                            text = buildString {
-                                append(book.author.ifBlank { "Неизвестный автор" })
-                                if (book.seriesName.isNotBlank()) append(" · ").append(book.seriesName)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
+                    }
+                    items(group.books, key = { it.id }, contentType = { "book" }) { sendable ->
+                        SendBookRow(
+                            sendable = sendable,
+                            checked = sendable.id in chosen,
+                            enabled = !sending && sendable.selectable,
+                            onCheckedChange = { on ->
+                                chosen = if (on) chosen + sendable.id else chosen - sendable.id
+                            }
                         )
                     }
                 }
@@ -596,9 +620,135 @@ private fun SendBooksSheet(
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (chosen.isEmpty()) "Выберите книги" else "Отправить ${booksSummary(chosen.size)}")
+                Text(
+                    when {
+                        progress != null -> "Отправляю ${progress.done} из ${progress.total}…"
+                        chosen.isEmpty() -> "Выберите книги"
+                        else -> "Отправить ${booksSummary(chosen.size)}"
+                    }
+                )
             }
             Spacer(Modifier.height(bottom + 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun SendGroupHeader(
+    title: String,
+    isSeries: Boolean,
+    count: Int,
+    allChosen: Boolean,
+    enabled: Boolean,
+    onToggleAll: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 12.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (isSeries) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            if (isSeries) {
+                Text(
+                    text = booksSummary(count),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        // The whole series in one tap: the reason it is a group at all.
+        TextButton(onClick = onToggleAll, enabled = enabled) {
+            Text(if (allChosen) "Снять все" else "Выбрать все")
+        }
+    }
+}
+
+@Composable
+private fun SendBookRow(
+    sendable: SendableBook,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val book = sendable.book
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The volume number, so a series reads as one, two, three.
+                if (book.seriesName.isNotBlank() && book.seriesOrder > 0) {
+                    Text(
+                        text = "${book.seriesOrder}.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                text = book.author.ifBlank { "Неизвестный автор" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            SendBookMeta(sendable)
+        }
+    }
+}
+
+/** The mark, the size, and the two reasons not to bother. */
+@Composable
+private fun SendBookMeta(sendable: SendableBook) {
+    val size = formatBookSize(sendable.book.fileSizeBytes)
+    Row(modifier = Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (sendable.book.rating > 0) {
+            Text(
+                text = "★".repeat(sendable.book.rating.coerceIn(0, 5)),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        if (size.isNotEmpty()) {
+            Text(
+                text = size,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (sendable.tooLarge) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "больше ${TransferOutbox.MAX_SEND_BYTES / (1024 * 1024)} МБ — не отправить",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else if (sendable.alreadyTheirs) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "уже есть",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary
+            )
         }
     }
 }
@@ -610,7 +760,17 @@ private fun SharedBookRow(book: SharedBook, requested: Boolean, onRequest: () ->
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(book.title, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!book.seriesName.isNullOrBlank() && book.seriesOrder > 0) {
+                    Text(
+                        text = "${book.seriesOrder}.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(book.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            }
             Text(
                 text = book.author.ifBlank { "Неизвестный автор" },
                 style = MaterialTheme.typography.bodySmall,

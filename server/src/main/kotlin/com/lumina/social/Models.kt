@@ -38,6 +38,9 @@ data class SharedBook(
     val status: String = "READING",
     /** When the reader last changed any of the above (epoch millis). */
     val updatedAt: Long = 0,
+    /** The series this book belongs to, so a feed can group its volumes. */
+    val seriesName: String? = null,
+    val seriesOrder: Int = 0,
 )
 
 /** The whole shared shelf the app pushes up; it replaces what was there before. */

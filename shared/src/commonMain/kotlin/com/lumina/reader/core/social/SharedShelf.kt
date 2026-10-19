@@ -53,6 +53,10 @@ object SharedShelf {
         progress = currentProgressPercent.roundToInt().coerceIn(0, 100),
         status = statusOf(this),
         updatedAt = lastReadTimestamp,
+        // Carried so the circle can show a series as a series. It says what the
+        // book is, like the title and the author, and nothing about this device.
+        seriesName = seriesName.trim().takeIf { it.isNotEmpty() },
+        seriesOrder = seriesOrder.coerceAtLeast(0),
     )
 
     /** Finished, started, or never opened - the three states the feed shows. */

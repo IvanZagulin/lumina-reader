@@ -33,6 +33,9 @@ data class SharedBook(
     val status: String = ReadingStatus.READING,
     /** When the reader last changed any of the above (epoch millis). */
     val updatedAt: Long = 0,
+    /** The series this book belongs to, so the feed can group its volumes. */
+    val seriesName: String? = null,
+    val seriesOrder: Int = 0,
 )
 
 @Serializable

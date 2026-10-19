@@ -66,10 +66,16 @@ class Database(private val dataSource: DataSource) {
                     progress INT NOT NULL,
                     status VARCHAR NOT NULL,
                     updated_at BIGINT NOT NULL,
+                    series_name VARCHAR,
+                    series_order INT,
                     PRIMARY KEY (user_id, book_key)
                 )
                 """.trimIndent(),
             )
+            // The series arrived after the shelf did: a running server needs the
+            // columns added, so a feed can group volumes instead of listing them flat.
+            statement.executeUpdate("ALTER TABLE shared_books ADD COLUMN IF NOT EXISTS series_name VARCHAR")
+            statement.executeUpdate("ALTER TABLE shared_books ADD COLUMN IF NOT EXISTS series_order INT")
             // Books in transit. The row is the record of what is on disk, so
             // the quota is a sum over it and the file is deleted with the row.
             statement.executeUpdate(
@@ -214,8 +220,8 @@ class Database(private val dataSource: DataSource) {
                 if (books.isNotEmpty()) {
                     connection.prepareStatement(
                         """
-                        INSERT INTO shared_books(user_id, book_key, title, author, rating, progress, status, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO shared_books(user_id, book_key, title, author, rating, progress, status, updated_at, series_name, series_order)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """.trimIndent(),
                     ).use { statement ->
                         for (book in books) {
@@ -227,6 +233,12 @@ class Database(private val dataSource: DataSource) {
                             statement.setInt(6, book.progress)
                             statement.setString(7, book.status)
                             statement.setLong(8, book.updatedAt)
+                            if (book.seriesName == null) {
+                                statement.setNull(9, java.sql.Types.VARCHAR)
+                            } else {
+                                statement.setString(9, book.seriesName)
+                            }
+                            statement.setInt(10, book.seriesOrder)
                             statement.addBatch()
                         }
                         statement.executeBatch()
@@ -256,7 +268,11 @@ class Database(private val dataSource: DataSource) {
 
             val booksByUser = HashMap<String, MutableList<SharedBook>>()
             connection.prepareStatement(
-                "SELECT user_id, book_key, title, author, rating, progress, status, updated_at FROM shared_books WHERE user_id <> ?",
+                """
+                SELECT user_id, book_key, title, author, rating, progress, status, updated_at,
+                       series_name, series_order
+                FROM shared_books WHERE user_id <> ?
+                """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, excludingUserId)
                 statement.executeQuery().use { rows ->
@@ -271,6 +287,8 @@ class Database(private val dataSource: DataSource) {
                             progress = rows.getInt("progress"),
                             status = rows.getString("status"),
                             updatedAt = rows.getLong("updated_at"),
+                            seriesName = rows.getString("series_name"),
+                            seriesOrder = rows.getInt("series_order"),
                         )
                         booksByUser.getOrPut(rows.getString("user_id")) { mutableListOf() }.add(book)
                     }
