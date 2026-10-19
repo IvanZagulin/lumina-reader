@@ -6,6 +6,7 @@ import com.lumina.reader.core.library.ImportPipeline
 import com.lumina.reader.core.library.ImportResult
 import com.lumina.reader.core.library.ImportSource
 import com.lumina.reader.core.model.Book
+import com.lumina.reader.core.preferences.LibraryPreferences.Companion.MAIN_SHELF
 import com.lumina.reader.core.preferences.SocialPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -102,12 +103,19 @@ class TransferInbox(
         )
         when (result) {
             is ImportResult.Imported -> {
-                applyOrganization(result.book, transfer)
+                // A fresh copy: the sender's filing wins over the file's own,
+                // since they may have corrected what the metadata says.
+                applyOrganization(result.book, transfer, senderWins = true)
                 claim(serverUrl, token, transfer.id)
             }
-            // Already in this library: there is no reason for the server to keep
-            // holding the bytes, so the transfer is finished either way.
-            is ImportResult.Duplicate -> claim(serverUrl, token, transfer.id)
+            // Already here. Still worth placing, because a book sent before the
+            // shelf travelled with it is sitting unplaced, and sending it again
+            // is the obvious way to try to fix that. Only gaps are filled: the
+            // reader's own filing is not overwritten by a friend re-sending.
+            is ImportResult.Duplicate -> {
+                applyOrganization(result.book, transfer, senderWins = false)
+                claim(serverUrl, token, transfer.id)
+            }
             // Left unclaimed on purpose: the next pass gets another go at it.
             is ImportResult.Failed -> Unit
         }
@@ -119,10 +127,24 @@ class TransferInbox(
      * shelf they had named. Neither is necessarily in the file - a shelf never
      * is - so both travel with the transfer, and whatever the sender did not
      * send is left as the import decided.
+     *
+     * [senderWins] separates the two cases. A book that just arrived has no
+     * filing of its own worth keeping, so the sender's wins. A book already in
+     * the library does: the reader may have shelved it deliberately, and a
+     * friend re-sending it must not rearrange their library. Then only what the
+     * reader left empty is filled in - which is what makes re-sending a book
+     * that arrived before shelves travelled actually place it.
      */
-    private suspend fun applyOrganization(book: Book, transfer: TransferInfo) {
-        val series = transfer.seriesName?.trim().orEmpty().ifEmpty { book.seriesName }
-        val shelf = transfer.shelf?.trim().orEmpty().ifEmpty { book.collection }
+    private suspend fun applyOrganization(book: Book, transfer: TransferInfo, senderWins: Boolean) {
+        val sentSeries = transfer.seriesName?.trim().orEmpty()
+        val sentShelf = transfer.shelf?.trim().orEmpty()
+
+        val readerFiledSeries = book.seriesName.isNotBlank()
+        val readerFiledShelf = book.collection.isNotBlank() && !book.collection.equals(MAIN_SHELF, ignoreCase = true)
+
+        val series = if (sentSeries.isNotEmpty() && (senderWins || !readerFiledSeries)) sentSeries else book.seriesName
+        val shelf = if (sentShelf.isNotEmpty() && (senderWins || !readerFiledShelf)) sentShelf else book.collection
+
         if (series == book.seriesName && shelf == book.collection) return
         bookDao.updateOrganization(
             id = book.id,
