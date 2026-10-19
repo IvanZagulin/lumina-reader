@@ -91,6 +91,32 @@ data class CreateTransferResponse(val id: String)
 @Serializable
 data class CreateInviteResponse(val code: String)
 
+/**
+ * Someone asking for a book off this device's shelf.
+ *
+ * The server never had the file, so this is a note rather than a download: this
+ * app finds the book by [bookKey] in its own library and sends it as an
+ * ordinary transfer. Nothing is asked of the reader - inside a circle, a shared
+ * shelf means its books may be had for the asking.
+ */
+@Serializable
+data class BookRequest(
+    val id: String,
+    val fromUserId: String,
+    val fromDisplayName: String,
+    /** [SharedShelf.bookKey]: normalized title and author, joined by "|". */
+    val bookKey: String,
+    val title: String,
+    val author: String,
+    val createdAt: Long,
+)
+
+@Serializable
+data class PendingRequestsResponse(val requests: List<BookRequest> = emptyList())
+
+@Serializable
+data class CreateRequestResponse(val id: String)
+
 /** The statuses the server accepts. */
 object ReadingStatus {
     const val NOT_STARTED = "NOT_STARTED"

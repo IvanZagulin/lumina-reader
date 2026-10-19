@@ -175,6 +175,41 @@ class SocialClient(
         }
     }
 
+    // ---- Asking for a book off someone's shelf -------------------------------------
+
+    /** Asks [ownerId] for a book of theirs; their app answers by sending it. */
+    suspend fun requestBook(
+        serverUrl: String,
+        token: String,
+        ownerId: String,
+        bookKey: String,
+        title: String,
+        author: String,
+    ): CreateRequestResponse {
+        val query = buildString {
+            append("?to=").append(ownerId.encodeURLParameter())
+            append("&bookKey=").append(bookKey.encodeURLParameter())
+            append("&title=").append(title.trim().encodeURLParameter())
+            append("&author=").append(author.trim().encodeURLParameter())
+        }
+        return call(serverUrl, "/api/requests$query") { url ->
+            client.post(url) { bearer(token) }
+        }.decode()
+    }
+
+    /** What this device has been asked for and has not answered yet. */
+    suspend fun pendingRequests(serverUrl: String, token: String): PendingRequestsResponse =
+        call(serverUrl, "/api/requests/pending") { url ->
+            client.get(url) { bearer(token) }
+        }.decode()
+
+    /** Drops an ask: answered, refused, or thought better of. */
+    suspend fun deleteRequest(serverUrl: String, token: String, requestId: String) {
+        call(serverUrl, "/api/requests/$requestId") { url ->
+            client.delete(url) { bearer(token) }
+        }
+    }
+
     /**
      * One request: builds the address, turns a refusal into a sentence and a
      * transport failure into the same wording the catalogues use.

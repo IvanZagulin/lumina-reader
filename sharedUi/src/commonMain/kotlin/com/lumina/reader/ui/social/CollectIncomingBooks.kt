@@ -1,8 +1,10 @@
 package com.lumina.reader.ui.social
 
 import com.lumina.reader.core.library.AppMessages
+import com.lumina.reader.core.social.RequestFulfiller
 import com.lumina.reader.core.social.SocialClient
 import com.lumina.reader.core.social.TransferInbox
+import com.lumina.reader.core.social.TransferOutbox
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 
@@ -33,12 +35,21 @@ suspend fun collectIncomingBooks(
     if (!passLock.tryLock()) return TransferInbox.Collected()
 
     val collected = try {
-        TransferInbox(
+        val arrived = TransferInbox(
             preferences = services.preferences,
             pipeline = services.importPipeline,
             bookDao = services.bookDao,
             client = client,
         ).collect()
+        // The same pass answers what others asked for: both directions are
+        // uploads and downloads of books, and both belong under the one lock.
+        RequestFulfiller(
+            preferences = services.preferences,
+            bookDao = services.bookDao,
+            outbox = TransferOutbox(services.preferences, client),
+            client = client,
+        ).run()
+        arrived
     } finally {
         passLock.unlock()
     }

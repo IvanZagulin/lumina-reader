@@ -190,7 +190,9 @@ fun CircleScreen(
                 items(state.members, key = { it.userId }, contentType = { "member" }) { member ->
                     MemberCard(
                         member = member,
+                        requestedKeys = state.requestedKeys,
                         onSend = { viewModel.startSending(member) },
+                        onRequest = { book -> viewModel.requestBook(member, book) },
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -455,7 +457,13 @@ private fun SharingCard(
 }
 
 @Composable
-private fun MemberCard(member: Member, onSend: () -> Unit, modifier: Modifier = Modifier) {
+private fun MemberCard(
+    member: Member,
+    requestedKeys: Set<String>,
+    onSend: () -> Unit,
+    onRequest: (SharedBook) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Surface(
         shape = LuminaShape.Card,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -478,7 +486,11 @@ private fun MemberCard(member: Member, onSend: () -> Unit, modifier: Modifier = 
                 )
                 Spacer(Modifier.height(8.dp))
                 member.books.forEach { book ->
-                    SharedBookRow(book)
+                    SharedBookRow(
+                        book = book,
+                        requested = book.bookKey in requestedKeys,
+                        onRequest = { onRequest(book) }
+                    )
                 }
             }
             // Sending works whether or not they share a shelf back.
@@ -592,28 +604,38 @@ private fun SendBooksSheet(
 }
 
 @Composable
-private fun SharedBookRow(book: SharedBook) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(book.title, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            text = book.author.ifBlank { "Неизвестный автор" },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(modifier = Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun SharedBookRow(book: SharedBook, requested: Boolean, onRequest: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(book.title, style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = describeProgress(book),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
+                text = book.author.ifBlank { "Неизвестный автор" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            book.rating?.let { rating ->
-                Spacer(Modifier.width(8.dp))
+            Row(modifier = Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "★".repeat(rating.coerceIn(0, 5)),
+                    text = describeProgress(book),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary
                 )
+                book.rating?.let { rating ->
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "★".repeat(rating.coerceIn(0, 5)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+        }
+        Spacer(Modifier.width(8.dp))
+        // Their app answers this, so the label promises an arrival, not a download.
+        TextButton(onClick = onRequest, enabled = !requested) {
+            Text(if (requested) "Запрошено" else "Хочу")
         }
     }
 }

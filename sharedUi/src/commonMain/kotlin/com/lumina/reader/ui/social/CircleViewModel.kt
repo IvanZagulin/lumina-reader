@@ -6,6 +6,7 @@ import com.lumina.reader.core.database.BookDao
 import com.lumina.reader.core.model.Book
 import com.lumina.reader.core.preferences.SocialSettings
 import com.lumina.reader.core.social.Member
+import com.lumina.reader.core.social.SharedBook
 import com.lumina.reader.core.social.SharedShelf
 import com.lumina.reader.core.social.SocialClient
 import com.lumina.reader.core.social.SocialException
@@ -53,6 +54,12 @@ data class CircleUiState(
     /** The code just minted, shown until it is sent or dismissed. */
     val lastInviteCode: String? = null,
     val minting: Boolean = false,
+    /**
+     * Books already asked for in this session, by
+     * [com.lumina.reader.core.social.SharedShelf.bookKey], so the row can say
+     * so instead of offering to ask again.
+     */
+    val requestedKeys: Set<String> = emptySet(),
 )
 
 /**
@@ -225,6 +232,39 @@ class CircleViewModel(
             preferences.setBookHidden(bookKey, hidden)
             pushCurrentShelf()
             _state.update { it.copy(busy = false) }
+        }
+    }
+
+    /**
+     * Asks [member] for a book from their shelf. Their app answers by sending
+     * it the next time it runs, so this promises an arrival rather than a
+     * download - there is nothing to wait for on this screen.
+     */
+    fun requestBook(member: Member, book: SharedBook) {
+        if (book.bookKey in _state.value.requestedKeys) return
+        viewModelScope.launch {
+            val settings = preferences.settings.first()
+            if (!settings.joined) return@launch
+            try {
+                client.requestBook(
+                    serverUrl = settings.serverUrl,
+                    token = settings.token,
+                    ownerId = member.userId,
+                    bookKey = book.bookKey,
+                    title = book.title,
+                    author = book.author,
+                )
+                _state.update {
+                    it.copy(
+                        requestedKeys = it.requestedKeys + book.bookKey,
+                        notice = "Попросили «${book.title}». Книга придёт, когда ${member.displayName} откроет приложение.",
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(error = e.displayMessage()) }
+            }
         }
     }
 
